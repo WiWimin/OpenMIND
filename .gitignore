@@ -1,0 +1,47 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.*
+!.env.example
+docker/.env
+!docker/.env.example
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Runtime storage (never commit real meeting data)
+storage/*
+!storage/.gitkeep
+
+# Coverage / build artifacts
+coverage/
+.coverage
+htmlcov/
+*.tsbuildinfo
+.eslintcache
+
+# Logs
+*.log

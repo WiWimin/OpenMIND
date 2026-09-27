@@ -1,0 +1,25 @@
+# CODEOWNERS
+# 将占位用户名替换为真实的 GitHub 账号后生效。
+# 语法：<路径模式> <@用户名 ...>
+
+# 默认负责人（成员 A）
+* @owner-a
+
+# 后端（A、B）
+/backend/ @owner-a @owner-b
+
+# AI 能力层（B）
+/backend/app/ai/ @owner-b
+
+# 前端（C）
+/frontend/ @owner-c
+
+# 契约与文档
+/docs/api.md @owner-a
+/docs/database.md @owner-a
+/docs/ @owner-a
+
+# 基础设施与 CI（A）
+/docker/ @owner-a
+/.github/ @owner-a
+/scripts/ @owner-a

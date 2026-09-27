@@ -1,0 +1,58 @@
+name: openmind
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openmind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-openmind}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openmind} -d ${POSTGRES_DB:-openmind}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-openmind}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-openmind}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      STORAGE_DIR: /storage
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+      - ../storage:/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ../frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
+      VITE_APP_ENV: ${VITE_APP_ENV:-development}
+      # Read by vite.config.ts in the Node process (dev-server proxy target).
+      # Inside the container the backend is reachable as `backend:8000`, not on
+      # the container's own localhost. This value is NOT exposed to the browser.
+      VITE_DEV_PROXY_TARGET: ${VITE_DEV_PROXY_TARGET:-http://backend:8000}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  frontend_node_modules:

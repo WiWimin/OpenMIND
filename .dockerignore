@@ -1,0 +1,17 @@
+# 说明：当前 docker/compose.dev.yml 的构建上下文为 backend/ 与 frontend/，
+# 因此实际生效的是 backend/.dockerignore 与 frontend/.dockerignore。
+# 本文件用于将来出现以仓库根为构建上下文的多阶段镜像时。
+
+.git/
+.github/
+**/.venv/
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.env
+**/coverage/
+**/*.log
+storage/

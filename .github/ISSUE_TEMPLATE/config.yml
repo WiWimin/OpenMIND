@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 接口契约
+    url: https://github.com/WiWimin/OpenMIND/blob/main/docs/api.md
+    about: 提交接口相关任务前请先阅读接口契约
