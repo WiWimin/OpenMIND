@@ -1,6 +1,7 @@
 import axios, { type AxiosError, type AxiosInstance } from 'axios'
 
 import type { ApiError } from '@/types/api'
+import { getToken } from '@/utils/authToken'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -10,6 +11,14 @@ export const http: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+http.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
 })
 
 http.interceptors.response.use(
