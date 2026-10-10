@@ -13,21 +13,31 @@ class AppError(Exception):
         message: str,
         http_status: int = status.HTTP_400_BAD_REQUEST,
         retryable: bool = False,
+        details: dict[str, Any] | None = None,
     ) -> None:
         self.error_code = error_code
         self.message = message
         self.http_status = http_status
         self.retryable = retryable
+        self.details = details
         super().__init__(message)
 
 
-def error_body(error_code: str, message: str, retryable: bool = False) -> dict[str, Any]:
-    return {
+def error_body(
+    error_code: str,
+    message: str,
+    retryable: bool = False,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
         "status": "error",
         "error_code": error_code,
         "message": message,
         "retryable": retryable,
     }
+    if details is not None:
+        body["details"] = details
+    return body
 
 
 _HTTP_ERROR_CODES = {
@@ -44,7 +54,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.http_status,
-            content=error_body(exc.error_code, exc.message, exc.retryable),
+            content=error_body(exc.error_code, exc.message, exc.retryable, exc.details),
         )
 
     @app.exception_handler(RequestValidationError)

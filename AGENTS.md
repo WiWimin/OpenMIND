@@ -29,7 +29,10 @@ OpenMIND 是「AI 会议个人助理」，MVP 闭环为：创建会议 → 导�
 - `docker/`：`compose.dev.yml` 与 `.env.example`，与业务代码分离；`docker/.env` 为本地变量文件（不提交）。
 - `frontend/src/api/client.ts`：axios 实例与统一错误规范化；`router/`、`stores/`、`views/`、`types/` 分层。
 - `docs/api.md`：接口契约唯一来源。
-- `docs/database.md`：共享数据契约。
+- `docs/database.md`：共享数据契约（表/字段/状态/约束）。
+- `docs/ai-design.md`：AI 调用、文件解析、RAG、超时重试、幂等与失败补偿。
+- `docs/design-baseline.md`：各文档职责、唯一事实来源与决策日志。
+- `docs/module-development-spec.md`：模块实现细则与 `Mxx-NN` 任务。
 
 ## 关键约定
 
@@ -38,8 +41,10 @@ OpenMIND 是「AI 会议个人助理」，MVP 闭环为：创建会议 → 导�
 - 候选与确认分离：AI 生成的纪要/行动项必须经用户编辑确认。
 - 业务状态由后端控制，前端不能通过直接修改状态字段绕过权限或业务规则。
 - LLM/Embedding 密钥仅存在于服务端环境变量，禁止硬编码或下发前端。
-- 错误响应统一包含 `status`、`error_code`、`message`；错误码见 `docs/api.md`。
+- 鉴权：HS256 JWT + `Authorization: Bearer <token>`，MVP 无 refresh（见 `docs/api.md 一/二`）。
+- 错误响应统一包含 `status`、`error_code`、`message`、`retryable`（可选 `details`）；错误码见 `docs/api.md 一.3`。
 - 涉及数据库结构的改动必须附带 Alembic 迁移文件。
+- 设计文档职责与唯一事实来源见 `docs/design-baseline.md`。
 
 ## 常用命令
 
