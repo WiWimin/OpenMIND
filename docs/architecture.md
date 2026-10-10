@@ -61,5 +61,8 @@ backend/app/
 ## 关键约定
 
 - 个人数据隔离；原始数据与 AI 结果分离；候选与确认分离；业务状态由后端控制。
-- 错误响应统一为 `{ status, error_code, message }`，见 `docs/api.md`。
+- 鉴权：登录返回 HS256 JWT，请求携带 `Authorization: Bearer <token>`；MVP 不提供 refresh token（见 `docs/api.md 一/二`）。
+- 错误响应统一为 `{ status, error_code, message, retryable, details? }`，见 `docs/api.md 一`。
+- AI 能力层（LLM/Embedding/RAG/解析/提取）设计与超时重试、幂等、失败补偿见 `docs/ai-design.md`。
 - 数据库结构变更必须附带 Alembic 迁移文件。
+- 设计文档的职责与唯一事实来源见 `docs/design-baseline.md`。
