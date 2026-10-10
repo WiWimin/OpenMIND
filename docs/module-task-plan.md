@@ -1,6 +1,8 @@
 # 模块开发任务规划
 
 > 本文件由《AI 会议个人助理——模块详细开发任务文档》整理而成，作为模块拆分、负责人、优先级与验收条件的协作基线。
+>
+> 模块与子任务的**实现细则与 `Mxx-NN` 编号**见 [`module-development-spec.md`](module-development-spec.md)；本文只保留模块总览、阶段交付与里程碑。文档职责与唯一事实来源见 [`design-baseline.md`](design-baseline.md)。
 
 ## MVP 核心闭环
 
@@ -57,7 +59,7 @@
 | M00-05 | 配置 PostgreSQL、pgvector 和 Docker Compose | A | 数据库容器启动，后端可连接 | 已完成 |
 | M00-06 | 配置 SQLAlchemy、Alembic、Pydantic | A | 能执行初始数据库迁移 | 已完成 |
 | M00-07 | 配置前后端环境变量及 docker/.env.example | A、B | 不在代码中硬编码密钥 | 已完成 |
-| M00-08 | 验证模型 API 和 Embedding API 连通性 | B | 能成功执行文本生成与向量生成 | LLM 已验证（deepseek-flash，2026-10-05）；Embedding 未通，整体未完成 |
+| M00-08 | 验证模型 API 和 Embedding API 连通性 | B | 能成功执行文本生成与向量生成 | 已完成（LLM: deepseek-flash；Embedding: text-embedding-v3/1024，2026-10-05 双通） |
 | M00-09 | 编写开发启动文档和环境要求 | 全员 | 新成员能够按 README 启动项目 | 已完成 |
 
 > 本阶段（第一阶段基础工程）只搭建稳定、规范、可协作的项目基础，不开发正式会议业务与复杂 AI 功能。
