@@ -26,6 +26,16 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-openmind}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-openmind}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       STORAGE_DIR: /storage
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-20}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
     ports:
       - "8000:8000"
     volumes:
