@@ -1,6 +1,8 @@
 # 模块开发任务规划
 
 > 本文件由《AI 会议个人助理——模块详细开发任务文档》整理而成，作为模块拆分、负责人、优先级与验收条件的协作基线。
+>
+> 模块与子任务的**实现细则与 `Mxx-NN` 编号**见 [`module-development-spec.md`](module-development-spec.md)；本文只保留模块总览、阶段交付与里程碑。文档职责与唯一事实来源见 [`design-baseline.md`](design-baseline.md)。
 
 ## MVP 核心闭环
 
