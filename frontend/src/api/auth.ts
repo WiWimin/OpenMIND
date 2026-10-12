@@ -3,9 +3,12 @@ import type { ApiSuccess } from '@/types/api'
 import type { AuthUser, LoginPayload, LoginResult, RegisterPayload } from '@/types/auth'
 import { unwrapData } from '@/utils/apiEnvelope'
 
-export async function register(payload: RegisterPayload): Promise<AuthUser> {
-  const { data } = await http.post<ApiSuccess<AuthUser> | AuthUser>('/auth/register', payload)
-  return unwrapData<AuthUser>(data)
+export async function register(payload: RegisterPayload): Promise<LoginResult> {
+  const { data } = await http.post<ApiSuccess<LoginResult> | LoginResult>(
+    '/auth/register',
+    payload,
+  )
+  return unwrapData<LoginResult>(data)
 }
 
 export async function login(payload: LoginPayload): Promise<LoginResult> {

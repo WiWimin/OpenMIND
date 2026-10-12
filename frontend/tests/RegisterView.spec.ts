@@ -59,11 +59,11 @@ describe('RegisterView', () => {
     expect(authApi.register).not.toHaveBeenCalled()
   })
 
-  it('registers and routes to the login page on success', async () => {
+  it('registers and enters the workspace on success', async () => {
     vi.mocked(authApi.register).mockResolvedValue({
-      user_id: 'u1',
-      name: 'Alice',
-      created_at: '2026-10-01T00:00:00+08:00',
+      access_token: 'token-reg',
+      token_type: 'bearer',
+      user: { user_id: 'u1', name: 'Alice', created_at: '2026-10-01T00:00:00+08:00' },
     })
     const wrapper = mountView()
 
@@ -74,6 +74,6 @@ describe('RegisterView', () => {
     await flushPromises()
 
     expect(authApi.register).toHaveBeenCalledWith({ name: 'Alice', password: 'secret123' })
-    expect(pushMock).toHaveBeenCalledWith({ name: 'login', query: { registered: '1' } })
+    expect(pushMock).toHaveBeenCalledWith({ name: 'workspace' })
   })
 })

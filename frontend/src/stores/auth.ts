@@ -17,16 +17,22 @@ export const useAuthStore = defineStore('auth', () => {
     clearToken()
   }
 
+  function setSession(accessToken: string, currentUser: AuthUser): void {
+    token.value = accessToken
+    user.value = currentUser
+    setToken(accessToken)
+  }
+
   async function login(payload: LoginPayload): Promise<AuthUser> {
     const result = await authApi.login(payload)
-    token.value = result.access_token
-    user.value = result.user
-    setToken(result.access_token)
+    setSession(result.access_token, result.user)
     return result.user
   }
 
   async function register(payload: RegisterPayload): Promise<AuthUser> {
-    return authApi.register(payload)
+    const result = await authApi.register(payload)
+    setSession(result.access_token, result.user)
+    return result.user
   }
 
   async function loadCurrentUser(): Promise<AuthUser | null> {

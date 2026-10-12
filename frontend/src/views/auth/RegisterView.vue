@@ -57,6 +57,7 @@ import { useAuthStore } from '@/stores/auth'
 import { resolveErrorMessage } from '@/utils/errors'
 
 const MIN_PASSWORD_LENGTH = 6
+const MAX_NAME_LENGTH = 100
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -67,7 +68,14 @@ const formError = ref('')
 const isSubmitting = ref(false)
 
 function validate(): boolean {
-  errors.name = form.name.trim() ? '' : '请输入用户名'
+  const name = form.name.trim()
+  if (!name) {
+    errors.name = '请输入用户名'
+  } else if (name.length > MAX_NAME_LENGTH) {
+    errors.name = `用户名不能超过 ${MAX_NAME_LENGTH} 个字符`
+  } else {
+    errors.name = ''
+  }
   if (!form.password) {
     errors.password = '请输入密码'
   } else if (form.password.length < MIN_PASSWORD_LENGTH) {
@@ -93,7 +101,7 @@ async function submit(): Promise<void> {
   isSubmitting.value = true
   try {
     await auth.register({ name: form.name.trim(), password: form.password })
-    await router.push({ name: 'login', query: { registered: '1' } })
+    await router.push({ name: 'workspace' })
   } catch (error) {
     formError.value = resolveErrorMessage(error, '注册失败，请稍后重试。')
   } finally {

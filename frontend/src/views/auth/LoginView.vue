@@ -6,8 +6,6 @@
         <p class="auth__subtitle">使用个人账号进入你的会议工作区</p>
       </header>
 
-      <p v-if="justRegistered" class="auth__notice" role="status">注册成功，请使用新账号登录。</p>
-
       <form class="auth__form" novalidate @submit.prevent="submit">
         <FormField
           id="login-name"
@@ -41,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
@@ -57,8 +55,6 @@ const form = reactive({ name: '', password: '' })
 const errors = reactive({ name: '', password: '' })
 const formError = ref('')
 const isSubmitting = ref(false)
-
-const justRegistered = computed(() => route.query.registered === '1')
 
 function validate(): boolean {
   errors.name = form.name.trim() ? '' : '请输入用户名'
@@ -114,16 +110,6 @@ async function submit(): Promise<void> {
 .auth__subtitle {
   margin: var(--space-1) 0 0;
   color: var(--color-muted-foreground);
-}
-
-.auth__notice {
-  margin: 0 0 var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-primary-strong);
-  font-size: 0.875rem;
 }
 
 .auth__form {

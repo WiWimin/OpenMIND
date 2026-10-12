@@ -82,13 +82,19 @@ describe('auth store', () => {
     expect(auth.user).toEqual(user)
   })
 
-  it('delegates registration to the api and does not log in', async () => {
-    vi.mocked(authApi.register).mockResolvedValue(user)
+  it('registers and starts a session', async () => {
+    vi.mocked(authApi.register).mockResolvedValue({
+      access_token: 'token-reg',
+      token_type: 'bearer',
+      user,
+    })
     const auth = useAuthStore()
 
     const registered = await auth.register({ name: 'Alice', password: 'secret123' })
 
     expect(registered).toEqual(user)
-    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.isAuthenticated).toBe(true)
+    expect(auth.user).toEqual(user)
+    expect(getToken()).toBe('token-reg')
   })
 })
