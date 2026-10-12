@@ -17,6 +17,15 @@ describe('resolveErrorMessage', () => {
     expect(resolveErrorMessage(new Error('boom'))).toBe('boom')
   })
 
+  it('falls back to the error_code mapping when the message is empty', () => {
+    const error: ApiError = {
+      status: 'error',
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: '',
+    }
+    expect(resolveErrorMessage(error)).toBe('资源不存在或无权访问')
+  })
+
   it('returns the provided fallback for unknown values', () => {
     expect(resolveErrorMessage('unexpected', '自定义提示')).toBe('自定义提示')
   })
