@@ -13,3 +13,13 @@ function isApiSuccess<T>(value: unknown): value is ApiSuccess<T> {
 export function unwrapData<T>(payload: ApiSuccess<T> | T): T {
   return isApiSuccess<T>(payload) ? payload.data : (payload as T)
 }
+
+export function unwrapList<T>(
+  payload: ApiSuccess<{ items: T[] }> | { items: T[] } | T[],
+): T[] {
+  if (Array.isArray(payload)) {
+    return payload
+  }
+  const value = isApiSuccess<{ items: T[] }>(payload) ? payload.data : payload
+  return value.items ?? []
+}
