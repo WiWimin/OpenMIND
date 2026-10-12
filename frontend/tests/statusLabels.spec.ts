@@ -4,6 +4,7 @@ import {
   actionItemStatusMeta,
   issueStatusMeta,
   materialStatusMeta,
+  meetingStatusMeta,
   minutesStatusMeta,
   preparationStatusMeta,
   resolveStatusMeta,
@@ -23,6 +24,11 @@ describe('status labels', () => {
 
   it('maps task statuses', () => {
     expect(taskStatusMeta.in_progress).toEqual({ label: '进行中', tone: 'info' })
+  })
+
+  it('maps meeting statuses', () => {
+    expect(meetingStatusMeta.scheduled.tone).toBe('info')
+    expect(meetingStatusMeta.archived.label).toBe('已归档')
   })
 
   it('maps action item and issue statuses', () => {

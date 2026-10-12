@@ -1,6 +1,7 @@
 import type { ActionItemStatus } from '@/types/actionItem'
 import type { IssueStatus } from '@/types/issue'
 import type { MaterialProcessingStatus } from '@/types/material'
+import type { MeetingStatus } from '@/types/meeting'
 import type { MinutesStatus } from '@/types/minutes'
 import type { PreparationStatus } from '@/types/preparation'
 import type { TaskStatus } from '@/types/task'
@@ -9,6 +10,11 @@ import type { StatusTone } from '@/types/ui'
 export interface StatusMeta {
   label: string
   tone: StatusTone
+}
+
+export const meetingStatusMeta: Record<MeetingStatus, StatusMeta> = {
+  scheduled: { label: '已安排', tone: 'info' },
+  archived: { label: '已归档', tone: 'neutral' },
 }
 
 export const materialStatusMeta: Record<MaterialProcessingStatus, StatusMeta> = {
