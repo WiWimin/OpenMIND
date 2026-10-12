@@ -5,6 +5,8 @@ export const ROUTE_NAMES = {
   login: 'login',
   register: 'register',
   workspace: 'workspace',
+  meetings: 'meetings',
+  meetingDetail: 'meeting-detail',
 } as const
 
 export const ROUTE_PATHS = {
@@ -12,4 +14,6 @@ export const ROUTE_PATHS = {
   login: '/login',
   register: '/register',
   workspace: '/workspace',
+  meetings: '/meetings',
+  meetingDetail: '/meetings/:meetingId',
 } as const

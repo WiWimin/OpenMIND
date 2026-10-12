@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDate, formatDateTime } from '@/utils/datetime'
+import { formatDate, formatDateTime, fromDatetimeLocal, toDatetimeLocal } from '@/utils/datetime'
 
 describe('formatDateTime', () => {
   it('formats a valid ISO timestamp to minute precision', () => {
@@ -42,5 +42,19 @@ describe('formatDate', () => {
   it('returns the placeholder for empty and invalid values', () => {
     expect(formatDate(null)).toBe('—')
     expect(formatDate('bad')).toBe('—')
+  })
+})
+
+describe('datetime-local helpers', () => {
+  it('round-trips an ISO timestamp through a local input value', () => {
+    const iso = '2026-10-02T14:00:00+08:00'
+    const local = toDatetimeLocal(iso)
+    expect(local).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+    expect(fromDatetimeLocal(local)).toBe(new Date(iso).toISOString())
+  })
+
+  it('returns empty and undefined for missing values', () => {
+    expect(toDatetimeLocal(null)).toBe('')
+    expect(fromDatetimeLocal('')).toBeUndefined()
   })
 })

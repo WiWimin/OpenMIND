@@ -46,3 +46,22 @@ export function formatDate(
   }
   return formatDateTime(value, { placeholder }).split(' ')[0] ?? placeholder
 }
+
+export function toDatetimeLocal(value: string | null | undefined): string {
+  const date = toDate(value)
+  if (!date) {
+    return ''
+  }
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  )
+}
+
+export function fromDatetimeLocal(value: string | null | undefined): string | undefined {
+  if (!value) {
+    return undefined
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
