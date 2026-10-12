@@ -16,4 +16,12 @@ describe('AppButton', () => {
     })
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
   })
+
+  it('applies the danger variant', () => {
+    const wrapper = mount(AppButton, {
+      props: { variant: 'danger' },
+      slots: { default: '删除' },
+    })
+    expect(wrapper.get('button').classes()).toContain('app-button--danger')
+  })
 })

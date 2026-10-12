@@ -14,7 +14,7 @@
 withDefaults(
   defineProps<{
     type?: 'button' | 'submit' | 'reset'
-    variant?: 'primary' | 'ghost'
+    variant?: 'primary' | 'ghost' | 'danger'
     disabled?: boolean
     loading?: boolean
     block?: boolean
@@ -72,6 +72,17 @@ withDefaults(
 .app-button--ghost:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary-strong);
+}
+
+.app-button--danger {
+  background: var(--color-down);
+  border-color: var(--color-down);
+  color: #ffffff;
+}
+
+.app-button--danger:hover:not(:disabled) {
+  background: #991b1b;
+  border-color: #991b1b;
 }
 
 .app-button:disabled {
