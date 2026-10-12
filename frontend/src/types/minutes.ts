@@ -1,3 +1,4 @@
+// 纪要读取/编辑/确认接口为 [提案]（api.md 5.10–5.13），待团队确认
 export type MinutesStatus = 'draft' | 'confirmed'
 
 export interface Minutes {

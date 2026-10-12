@@ -1,3 +1,4 @@
+// 详情/删除接口为 [提案]（api.md 6.1）；source 字段以提取示例为准（待确认）
 export type ActionItemStatus =
   | 'pending_confirmation'
   | 'confirmed'

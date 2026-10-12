@@ -1,3 +1,4 @@
+// 字段以 api.md 5.1–5.5 示例为准，B 实现后可能微调（待确认）
 export type PreparationStatus = 'generating' | 'draft' | 'confirmed' | 'failed'
 
 export interface Preparation {

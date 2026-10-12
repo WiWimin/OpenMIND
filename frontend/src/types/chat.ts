@@ -1,3 +1,4 @@
+// 字段以 api.md 5.6 / 5.7 示例为准，B 实现后可能微调（待确认）
 export type ChatContextScope = 'current_meeting' | 'current_and_history'
 
 export interface ChatSource {
