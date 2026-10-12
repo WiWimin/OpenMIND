@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as meetingsApi from '@/api/meetings'
+import * as materialsApi from '@/api/materials'
 import type { Meeting } from '@/types/meeting'
 import MeetingDetailView from '@/views/meetings/MeetingDetailView.vue'
 
@@ -20,6 +21,13 @@ vi.mock('@/api/meetings', () => ({
   updateMeeting: vi.fn(),
   deleteMeeting: vi.fn(),
   archiveMeeting: vi.fn(),
+}))
+
+vi.mock('@/api/materials', () => ({
+  listMaterials: vi.fn(),
+  uploadMaterial: vi.fn(),
+  getMaterial: vi.fn(),
+  deleteMaterial: vi.fn(),
 }))
 
 const meeting: Meeting = {
@@ -46,6 +54,10 @@ function headerButton(wrapper: ReturnType<typeof mount>, text: string) {
 describe('MeetingDetailView', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
   })
 
   it('loads and renders the meeting with tab placeholders', async () => {
@@ -56,6 +68,14 @@ describe('MeetingDetailView', () => {
     expect(wrapper.text()).toContain('项目周会')
     expect(wrapper.text()).toContain('进度与风险')
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+  })
+
+  it('renders the material section on the materials tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.material-uploader').exists()).toBe(true)
   })
 
   it('disables editing and archiving for an archived meeting', async () => {
