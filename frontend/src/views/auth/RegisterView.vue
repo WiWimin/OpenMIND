@@ -41,7 +41,7 @@
 
       <p class="auth__footer">
         已有账号？
-        <RouterLink class="auth__link" :to="{ name: 'login' }">返回登录</RouterLink>
+        <RouterLink class="auth__link" :to="{ name: ROUTE_NAMES.login }">返回登录</RouterLink>
       </p>
     </section>
   </main>
@@ -53,6 +53,7 @@ import { useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import FormField from '@/components/FormField.vue'
+import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 import { resolveErrorMessage } from '@/utils/errors'
 
@@ -101,7 +102,7 @@ async function submit(): Promise<void> {
   isSubmitting.value = true
   try {
     await auth.register({ name: form.name.trim(), password: form.password })
-    await router.push({ name: 'workspace' })
+    await router.push({ name: ROUTE_NAMES.workspace })
   } catch (error) {
     formError.value = resolveErrorMessage(error, '注册失败，请稍后重试。')
   } finally {

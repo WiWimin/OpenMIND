@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw, type Router } from 'vue-router'
 
+import { ROUTE_NAMES, ROUTE_PATHS } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
@@ -11,37 +12,37 @@ declare module 'vue-router' {
 
 const routes: RouteRecordRaw[] = [
   {
-    path: '/',
-    name: 'home',
+    path: ROUTE_PATHS.home,
+    name: ROUTE_NAMES.home,
     component: () => import('@/views/HomeView.vue'),
   },
   {
-    path: '/login',
-    name: 'login',
+    path: ROUTE_PATHS.login,
+    name: ROUTE_NAMES.login,
     component: () => import('@/views/auth/LoginView.vue'),
     meta: { guestOnly: true },
   },
   {
-    path: '/register',
-    name: 'register',
+    path: ROUTE_PATHS.register,
+    name: ROUTE_NAMES.register,
     component: () => import('@/views/auth/RegisterView.vue'),
     meta: { guestOnly: true },
   },
   {
-    path: '/workspace',
+    path: ROUTE_PATHS.workspace,
     component: () => import('@/layouts/WorkspaceLayout.vue'),
     meta: { requiresAuth: true },
     children: [
       {
         path: '',
-        name: 'workspace',
+        name: ROUTE_NAMES.workspace,
         component: () => import('@/views/workspace/WorkspaceHomeView.vue'),
       },
     ],
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: { name: 'home' },
+    redirect: { name: ROUTE_NAMES.home },
   },
 ]
 
@@ -55,11 +56,11 @@ export function createAppRouter(): Router {
     const auth = useAuthStore()
 
     if (to.meta.requiresAuth && !auth.isAuthenticated) {
-      return { name: 'login', query: { redirect: to.fullPath } }
+      return { name: ROUTE_NAMES.login, query: { redirect: to.fullPath } }
     }
 
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      return { name: 'workspace' }
+      return { name: ROUTE_NAMES.workspace }
     }
 
     if (auth.isAuthenticated && !auth.user) {
@@ -67,7 +68,7 @@ export function createAppRouter(): Router {
         await auth.loadCurrentUser()
       } catch {
         await auth.logout()
-        return { name: 'login', query: { redirect: to.fullPath } }
+        return { name: ROUTE_NAMES.login, query: { redirect: to.fullPath } }
       }
     }
 

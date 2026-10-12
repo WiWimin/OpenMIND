@@ -13,7 +13,7 @@
     </div>
 
     <p class="workspace-home__links">
-      <RouterLink class="workspace-home__link" :to="{ name: 'home' }">查看系统状态</RouterLink>
+      <RouterLink class="workspace-home__link" :to="{ name: ROUTE_NAMES.home }">查看系统状态</RouterLink>
     </p>
   </section>
 </template>
@@ -21,6 +21,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
