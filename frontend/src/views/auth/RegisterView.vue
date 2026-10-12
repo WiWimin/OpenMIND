@@ -102,7 +102,7 @@ async function submit(): Promise<void> {
   isSubmitting.value = true
   try {
     await auth.register({ name: form.name.trim(), password: form.password })
-    await router.push({ name: ROUTE_NAMES.workspace })
+    await router.push({ name: ROUTE_NAMES.meetings })
   } catch (error) {
     formError.value = resolveErrorMessage(error, '注册失败，请稍后重试。')
   } finally {

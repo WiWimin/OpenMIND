@@ -12,9 +12,11 @@ describe('route constants', () => {
     expect(ROUTE_PATHS.register).toBe('/register')
   })
 
-  it('exposes the current authenticated landing route', () => {
-    // 决策 2 切换为 /meetings 时，此处与路由表将同步调整
-    expect(ROUTE_NAMES.workspace).toBe('workspace')
-    expect(ROUTE_PATHS.workspace).toBe('/workspace')
+  it('exposes the authenticated landing and meeting routes', () => {
+    // 决策 2：认证后落点由 /workspace 改为 /meetings
+    expect(ROUTE_NAMES.meetings).toBe('meetings')
+    expect(ROUTE_PATHS.meetings).toBe('/meetings')
+    expect(ROUTE_NAMES.meetingDetail).toBe('meeting-detail')
+    expect(ROUTE_PATHS.meetingDetail).toBe('/meetings/:meetingId')
   })
 })

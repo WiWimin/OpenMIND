@@ -29,14 +29,19 @@ const routes: RouteRecordRaw[] = [
     meta: { guestOnly: true },
   },
   {
-    path: ROUTE_PATHS.workspace,
+    path: ROUTE_PATHS.meetings,
     component: () => import('@/layouts/WorkspaceLayout.vue'),
     meta: { requiresAuth: true },
     children: [
       {
         path: '',
-        name: ROUTE_NAMES.workspace,
-        component: () => import('@/views/workspace/WorkspaceHomeView.vue'),
+        name: ROUTE_NAMES.meetings,
+        component: () => import('@/views/meetings/MeetingListView.vue'),
+      },
+      {
+        path: ':meetingId',
+        name: ROUTE_NAMES.meetingDetail,
+        component: () => import('@/views/meetings/MeetingDetailView.vue'),
       },
     ],
   },
@@ -60,7 +65,7 @@ export function createAppRouter(): Router {
     }
 
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      return { name: ROUTE_NAMES.workspace }
+      return { name: ROUTE_NAMES.meetings }
     }
 
     if (auth.isAuthenticated && !auth.user) {

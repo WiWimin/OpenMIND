@@ -72,7 +72,7 @@ async function submit(): Promise<void> {
   try {
     await auth.login({ name: form.name.trim(), password: form.password })
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    await router.push(redirect || { name: ROUTE_NAMES.workspace })
+    await router.push(redirect || { name: ROUTE_NAMES.meetings })
   } catch (error) {
     formError.value = resolveErrorMessage(error, '登录失败，请检查用户名和密码。')
   } finally {

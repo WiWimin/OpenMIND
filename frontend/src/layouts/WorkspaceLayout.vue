@@ -2,7 +2,7 @@
   <div class="workspace">
     <header class="workspace__header">
       <div class="workspace__brand">
-        <RouterLink class="workspace__logo" :to="{ name: ROUTE_NAMES.workspace }">OpenMIND</RouterLink>
+        <RouterLink class="workspace__logo" :to="{ name: ROUTE_NAMES.meetings }">OpenMIND</RouterLink>
         <span class="workspace__tagline">AI 会议个人助理</span>
       </div>
 
