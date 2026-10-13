@@ -195,14 +195,16 @@ docker compose -f docker/compose.dev.yml logs --tail 100 backend
 
 ## 12. Git 分支规范
 
+> 三流分工、分支命名、合并/同步/发布流程的**唯一事实来源**见 [`docs/collaboration-rules.md`](docs/collaboration-rules.md)；本节仅作摘要。
+
 | 分支 | 用途 | 来源 | 合并去向 |
 | --- | --- | --- | --- |
 | `main` | 稳定、可演示版本 | 仅接受来自 `develop` 的合并 | —— |
-| `develop` | 日常开发集成分支 | 接受所有 `feature/*`、`fix/*` 的 PR | `main`（集成测试通过后） |
-| `feature/*` | 具体功能开发 | 从 `develop` 切出 | `develop` |
+| `develop` | 日常开发集成分支 | 接受所有工作分支的 PR | `main`（阶段验收通过后） |
+| `feature/<stream>-*` | 功能开发，按流加前缀（`backend`/`frontend`/`agent`） | 从 `develop` 切出 | `develop` |
 | `fix/*` | Bug 修复 | 从 `develop` 切出 | `develop` |
 
-命名示例：`feature/m00-project-scaffold`、`feature/m02-record-capture`、`fix/m02-meeting-list`。
+命名示例：`feature/backend-m01-m02`、`feature/frontend-m02-meeting`、`feature/agent-m04-rag`、`fix/m02-meeting-list`。
 
 提交信息采用 Conventional Commits：`<type>(<scope>): <subject>`，`type` 取 `feat` / `fix` / `docs` / `style` / `refactor` / `test` / `chore`，`scope` 建议使用模块号（如 `m00`、`m02`）。详见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
@@ -211,33 +213,34 @@ docker compose -f docker/compose.dev.yml logs --tail 100 backend
 ```text
 开发者
   ↓
-创建 feature 分支
+从最新 develop 切出 feature/<stream>-* 或 fix/*
   ↓
-开发
+开发（定期 merge develop 同步）
   ↓
 本地测试
   ↓
 提交
   ↓
-Pull Request
+Pull Request（base = develop）
   ↓
 develop
   ↓
 集成测试
   ↓
-main
+main（阶段验收通过后）
 ```
 
-1. 从 `develop` 切出 `feature/*` 或 `fix/*` 分支。
-2. 开发并在**本地测试**通过：
+1. 从**最新** `develop` 切出 `feature/<stream>-*`（`backend`/`frontend`/`agent`）或 `fix/*` 分支。
+2. 开发；**定期同步**：至少每 1–2 天 `git merge origin/develop`，避免长期漂移。
+3. 在**本地测试**通过：
    - 后端：`cd backend && ruff check . && pytest`
    - 前端：`cd frontend && npm run typecheck && npm run lint && npm run test`
    - 或一键：`scripts/test.ps1`（Windows）/ `scripts/test.sh`
-3. `git commit` 提交（Conventional Commits）。
-4. 发起 **Pull Request** 合并到 `develop`，按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
-5. 至少一名成员 Code Review 通过、CI 全绿后合并到 `develop`。
-6. 在 `develop` 进行**集成测试**，验证通过后合并到 `main`，作为可演示版本。
-7. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
+4. `git commit` 提交（Conventional Commits）。
+5. 发起 **Pull Request**，**base 必须是 `develop`**（不得合入其他特性分支），按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
+6. 至少一名成员 Code Review 通过、CI 全绿后，用 merge commit 合并到 `develop`；合并后删除工作分支。
+7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本（`main` 目前停留在 M00，需补做一次）。
+8. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
 
 > CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）仅做检查，不包含任何自动部署流程。
 
