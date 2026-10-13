@@ -66,3 +66,16 @@ def count_by_meeting(db: Session, meeting_id: str) -> int:
 def delete(db: Session, material: MeetingMaterial) -> None:
     db.delete(material)
     db.commit()
+
+
+def list_content_rows(
+    db: Session, user_id: str, *, meeting_id: str | None = None
+) -> list[MeetingMaterial]:
+    statement = select(MeetingMaterial).where(
+        MeetingMaterial.user_id == user_id,
+        MeetingMaterial.content.is_not(None),
+    )
+    if meeting_id is not None:
+        statement = statement.where(MeetingMaterial.meeting_id == meeting_id)
+    statement = statement.order_by(MeetingMaterial.created_at.asc())
+    return list(db.execute(statement).scalars().all())
