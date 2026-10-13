@@ -36,3 +36,8 @@ class MeetingDeleteResult(BaseModel):
 class MaterialDeleteResult(BaseModel):
     deleted: bool = True
     material_id: str
+
+
+class RecordDeleteResult(BaseModel):
+    deleted: bool = True
+    record_id: str
