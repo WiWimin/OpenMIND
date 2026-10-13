@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -91,3 +92,12 @@ def list_content_rows(
         statement = statement.where(MeetingMaterial.meeting_id == meeting_id)
     statement = statement.order_by(MeetingMaterial.created_at.asc())
     return list(db.execute(statement).scalars().all())
+
+
+def list_all_by_meeting(db: Session, meeting_id: str) -> list[MeetingMaterial]:
+    statement = select(MeetingMaterial).where(MeetingMaterial.meeting_id == meeting_id)
+    return list(db.execute(statement).scalars().all())
+
+
+def delete_by_meeting(db: Session, meeting_id: str) -> None:
+    db.execute(sa_delete(MeetingMaterial).where(MeetingMaterial.meeting_id == meeting_id))

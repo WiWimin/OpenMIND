@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -77,3 +78,16 @@ def update(db: Session, item: ActionItem) -> ActionItem:
 def delete(db: Session, item: ActionItem) -> None:
     db.delete(item)
     db.commit()
+
+
+def has_converted_by_meeting(db: Session, meeting_id: str) -> bool:
+    statement = (
+        select(func.count())
+        .select_from(ActionItem)
+        .where(ActionItem.meeting_id == meeting_id, ActionItem.status == "converted")
+    )
+    return int(db.execute(statement).scalar_one()) > 0
+
+
+def delete_by_meeting(db: Session, meeting_id: str) -> None:
+    db.execute(sa_delete(ActionItem).where(ActionItem.meeting_id == meeting_id))

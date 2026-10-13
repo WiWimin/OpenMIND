@@ -49,6 +49,15 @@ def get_by_action(db: Session, action_id: str) -> PersonalTask | None:
     ).scalar_one_or_none()
 
 
+def exists_by_meeting(db: Session, meeting_id: str) -> bool:
+    statement = (
+        select(func.count())
+        .select_from(PersonalTask)
+        .where(PersonalTask.meeting_id == meeting_id)
+    )
+    return int(db.execute(statement).scalar_one()) > 0
+
+
 def list_by_user(
     db: Session, user_id: str, *, status: str | None, limit: int, offset: int
 ) -> list[PersonalTask]:
