@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, DbSession
-from app.schemas.common import Envelope, ListData, MeetingDeleteResult, Pagination
+from app.schemas.common import Envelope, ListData, MeetingDeleteResult
 from app.schemas.meeting import (
     MeetingCreate,
     MeetingRead,
@@ -13,13 +13,9 @@ from app.schemas.meeting import (
     MeetingUpdate,
 )
 from app.services import meeting_service
+from app.utils.pagination import build_pagination
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
-
-
-def _pagination(page: int, page_size: int, total: int) -> Pagination:
-    total_pages = (total + page_size - 1) // page_size if total else 0
-    return Pagination(page=page, page_size=page_size, total=total, total_pages=total_pages)
 
 
 @router.get("", response_model=Envelope[ListData[MeetingRead]])
@@ -39,7 +35,7 @@ def list_meetings(
     )
     data = ListData[MeetingRead](
         items=[MeetingRead.model_validate(item) for item in items],
-        pagination=_pagination(page, page_size, total),
+        pagination=build_pagination(page, page_size, total),
     )
     return Envelope(data=data)
 
