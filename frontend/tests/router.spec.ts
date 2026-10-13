@@ -29,10 +29,10 @@ describe('router guard', () => {
 
   it('redirects unauthenticated users from a protected route to login', async () => {
     const router = createAppRouter()
-    await router.push('/workspace')
+    await router.push('/meetings')
 
     expect(router.currentRoute.value.name).toBe('login')
-    expect(router.currentRoute.value.query.redirect).toBe('/workspace')
+    expect(router.currentRoute.value.query.redirect).toBe('/meetings')
   })
 
   it('redirects authenticated users away from guest-only routes', async () => {
@@ -42,7 +42,7 @@ describe('router guard', () => {
 
     await router.push('/login')
 
-    expect(router.currentRoute.value.name).toBe('workspace')
+    expect(router.currentRoute.value.name).toBe('meetings')
   })
 
   it('loads the current user before entering a protected route', async () => {
@@ -50,9 +50,9 @@ describe('router guard', () => {
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
     const router = createAppRouter()
 
-    await router.push('/workspace')
+    await router.push('/meetings')
 
-    expect(router.currentRoute.value.name).toBe('workspace')
+    expect(router.currentRoute.value.name).toBe('meetings')
     expect(authApi.fetchCurrentUser).toHaveBeenCalledTimes(1)
   })
 
@@ -62,7 +62,7 @@ describe('router guard', () => {
     vi.mocked(authApi.logout).mockResolvedValue(undefined)
     const router = createAppRouter()
 
-    await router.push('/workspace')
+    await router.push('/meetings')
 
     expect(router.currentRoute.value.name).toBe('login')
     expect(getToken()).toBeNull()

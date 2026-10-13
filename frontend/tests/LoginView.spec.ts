@@ -59,7 +59,7 @@ describe('LoginView', () => {
     await flushPromises()
 
     expect(authApi.login).toHaveBeenCalledWith({ name: 'Alice', password: 'secret123' })
-    expect(pushMock).toHaveBeenCalledWith({ name: 'workspace' })
+    expect(pushMock).toHaveBeenCalledWith({ name: 'meetings' })
   })
 
   it('surfaces a normalized error message when login fails', async () => {
