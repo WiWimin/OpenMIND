@@ -18,7 +18,8 @@
 | `module-task-plan.md` | 阶段交付与里程碑 | 字段/接口细节 |
 | `testing.md` | 测试分层、命令、覆盖口径 | 接口字段 |
 | `development.md` | 环境要求、启动、常用命令、故障排查 | 接口字段 |
-| `CONTRIBUTING.md` | 分支、提交、PR 规范 | 设计细节 |
+| `collaboration-rules.md` | **三流分工、分支模型、合并/同步/发布流程** | 接口字段、表结构 |
+| `CONTRIBUTING.md` | 提交信息、PR 模板与流程摘要（分支流程引用 `collaboration-rules.md`） | 设计细节 |
 
 **权威关系**：
 
@@ -76,3 +77,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 日期 | 变更 | 说明 |
 | --- | --- | --- |
 | 2026-10 | 建立设计基线 | 汇总已定决策 D-01…D-18，明确文档职责与引用关系 |
+| 2026-10 | 建立协作与分支规则 | 新增 `collaboration-rules.md`：三流分工、先合 `develop`、定期同步、`develop → main` 推进 |

@@ -1,23 +1,27 @@
 # 贡献指南
 
+> 三流分工、分支命名、合并/同步/发布流程的**唯一事实来源**是 [`docs/collaboration-rules.md`](docs/collaboration-rules.md)；本节仅作摘要，冲突时以该文件为准。
+
 ## 分支策略
 
 - `main`：稳定、可演示分支，只接受来自 `develop` 的合并。
-- `develop`：日常开发集成分支，功能分支合并到这里。
-- `feature/*`：具体功能开发。
+- `develop`：日常开发集成分支，工作分支合并到这里。
+- `feature/<stream>-*`：功能开发，按流加前缀（`backend` / `frontend` / `agent`）。
 - `fix/*`：Bug 修复。
 
-命名示例：`feature/m00-project-scaffold`、`feature/m02-record-capture`、`fix/m02-meeting-list`。
+命名示例：`feature/backend-m01-m02`、`feature/frontend-m02-meeting`、`feature/agent-m04-rag`、`fix/m02-meeting-list`。
 
 ### 协作流程
 
 ```text
-feature/* · fix/*
-        ↓  Pull Request
-      develop
-        ↓  测试
-       main
+feature/<stream>-* · fix/*
+        ↓  合并到 develop（先合 develop，禁止合到其他特性分支）
+      develop ── 集成测试 ──► main（阶段验收通过后）
 ```
+
+- **先合 `develop`**：PR 的 base 必须是 `develop`，不得把 PR 合并到另一个特性分支（历史上“堆叠 PR”曾导致前端工作长期未并入 `develop`）。
+- **定期同步**：工作分支至少每 1–2 天 `git merge origin/develop`，防止长期漂移。
+- **推进 `main`**：`develop` 集成测试通过后，以 `develop` 为 head 发起阶段发布合并到 `main`（`main` 目前停留在 M00 初始化提交，需补做一次）。
 
 ## 提交信息
 
