@@ -7,7 +7,7 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」Web 应用，
 服务对象是单个参会人，而非团队协作平台；第一版不做多人实时协作、会议主持、共享空间与组织权限体系。
 
 > **当前进度（务必留意）**：仅完成 **第一阶段基础工程（M00）**——前后端骨架、数据库与迁移、Docker Compose、CI 与协作规范。
-> **会议业务、用户认证、AI / RAG / 大模型调用均尚未开发**（见第 14、15 节）。仓库尚未进行首次 Git 提交。
+> **会议业务、用户认证、AI / RAG / 大模型调用均尚未开发**（见第 14、15 节）。
 
 ## 2. 项目目标
 
@@ -195,14 +195,16 @@ docker compose -f docker/compose.dev.yml logs --tail 100 backend
 
 ## 12. Git 分支规范
 
+> 三流分工、分支命名、合并/同步/发布流程的**唯一事实来源**见 [`docs/collaboration-rules.md`](docs/collaboration-rules.md)；本节仅作摘要。
+
 | 分支 | 用途 | 来源 | 合并去向 |
 | --- | --- | --- | --- |
 | `main` | 稳定、可演示版本 | 仅接受来自 `develop` 的合并 | —— |
-| `develop` | 日常开发集成分支 | 接受所有 `feature/*`、`fix/*` 的 PR | `main`（集成测试通过后） |
-| `feature/*` | 具体功能开发 | 从 `develop` 切出 | `develop` |
+| `develop` | 日常开发集成分支 | 接受所有工作分支的 PR | `main`（阶段验收通过后） |
+| `feature/<stream>-*` | 功能开发，按流加前缀（`backend`/`frontend`/`agent`） | 从 `develop` 切出 | `develop` |
 | `fix/*` | Bug 修复 | 从 `develop` 切出 | `develop` |
 
-命名示例：`feature/m00-project-scaffold`、`feature/m02-record-capture`、`fix/m02-meeting-list`。
+命名示例：`feature/backend-m01-m02`、`feature/frontend-m02-meeting`、`feature/agent-m04-rag`、`fix/m02-meeting-list`。
 
 提交信息采用 Conventional Commits：`<type>(<scope>): <subject>`，`type` 取 `feat` / `fix` / `docs` / `style` / `refactor` / `test` / `chore`，`scope` 建议使用模块号（如 `m00`、`m02`）。详见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
@@ -211,33 +213,34 @@ docker compose -f docker/compose.dev.yml logs --tail 100 backend
 ```text
 开发者
   ↓
-创建 feature 分支
+从最新 develop 切出 feature/<stream>-* 或 fix/*
   ↓
-开发
+开发（定期 merge develop 同步）
   ↓
 本地测试
   ↓
 提交
   ↓
-Pull Request
+Pull Request（base = develop）
   ↓
 develop
   ↓
 集成测试
   ↓
-main
+main（阶段验收通过后）
 ```
 
-1. 从 `develop` 切出 `feature/*` 或 `fix/*` 分支。
-2. 开发并在**本地测试**通过：
+1. 从**最新** `develop` 切出 `feature/<stream>-*`（`backend`/`frontend`/`agent`）或 `fix/*` 分支。
+2. 开发；**定期同步**：至少每 1–2 天 `git merge origin/develop`，避免长期漂移。
+3. 在**本地测试**通过：
    - 后端：`cd backend && ruff check . && pytest`
    - 前端：`cd frontend && npm run typecheck && npm run lint && npm run test`
    - 或一键：`scripts/test.ps1`（Windows）/ `scripts/test.sh`
-3. `git commit` 提交（Conventional Commits）。
-4. 发起 **Pull Request** 合并到 `develop`，按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
-5. 至少一名成员 Code Review 通过、CI 全绿后合并到 `develop`。
-6. 在 `develop` 进行**集成测试**，验证通过后合并到 `main`，作为可演示版本。
-7. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
+4. `git commit` 提交（Conventional Commits）。
+5. 发起 **Pull Request**，**base 必须是 `develop`**（不得合入其他特性分支），按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
+6. 至少一名成员 Code Review 通过、CI 全绿后，用 merge commit 合并到 `develop`；合并后删除工作分支。
+7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本（`main` 目前停留在 M00，需补做一次）。
+8. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
 
 > CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）仅做检查，不包含任何自动部署流程。
 
@@ -253,7 +256,7 @@ main
 
 **后端基础工程**
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
-- 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message }`。
+- 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
 - pytest 5 个用例、`ruff check` 均通过。
 
@@ -269,8 +272,7 @@ main
 - 用户认证与个人工作区（M01）：注册、登录、退出、当前用户。
 - 会议管理（M02）：会议列表、创建、详情、编辑、删除、归档。
 - 会议资料与解析、AI 基础服务与 RAG、会前准备、会中记录与问答、纪要与行动项、个人任务、未解决问题（M03–M09）。
-- 大模型 / Embedding 的实际调用（M00-08 仍在后续阶段）。
-- 仓库尚未完成首次 Git 提交。
+- 大模型 / Embedding 的实际调用（M00-08：连通性验证见未合并 PR #3，合并后回填状态）。
 
 ## 15. 后续开发规划
 
@@ -312,13 +314,16 @@ main
 
 ## 文档
 
+- [设计基线（权威索引与决策日志）](docs/design-baseline.md)
 - [需求说明](docs/requirements.md)
 - [系统架构](docs/architecture.md)
 - [接口契约](docs/api.md)
 - [数据库设计](docs/database.md)
+- [AI 能力层设计](docs/ai-design.md)
+- [模块开发规范（详细任务）](docs/module-development-spec.md)
+- [模块开发任务规划](docs/module-task-plan.md)
 - [开发指南](docs/development.md)
 - [测试策略](docs/testing.md)
-- [模块开发任务规划](docs/module-task-plan.md)
 - [贡献指南](CONTRIBUTING.md)
 
 ## 开发原则

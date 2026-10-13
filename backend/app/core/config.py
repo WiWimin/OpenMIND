@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_v1_prefix: str = "/api/v1"
     secret_key: str = "change-me"
+    jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
 
     postgres_host: str = "localhost"
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     embedding_api_base: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""
-    embedding_dim: int = 1536
+    embedding_dim: int = 1024
 
     @property
     def cors_origin_list(self) -> list[str]:
