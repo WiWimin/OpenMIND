@@ -31,3 +31,8 @@ class ListData(BaseModel, Generic[T]):
 class MeetingDeleteResult(BaseModel):
     deleted: bool = True
     meeting_id: str
+
+
+class MaterialDeleteResult(BaseModel):
+    deleted: bool = True
+    material_id: str
