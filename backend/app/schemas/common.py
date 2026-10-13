@@ -26,3 +26,8 @@ class ListData(BaseModel, Generic[T]):
 
     items: list[T]
     pagination: Pagination
+
+
+class MeetingDeleteResult(BaseModel):
+    deleted: bool = True
+    meeting_id: str
