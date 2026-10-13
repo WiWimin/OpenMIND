@@ -32,7 +32,7 @@
 
       <p class="auth__footer">
         还没有账号？
-        <RouterLink class="auth__link" :to="{ name: 'register' }">立即注册</RouterLink>
+        <RouterLink class="auth__link" :to="{ name: ROUTE_NAMES.register }">立即注册</RouterLink>
       </p>
     </section>
   </main>
@@ -44,6 +44,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import FormField from '@/components/FormField.vue'
+import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 import { resolveErrorMessage } from '@/utils/errors'
 
@@ -71,7 +72,7 @@ async function submit(): Promise<void> {
   try {
     await auth.login({ name: form.name.trim(), password: form.password })
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    await router.push(redirect || { name: 'workspace' })
+    await router.push(redirect || { name: ROUTE_NAMES.meetings })
   } catch (error) {
     formError.value = resolveErrorMessage(error, '登录失败，请检查用户名和密码。')
   } finally {
