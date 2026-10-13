@@ -1,3 +1,5 @@
+import type { Pagination } from '@/types/pagination'
+
 export interface ApiSuccess<T> {
   status: 'success'
   data: T
@@ -9,3 +11,10 @@ export interface ApiError {
   message: string
   retryable?: boolean
 }
+
+export interface ListData<T> {
+  items: T[]
+  pagination: Pagination
+}
+
+export type DeletedResult<K extends string> = { deleted: true } & { [P in K]: string }
