@@ -232,7 +232,7 @@
 | M00-05 | PostgreSQL + pgvector + Docker Compose | 已完成 |
 | M00-06 | SQLAlchemy / Alembic / Pydantic | 已完成 |
 | M00-07 | 环境变量与 `.env.example` | 已完成 |
-| M00-08 | 验证模型 API 与 Embedding API 连通性 | **未完成**（B，后续阶段，转入 M04-06） |
+| M00-08 | 验证模型 API 与 Embedding API 连通性 | **已完成**（2026-10-05 实测双通：deepseek-flash + text-embedding-v3/1024；自检脚本随 M04-06 交付） |
 | M00-09 | 开发启动文档 | 已完成 |
 
 > 交付物：`backend/` 可启动并返回健康状态、`frontend/` 可构建、数据库迁移 `0002_enable_pgvector` 生效、CI 绿（`Backend ruff+pytest`、`Frontend typecheck+lint+test+build`）。
