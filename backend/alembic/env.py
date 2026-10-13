@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app import models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.core.config import settings
 from app.db.base import Base
 

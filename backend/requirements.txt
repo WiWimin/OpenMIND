@@ -10,6 +10,8 @@ pydantic-settings>=2.4
 # Auth (JWT + password hashing)
 PyJWT>=2.9
 passlib[bcrypt]>=1.7.4
+# Pinned: passlib 1.7.4 与 bcrypt>=4.1 存在版本读取兼容问题（bcrypt 移除 __about__）
+bcrypt>=4.0,<4.1
 
 # Database
 sqlalchemy>=2.0
