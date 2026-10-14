@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as meetingsApi from '@/api/meetings'
 import * as materialsApi from '@/api/materials'
+import * as preparationsApi from '@/api/preparations'
 import type { Meeting } from '@/types/meeting'
 import MeetingDetailView from '@/views/meetings/MeetingDetailView.vue'
 
@@ -28,6 +29,13 @@ vi.mock('@/api/materials', () => ({
   uploadMaterial: vi.fn(),
   getMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
+}))
+
+vi.mock('@/api/preparations', () => ({
+  generatePreparation: vi.fn(),
+  listPreparations: vi.fn(),
+  getPreparation: vi.fn(),
+  updatePreparation: vi.fn(),
 }))
 
 const meeting: Meeting = {
@@ -58,6 +66,10 @@ describe('MeetingDetailView', () => {
       items: [],
       pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
     })
+    vi.mocked(preparationsApi.listPreparations).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
   })
 
   it('loads and renders the meeting with tab placeholders', async () => {
@@ -76,6 +88,20 @@ describe('MeetingDetailView', () => {
     await flushPromises()
 
     expect(wrapper.find('.material-uploader').exists()).toBe(true)
+  })
+
+  it('renders the preparation section on the preparation tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const preparationTab = wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text() === '会前准备')
+    await preparationTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.preparation-section').exists()).toBe(true)
   })
 
   it('disables editing and archiving for an archived meeting', async () => {
