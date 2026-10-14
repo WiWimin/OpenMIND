@@ -30,6 +30,17 @@ def db_engine() -> Iterator[Engine]:
 
 
 @pytest.fixture()
+def db_session(db_engine: Engine) -> Iterator[Session]:
+    """与 `client` 共享同一内存库的直连会话，用于测试内直接造数。"""
+    testing_session = sessionmaker(bind=db_engine, autoflush=False, autocommit=False)
+    session = testing_session()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture()
 def client(db_engine: Engine) -> Iterator[TestClient]:
     testing_session = sessionmaker(bind=db_engine, autoflush=False, autocommit=False)
 

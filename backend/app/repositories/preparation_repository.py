@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.meeting import Meeting
@@ -67,3 +67,7 @@ def update(db: Session, preparation: Preparation) -> Preparation:
     db.commit()
     db.refresh(preparation)
     return preparation
+
+
+def delete_by_meeting(db: Session, meeting_id: str) -> None:
+    db.execute(delete(Preparation).where(Preparation.meeting_id == meeting_id))
