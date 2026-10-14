@@ -70,9 +70,33 @@ describe('router guard', () => {
     expect(auth.isAuthenticated).toBe(false)
   })
 
-  it('redirects unknown routes to the home page', async () => {
+  it('sends unauthenticated visitors from the root path to login', async () => {
+    const router = createAppRouter()
+    await router.push('/')
+
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('sends authenticated visitors from the root path to meetings', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/')
+
+    expect(router.currentRoute.value.name).toBe('meetings')
+  })
+
+  it('redirects unknown routes to the landing path', async () => {
     const router = createAppRouter()
     await router.push('/does-not-exist')
+
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('keeps the health page reachable at /home', async () => {
+    const router = createAppRouter()
+    await router.push('/home')
 
     expect(router.currentRoute.value.name).toBe('home')
   })
