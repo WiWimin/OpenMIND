@@ -2,11 +2,23 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.meeting import Meeting
 from app.models.user import utc_now
-from app.repositories import meeting_repository
+from app.repositories import (
+    action_item_repository,
+    chunk_repository,
+    issue_repository,
+    material_repository,
+    meeting_repository,
+    minutes_repository,
+    preparation_repository,
+    record_repository,
+    task_repository,
+)
 from app.schemas.meeting import MeetingCreate, MeetingUpdate
+from app.utils import storage
 from app.utils.ids import new_id
 
 _ARCHIVED = "archived"
@@ -73,6 +85,30 @@ def archive_meeting(db: Session, meeting_id: str, user_id: str) -> Meeting:
     return meeting
 
 
+def _ensure_deletable(db: Session, meeting_id: str) -> None:
+    if action_item_repository.has_converted_by_meeting(
+        db, meeting_id
+    ) or task_repository.exists_by_meeting(db, meeting_id):
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "会议存在已转换的行动项或个人任务，无法删除",
+            http_status=409,
+        )
+
+
 def delete_meeting(db: Session, meeting_id: str, user_id: str) -> None:
     meeting = get_owned_meeting(db, meeting_id, user_id)
+    _ensure_deletable(db, meeting_id)
+
+    settings = get_settings()
+    for material in material_repository.list_all_by_meeting(db, meeting_id):
+        storage.delete_object(settings.storage_dir, material.storage_key)
+
+    action_item_repository.delete_by_meeting(db, meeting_id)
+    minutes_repository.delete_by_meeting(db, meeting_id)
+    preparation_repository.delete_by_meeting(db, meeting_id)
+    record_repository.delete_by_meeting(db, meeting_id)
+    issue_repository.delete_by_meeting(db, meeting_id)
+    chunk_repository.delete_by_meeting(db, meeting_id)
+    material_repository.delete_by_meeting(db, meeting_id)
     meeting_repository.delete(db, meeting)

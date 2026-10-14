@@ -41,3 +41,8 @@ class MaterialDeleteResult(BaseModel):
 class RecordDeleteResult(BaseModel):
     deleted: bool = True
     record_id: str
+
+
+class ActionItemDeleteResult(BaseModel):
+    deleted: bool = True
+    action_id: str

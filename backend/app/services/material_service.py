@@ -8,7 +8,7 @@ from app.ai.parsers import SUPPORTED_EXTENSIONS
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.material import MeetingMaterial
-from app.repositories import material_repository
+from app.repositories import chunk_repository, material_repository
 from app.services import meeting_service
 from app.utils import storage
 from app.utils.ids import new_id
@@ -96,4 +96,5 @@ def get_owned_material(db: Session, material_id: str, user_id: str) -> MeetingMa
 def delete_material(db: Session, material_id: str, user_id: str) -> None:
     material = get_owned_material(db, material_id, user_id)
     storage.delete_object(get_settings().storage_dir, material.storage_key)
+    chunk_repository.delete_by_material(db, material_id)
     material_repository.delete(db, material)
