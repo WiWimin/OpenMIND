@@ -8,6 +8,7 @@ from app.models.meeting import Meeting
 from app.models.user import utc_now
 from app.repositories import (
     action_item_repository,
+    chunk_repository,
     issue_repository,
     material_repository,
     meeting_repository,
@@ -108,5 +109,6 @@ def delete_meeting(db: Session, meeting_id: str, user_id: str) -> None:
     preparation_repository.delete_by_meeting(db, meeting_id)
     record_repository.delete_by_meeting(db, meeting_id)
     issue_repository.delete_by_meeting(db, meeting_id)
+    chunk_repository.delete_by_meeting(db, meeting_id)
     material_repository.delete_by_meeting(db, meeting_id)
     meeting_repository.delete(db, meeting)

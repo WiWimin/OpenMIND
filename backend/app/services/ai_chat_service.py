@@ -5,14 +5,14 @@ from sqlalchemy.orm import Session
 from app.ai.chat import ChatAnswer, ChatService
 from app.ai.llm import LLMClient
 from app.ai.prompts import build_organize
+from app.ai.rag import VectorRetriever
 from app.core.exceptions import AppError
 from app.repositories import record_repository
 from app.services import meeting_service
-from app.services.retrieval_service import MaterialContentRetriever
 
 
 def _chat_service(db: Session, user_id: str) -> ChatService:
-    return ChatService(LLMClient(), MaterialContentRetriever(db, user_id))
+    return ChatService(LLMClient(), VectorRetriever(db, user_id))
 
 
 def _organize_text(transcripts: list[str], style: str) -> str:
