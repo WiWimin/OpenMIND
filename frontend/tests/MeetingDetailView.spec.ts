@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as meetingsApi from '@/api/meetings'
 import * as materialsApi from '@/api/materials'
+import * as recordsApi from '@/api/records'
 import type { Meeting } from '@/types/meeting'
 import MeetingDetailView from '@/views/meetings/MeetingDetailView.vue'
 
@@ -28,6 +29,18 @@ vi.mock('@/api/materials', () => ({
   uploadMaterial: vi.fn(),
   getMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
+}))
+
+vi.mock('@/api/records', () => ({
+  listRecords: vi.fn(),
+  createRecord: vi.fn(),
+  updateRecord: vi.fn(),
+  deleteRecord: vi.fn(),
+}))
+
+vi.mock('@/api/chat', () => ({
+  askMeeting: vi.fn(),
+  organizeRecords: vi.fn(),
 }))
 
 const meeting: Meeting = {
@@ -58,6 +71,10 @@ describe('MeetingDetailView', () => {
       items: [],
       pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
     })
+    vi.mocked(recordsApi.listRecords).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
   })
 
   it('loads and renders the meeting with tab placeholders', async () => {
@@ -76,6 +93,19 @@ describe('MeetingDetailView', () => {
     await flushPromises()
 
     expect(wrapper.find('.material-uploader').exists()).toBe(true)
+  })
+
+  it('renders records and chat on the records tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const recordsTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '记录')
+    await recordsTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.record-section').exists()).toBe(true)
+    expect(wrapper.find('.chat-panel').exists()).toBe(true)
   })
 
   it('disables editing and archiving for an archived meeting', async () => {
