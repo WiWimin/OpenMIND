@@ -6,6 +6,7 @@ export const ROUTE_NAMES = {
   register: 'register',
   meetings: 'meetings',
   meetingDetail: 'meeting-detail',
+  tasks: 'tasks',
 } as const
 
 export const ROUTE_PATHS = {
@@ -14,4 +15,5 @@ export const ROUTE_PATHS = {
   register: '/register',
   meetings: '/meetings',
   meetingDetail: '/meetings/:meetingId',
+  tasks: '/tasks',
 } as const

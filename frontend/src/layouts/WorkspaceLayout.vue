@@ -3,7 +3,14 @@
     <header class="workspace__header">
       <div class="workspace__brand">
         <RouterLink class="workspace__logo" :to="{ name: ROUTE_NAMES.meetings }">OpenMIND</RouterLink>
-        <span class="workspace__tagline">AI 会议个人助理</span>
+        <nav class="workspace__nav">
+          <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.meetings }">
+            会议
+          </RouterLink>
+          <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.tasks }">
+            任务
+          </RouterLink>
+        </nav>
       </div>
 
       <div class="workspace__account">
@@ -59,7 +66,7 @@ async function handleLogout(): Promise<void> {
 .workspace__brand {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .workspace__logo {
@@ -69,9 +76,21 @@ async function handleLogout(): Promise<void> {
   text-decoration: none;
 }
 
-.workspace__tagline {
+.workspace__nav {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.workspace__nav-link {
   color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.workspace__nav-link.router-link-active {
+  color: var(--color-primary-strong);
+  font-weight: 500;
 }
 
 .workspace__account {

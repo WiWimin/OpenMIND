@@ -46,6 +46,18 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: ROUTE_PATHS.tasks,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.tasks,
+        component: () => import('@/views/tasks/TaskListView.vue'),
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: { name: ROUTE_NAMES.home },
   },
