@@ -2,8 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as actionItemsApi from '@/api/actionItems'
 import * as meetingsApi from '@/api/meetings'
 import * as materialsApi from '@/api/materials'
+import * as minutesApi from '@/api/minutes'
 import type { Meeting } from '@/types/meeting'
 import MeetingDetailView from '@/views/meetings/MeetingDetailView.vue'
 
@@ -28,6 +30,24 @@ vi.mock('@/api/materials', () => ({
   uploadMaterial: vi.fn(),
   getMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
+}))
+
+vi.mock('@/api/minutes', () => ({
+  listMinutes: vi.fn(),
+  generateMinutes: vi.fn(),
+  getMinutes: vi.fn(),
+  updateMinutes: vi.fn(),
+  confirmMinutes: vi.fn(),
+}))
+
+vi.mock('@/api/actionItems', () => ({
+  extractActionItems: vi.fn(),
+  listActionItems: vi.fn(),
+  getActionItem: vi.fn(),
+  updateActionItem: vi.fn(),
+  deleteActionItem: vi.fn(),
+  confirmActionItem: vi.fn(),
+  convertActionItemToTask: vi.fn(),
 }))
 
 const meeting: Meeting = {
@@ -58,6 +78,14 @@ describe('MeetingDetailView', () => {
       items: [],
       pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
     })
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(actionItemsApi.listActionItems).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
   })
 
   it('loads and renders the meeting with tab placeholders', async () => {
@@ -76,6 +104,19 @@ describe('MeetingDetailView', () => {
     await flushPromises()
 
     expect(wrapper.find('.material-uploader').exists()).toBe(true)
+  })
+
+  it('renders minutes and action items on the minutes tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const minutesTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '纪要')
+    await minutesTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.minutes-section').exists()).toBe(true)
+    expect(wrapper.find('.action-section').exists()).toBe(true)
   })
 
   it('disables editing and archiving for an archived meeting', async () => {
