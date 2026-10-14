@@ -5,6 +5,7 @@ from app.api.v1 import (
     ai_chat,
     auth,
     health,
+    issues,
     materials,
     meetings,
     minutes,
@@ -24,3 +25,4 @@ api_router.include_router(ai_chat.router)
 api_router.include_router(minutes.router)
 api_router.include_router(action_items.router)
 api_router.include_router(tasks.router)
+api_router.include_router(issues.router)
