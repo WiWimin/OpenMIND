@@ -1,8 +1,8 @@
-// 问题列表响应形状未在 api.md 规定，列表接口按数组处理（待确认）
+// 与后端 schemas/issue.py 对齐：source 恒存在，其字段可空
 export type IssueStatus = 'open' | 'resolved' | 'cancelled'
 
 export interface OpenIssueSource {
-  record_id: string
+  record_id: string | null
 }
 
 export interface OpenIssue {
@@ -11,7 +11,7 @@ export interface OpenIssue {
   description: string
   status: IssueStatus
   follow_up: string | null
-  source: OpenIssueSource | null
+  source: OpenIssueSource
   created_at: string
   updated_at: string
 }

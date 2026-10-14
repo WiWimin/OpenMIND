@@ -1,11 +1,12 @@
 import http from '@/api/client'
-import type { ApiSuccess, DeletedResult } from '@/types/api'
+import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type {
   ActionItem,
   ConvertToTaskPayload,
   ExtractActionItemsPayload,
   UpdateActionItemPayload,
 } from '@/types/actionItem'
+import type { PageParams } from '@/types/pagination'
 import type { PersonalTask } from '@/types/task'
 import { unwrapData, unwrapList } from '@/utils/apiEnvelope'
 
@@ -19,15 +20,17 @@ export async function extractActionItems(
   return unwrapList<ActionItem>(data)
 }
 
-// 契约未规定列表响应形状，unwrapList 兼容 items 数组或裸数组
-export async function listActionItems(meetingId: string): Promise<ActionItem[]> {
-  const { data } = await http.get<
-    ApiSuccess<{ items: ActionItem[] }> | { items: ActionItem[] } | ActionItem[]
-  >(`/meetings/${meetingId}/action-items`)
-  return unwrapList<ActionItem>(data)
+export async function listActionItems(
+  meetingId: string,
+  params: PageParams = {},
+): Promise<ListData<ActionItem>> {
+  const { data } = await http.get<ApiSuccess<ListData<ActionItem>> | ListData<ActionItem>>(
+    `/meetings/${meetingId}/action-items`,
+    { params },
+  )
+  return unwrapData(data)
 }
 
-// [提案] 行动项详情/删除接口（api.md 6.1）
 export async function getActionItem(actionId: string): Promise<ActionItem> {
   const { data } = await http.get<ApiSuccess<ActionItem> | ActionItem>(`/action-items/${actionId}`)
   return unwrapData(data)
