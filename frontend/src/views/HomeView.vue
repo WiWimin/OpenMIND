@@ -1,5 +1,5 @@
 <template>
-  <main class="home">
+  <section class="home">
     <header class="home__header">
       <h1 class="home__title">{{ appName }}</h1>
       <p class="home__subtitle">AI 会议个人助理 · 前端基础设施已就绪</p>
@@ -24,7 +24,7 @@
     <button class="home__retry" type="button" :disabled="isChecking" @click="refresh">
       {{ isChecking ? '检测中…' : '重新检测' }}
     </button>
-  </main>
+  </section>
 </template>
 
 <script setup lang="ts">

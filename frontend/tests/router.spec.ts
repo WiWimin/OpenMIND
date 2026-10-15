@@ -52,7 +52,7 @@ describe('router guard', () => {
 
     await router.push('/login')
 
-    expect(router.currentRoute.value.name).toBe('meetings')
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
   it('loads the current user before entering a protected route', async () => {
@@ -87,14 +87,14 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('login')
   })
 
-  it('sends authenticated visitors from the root path to meetings', async () => {
+  it('sends authenticated visitors from the root path to the dashboard', async () => {
     setToken('token-abc')
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
     const router = createAppRouter()
 
     await router.push('/')
 
-    expect(router.currentRoute.value.name).toBe('meetings')
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
   it('redirects unknown routes to the landing path', async () => {
