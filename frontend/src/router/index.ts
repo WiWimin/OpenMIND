@@ -61,7 +61,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: ROUTE_NAMES.meetings,
-        component: () => import('@/views/meetings/MeetingListView.vue'),
+        component: () => import('@/views/DashboardView.vue'),
       },
       {
         path: ':meetingId',
