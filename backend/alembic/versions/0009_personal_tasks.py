@@ -1,7 +1,7 @@
 """personal_tasks table
 
 Revision ID: 0009_personal_tasks
-Revises: 0008_meeting_minutes_action_items
+Revises: 0008_minutes_action_items
 Create Date: 2026-10-13
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0009_personal_tasks"
-down_revision: str | None = "0008_meeting_minutes_action_items"
+down_revision: str | None = "0008_minutes_action_items"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
