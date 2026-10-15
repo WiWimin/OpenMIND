@@ -103,11 +103,4 @@ describe('router guard', () => {
 
     expect(router.currentRoute.value.name).toBe('login')
   })
-
-  it('keeps the health page reachable at /home', async () => {
-    const router = createAppRouter()
-    await router.push('/home')
-
-    expect(router.currentRoute.value.name).toBe('home')
-  })
 })

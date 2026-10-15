@@ -3,7 +3,6 @@
 export const ROUTE_NAMES = {
   root: 'root',
   dashboard: 'dashboard',
-  home: 'home',
   login: 'login',
   register: 'register',
   meetings: 'meetings',
@@ -14,7 +13,6 @@ export const ROUTE_NAMES = {
 export const ROUTE_PATHS = {
   root: '/',
   dashboard: '/dashboard',
-  home: '/home',
   login: '/login',
   register: '/register',
   meetings: '/meetings',

@@ -31,17 +31,6 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
-    path: ROUTE_PATHS.home,
-    component: () => import('@/layouts/WorkspaceLayout.vue'),
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.home,
-        component: () => import('@/views/HomeView.vue'),
-      },
-    ],
-  },
-  {
     path: ROUTE_PATHS.login,
     name: ROUTE_NAMES.login,
     component: () => import('@/views/auth/LoginView.vue'),
