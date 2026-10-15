@@ -37,10 +37,12 @@
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
         </template>
 
+        <IssuesSection v-else-if="activeTab === 'issues'" :meeting-id="meetingId" />
+
         <EmptyState
           v-else
           :title="activeTabLabel"
-          description="该区域将在后续模块（任务）中提供。"
+          description="该区域将在后续模块（会前准备 / 任务）中提供。"
         />
       </div>
     </template>
@@ -88,6 +90,7 @@ import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
+import IssuesSection from '@/components/IssuesSection.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MaterialSection from '@/components/MaterialSection.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
