@@ -11,6 +11,7 @@ import {
   updateActionItem,
 } from '@/api/actionItems'
 import type { ActionItem } from '@/types/actionItem'
+import type { ListData } from '@/types/api'
 import type { PersonalTask } from '@/types/task'
 import { response } from './support'
 
@@ -63,11 +64,15 @@ describe('action items api', () => {
     })
   })
 
-  it('lists action items from a bare array', async () => {
-    get.mockResolvedValue(response([actionItem]))
+  it('lists action items with pagination params', async () => {
+    const list: ListData<ActionItem> = {
+      items: [actionItem],
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    }
+    get.mockResolvedValue(response(list))
 
-    await expect(listActionItems('mtg_1')).resolves.toEqual([actionItem])
-    expect(get).toHaveBeenCalledWith('/meetings/mtg_1/action-items')
+    await expect(listActionItems('mtg_1')).resolves.toEqual(list)
+    expect(get).toHaveBeenCalledWith('/meetings/mtg_1/action-items', { params: {} })
   })
 
   it('gets a single action item', async () => {
