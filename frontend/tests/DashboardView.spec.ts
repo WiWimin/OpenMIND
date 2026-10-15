@@ -30,7 +30,12 @@ vi.mock('@/api/meetings', () => ({
   archiveMeeting: vi.fn(),
 }))
 
-vi.mock('@/api/tasks', () => ({ listTasks: vi.fn() }))
+vi.mock('@/api/tasks', () => ({
+  listTasks: vi.fn(),
+  getTask: vi.fn(),
+  updateTask: vi.fn(),
+  cancelTask: vi.fn(),
+}))
 
 const meeting: Meeting = {
   meeting_id: 'mtg_1',
@@ -106,7 +111,7 @@ describe('DashboardView', () => {
     routeState.query = {}
   })
 
-  it('renders the merged hero, stats and meeting list', async () => {
+  it('renders the merged hero, stats, meeting list and task list', async () => {
     mockMeetings([meeting], 5)
     mockTasks([task], 4)
 
@@ -122,6 +127,10 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('项目周会')
     expect(wrapper.text()).toContain('已安排 1 · 已归档 4')
     expect(wrapper.find('.meeting-card').exists()).toBe(true)
+
+    expect(wrapper.find('#section-tasks').exists()).toBe(true)
+    expect(wrapper.text()).toContain('整理周会议程')
+    expect(wrapper.find('#task-status-filter').exists()).toBe(true)
   })
 
   it('shows the empty state when there are no meetings', async () => {
@@ -243,5 +252,37 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('服务异常')
+  })
+
+  it('appends more meetings through the load-more button', async () => {
+    vi.mocked(meetingsApi.listMeetings).mockImplementation(async (params = {}) => {
+      if (params.page_size === 1) {
+        return listOf([], 0)
+      }
+      if (params.page === 2) {
+        return {
+          items: [{ ...meeting, meeting_id: 'mtg_2', title: '评审会' }],
+          pagination: { page: 2, page_size: 20, total: 2, total_pages: 2 },
+        }
+      }
+      return {
+        items: [meeting],
+        pagination: { page: 1, page_size: 20, total: 2, total_pages: 2 },
+      }
+    })
+    mockTasks([])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('项目周会')
+    const more = wrapper.findAll('button').find((item) => item.text() === '加载更多')
+    expect(more).toBeDefined()
+
+    await more?.trigger('click')
+    await flushPromises()
+
+    expect(meetingsApi.listMeetings).toHaveBeenLastCalledWith({ page: 2, page_size: 20 })
+    expect(wrapper.text()).toContain('评审会')
   })
 })

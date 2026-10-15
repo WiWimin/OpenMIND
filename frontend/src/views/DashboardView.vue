@@ -1,6 +1,6 @@
 <template>
   <section class="dashboard">
-    <section class="dashboard__hero">
+    <section id="section-overview" class="dashboard__hero">
       <div class="dashboard__hero-body">
         <p class="dashboard__eyebrow">仪表盘</p>
         <h1 class="dashboard__greeting">OpenMIND</h1>
@@ -10,9 +10,9 @@
       </div>
 
       <div class="dashboard__hero-actions">
-        <RouterLink class="hero-btn hero-btn--ghost" :to="{ name: ROUTE_NAMES.tasks }">
+        <button class="hero-btn hero-btn--ghost" type="button" @click="scrollToTasks">
           我的任务
-        </RouterLink>
+        </button>
         <button class="hero-btn hero-btn--primary" type="button" @click="openCreate">
           新建会议
         </button>
@@ -99,7 +99,7 @@
       </article>
     </div>
 
-    <section class="dashboard__meetings">
+    <section id="section-meetings" class="dashboard__meetings">
       <header class="dashboard__meetings-head">
         <h2 class="dashboard__meetings-title">我的会议</h2>
         <div class="dashboard__meetings-tools">
@@ -133,14 +133,24 @@
 
       <template v-else>
         <MeetingList :items="store.items" @select="openDetail" />
-        <AppPagination
-          class="dashboard__pagination"
-          :page="store.pagination.page"
-          :page-size="store.pagination.page_size"
-          :total="store.pagination.total"
-          @update:page="store.setPage"
-        />
+        <AppButton
+          v-if="store.pagination.page < store.pagination.total_pages"
+          class="dashboard__more"
+          variant="ghost"
+          :loading="store.loading"
+          @click="store.loadMore()"
+        >
+          加载更多
+        </AppButton>
       </template>
+    </section>
+
+    <section id="section-tasks" class="dashboard__tasks">
+      <header class="dashboard__tasks-head">
+        <h2 class="dashboard__tasks-title">我的任务</h2>
+        <p class="dashboard__tasks-hint">跟进由已确认行动项转换而成的个人任务。</p>
+      </header>
+      <TaskSection />
     </section>
 
     <MeetingFormDialog
@@ -160,13 +170,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { listMeetings } from '@/api/meetings'
 import { listTasks } from '@/api/tasks'
 import AppButton from '@/components/AppButton.vue'
-import AppPagination from '@/components/AppPagination.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MeetingList from '@/components/MeetingList.vue'
+import TaskSection from '@/components/TaskSection.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore, type MeetingStatusFilter } from '@/stores/meetings'
@@ -261,6 +271,12 @@ function openDetail(meetingId: string): void {
   void router.push({ name: ROUTE_NAMES.meetingDetail, params: { meetingId } })
 }
 
+function scrollToTasks(): void {
+  document
+    .getElementById('section-tasks')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
   saving.value = true
   saveError.value = null
@@ -282,6 +298,13 @@ onMounted(() => {
   if (route.query.create === '1') {
     openCreate()
     void router.replace({ query: {} })
+  }
+  const target =
+    route.hash || (route.name === ROUTE_NAMES.tasks ? '#section-tasks' : '')
+  if (target) {
+    requestAnimationFrame(() => {
+      document.querySelector(target)?.scrollIntoView({ block: 'start' })
+    })
   }
 })
 </script>
@@ -518,6 +541,7 @@ onMounted(() => {
 
 /* 会议区 */
 .dashboard__meetings {
+  scroll-margin-top: 5.5rem;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -557,8 +581,44 @@ onMounted(() => {
   padding: var(--space-5);
 }
 
-.dashboard__pagination {
+.dashboard__more {
+  align-self: center;
   margin-top: var(--space-2);
+}
+
+/* 任务区 */
+.dashboard__tasks {
+  scroll-margin-top: 5.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.dashboard__tasks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.dashboard__tasks-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.dashboard__tasks-hint {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
 }
 
 @keyframes stat-rise {

@@ -3,9 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as tasksApi from '@/api/tasks'
+import TaskSection from '@/components/TaskSection.vue'
 import type { ListData } from '@/types/api'
 import type { PersonalTask } from '@/types/task'
-import TaskListView from '@/views/tasks/TaskListView.vue'
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
 
@@ -40,14 +40,14 @@ function listOf(items: PersonalTask[]): ListData<PersonalTask> {
 function mountView(): VueWrapper {
   const pinia = createPinia()
   setActivePinia(pinia)
-  return mount(TaskListView, { global: { plugins: [pinia] } })
+  return mount(TaskSection, { global: { plugins: [pinia] } })
 }
 
 function button(wrapper: VueWrapper, text: string) {
   return wrapper.findAll('button').find((item) => item.text() === text)
 }
 
-describe('TaskListView', () => {
+describe('TaskSection', () => {
   beforeEach(() => {
     vi.resetAllMocks()
   })

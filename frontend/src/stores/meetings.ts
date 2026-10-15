@@ -41,6 +41,10 @@ export const useMeetingsStore = defineStore('meetings', () => {
     return list.load(1)
   }
 
+  function loadMore(): Promise<void> {
+    return list.loadMore()
+  }
+
   function syncInList(meeting: Meeting): void {
     const index = list.items.value.findIndex((item) => item.meeting_id === meeting.meeting_id)
     if (index !== -1) {
@@ -104,6 +108,7 @@ export const useMeetingsStore = defineStore('meetings', () => {
     fetchList,
     setPage,
     setStatusFilter,
+    loadMore,
     fetchMeeting,
     createMeeting,
     updateMeeting,

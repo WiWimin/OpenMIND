@@ -1,8 +1,6 @@
 <template>
-  <section class="tasks">
-    <PageHeader title="个人任务" description="跟进由已确认行动项转换而成的个人任务。" />
-
-    <div class="tasks__toolbar">
+  <div class="task-section">
+    <div class="task-section__toolbar">
       <FormSelect
         id="task-status-filter"
         label="状态"
@@ -12,7 +10,7 @@
       />
     </div>
 
-    <LoadingSpinner v-if="store.loading && store.items.length === 0" class="tasks__state" />
+    <LoadingSpinner v-if="store.loading && store.items.length === 0" class="task-section__state" />
 
     <ErrorMessage v-else-if="store.error" :error="store.error" retryable @retry="store.fetchList()" />
 
@@ -23,7 +21,7 @@
     />
 
     <template v-else>
-      <ul class="tasks__list">
+      <ul class="task-section__list">
         <li v-for="task in store.items" :key="task.task_id" class="task-item">
           <div class="task-item__head">
             <span class="task-item__title">{{ task.title }}</span>
@@ -84,14 +82,15 @@
         </li>
       </ul>
 
-      <AppPagination
-        v-if="store.pagination.total_pages > 1"
-        class="tasks__pagination"
-        :page="store.pagination.page"
-        :page-size="store.pagination.page_size"
-        :total="store.pagination.total"
-        @update:page="store.setPage"
-      />
+      <AppButton
+        v-if="hasMore"
+        class="task-section__more"
+        variant="ghost"
+        :loading="store.loading"
+        @click="loadMore"
+      >
+        加载更多
+      </AppButton>
     </template>
 
     <AppModal :open="detailTask !== null" title="任务详情" @close="detailTask = null">
@@ -136,23 +135,21 @@
       @confirm="confirmCancel"
       @cancel="cancelCancel"
     />
-  </section>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import AppModal from '@/components/AppModal.vue'
-import AppPagination from '@/components/AppPagination.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormField from '@/components/FormField.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
@@ -192,6 +189,10 @@ const editDue = ref('')
 const editFormError = ref('')
 const editError = ref<unknown>(null)
 const editSaving = ref(false)
+
+const hasMore = computed(
+  () => store.pagination.page < store.pagination.total_pages,
+)
 
 function metaOf(task: PersonalTask) {
   return taskStatusMeta[task.status]
@@ -276,6 +277,10 @@ function changeStatus(task: PersonalTask, value: string): void {
   toast.success('任务状态已更新')
 }
 
+function loadMore(): void {
+  void store.loadMore()
+}
+
 function askCancel(taskId: string): void {
   pendingCancelId.value = taskId
   showCancel.value = true
@@ -297,30 +302,38 @@ async function confirmCancel(): Promise<void> {
     toast.success('任务已取消')
   } finally {
     cancelling.value = false
-    pendingCancelId.value = null
   }
 }
 </script>
 
 <style scoped>
-.tasks__toolbar {
-  margin-bottom: var(--space-4);
+.task-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.task-section__toolbar {
   max-width: 12rem;
 }
 
-.tasks__state {
+.task-section__state {
   display: flex;
   justify-content: center;
   padding: var(--space-5);
 }
 
-.tasks__list {
+.task-section__list {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.task-section__more {
+  align-self: center;
 }
 
 .task-item {
@@ -414,9 +427,5 @@ async function confirmCancel(): Promise<void> {
   color: var(--color-foreground);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
-}
-
-.tasks__pagination {
-  margin-top: var(--space-4);
 }
 </style>
