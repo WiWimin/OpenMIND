@@ -27,6 +27,8 @@
       <div class="meeting-detail__panel">
         <MaterialSection v-if="activeTab === 'materials'" :meeting-id="meetingId" />
 
+        <PreparationSection v-else-if="activeTab === 'preparation'" :meeting-id="meetingId" />
+
         <template v-else-if="activeTab === 'records'">
           <RecordSection :meeting-id="meetingId" />
           <ChatPanel class="meeting-detail__chat" :meeting-id="meetingId" />
@@ -42,7 +44,7 @@
         <EmptyState
           v-else
           :title="activeTabLabel"
-          description="该区域将在后续模块（会前准备 / 任务）中提供。"
+          description="该区域将在后续模块（任务）中提供。"
         />
       </div>
     </template>
@@ -96,6 +98,7 @@ import MaterialSection from '@/components/MaterialSection.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MinutesSection from '@/components/MinutesSection.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PreparationSection from '@/components/PreparationSection.vue'
 import RecordSection from '@/components/RecordSection.vue'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore } from '@/stores/meetings'
