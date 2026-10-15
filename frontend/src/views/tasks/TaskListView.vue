@@ -169,7 +169,7 @@ async function confirmCancel(): Promise<void> {
 .tasks__list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -179,10 +179,16 @@ async function confirmCancel(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.task-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .task-item__head {
@@ -193,7 +199,7 @@ async function confirmCancel(): Promise<void> {
 }
 
 .task-item__title {
-  font-weight: 500;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 

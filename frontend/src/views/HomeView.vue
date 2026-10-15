@@ -86,9 +86,8 @@ onUnmounted(() => {
 
 <style scoped>
 .home {
-  margin: 0 auto;
-  max-width: 60rem;
-  padding: var(--space-5) var(--space-4);
+  margin: 0;
+  padding: 0;
 }
 
 .home__header {
@@ -98,7 +97,7 @@ onUnmounted(() => {
 .home__title {
   margin: 0;
   font-size: 1.75rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .home__subtitle {
@@ -113,27 +112,33 @@ onUnmounted(() => {
 }
 
 .home__retry {
-  margin-top: var(--space-4);
+  margin-top: var(--space-5);
   padding: var(--space-2) var(--space-4);
   min-height: 2.5rem;
-  background: var(--color-primary);
-  color: #ffffff;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+  color: var(--color-primary-contrast);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   font: inherit;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.26);
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .home__retry:hover:not(:disabled) {
-  background: var(--color-primary-strong);
-  border-color: var(--color-primary-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34);
 }
 
 .home__retry:disabled {
-  background: var(--color-muted-foreground);
-  border-color: var(--color-muted-foreground);
+  background: var(--color-surface-strong);
+  color: var(--color-muted-foreground);
+  border-color: var(--color-border);
+  box-shadow: none;
   cursor: not-allowed;
 }
 </style>

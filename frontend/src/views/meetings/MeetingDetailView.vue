@@ -207,10 +207,10 @@ async function confirmDelete(): Promise<void> {
 .meeting-detail__archived {
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-muted-foreground);
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.24);
+  border-radius: var(--radius-md);
+  color: #92400e;
   font-size: 0.875rem;
 }
 
