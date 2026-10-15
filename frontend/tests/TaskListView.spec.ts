@@ -7,6 +7,10 @@ import type { ListData } from '@/types/api'
 import type { PersonalTask } from '@/types/task'
 import TaskListView from '@/views/tasks/TaskListView.vue'
 
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
+
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: pushMock }) }))
+
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
   getTask: vi.fn(),
@@ -90,6 +94,43 @@ describe('TaskListView', () => {
     await flushPromises()
 
     expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
+  })
+
+  it('shows the task detail dialog and jumps to the source meeting', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(listOf([task]))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await button(wrapper, '查看详情')?.trigger('click')
+
+    const modal = wrapper.get('.modal')
+    expect(modal.text()).toContain('完成接口联调')
+    expect(modal.text()).toContain('mtg_1')
+
+    const jump = modal.findAll('button').find((item) => item.text() === '跳转来源会议')
+    await jump?.trigger('click')
+
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'meeting-detail',
+      params: { meetingId: 'mtg_1' },
+    })
+  })
+
+  it('edits a task title and due date', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(listOf([task]))
+    vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, title: '更新后的任务' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await button(wrapper, '编辑任务')?.trigger('click')
+    await wrapper.get('#task-edit-title-tsk_1').setValue('更新后的任务')
+    await wrapper.get('.task-item__edit').trigger('submit')
+    await flushPromises()
+
+    expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', {
+      title: '更新后的任务',
+      due_date: '2026-10-05',
+    })
   })
 
   it('cancels a task after confirmation', async () => {
