@@ -77,9 +77,24 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-sans);
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 表单控件继承文档字体，保证界面文字一致易读 */
+button,
+input,
+select,
+textarea,
+optgroup {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+::placeholder {
+  color: #94a3b8;
+  opacity: 1;
 }
 
 /* 环境光背景（浅色柔和光晕） */

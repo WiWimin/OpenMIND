@@ -87,7 +87,11 @@
       </header>
 
       <main class="workspace__main">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <Transition name="page" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
   </div>
@@ -139,6 +143,7 @@ async function handleLogout(): Promise<void> {
   background:
     radial-gradient(120% 60% at 0% 0%, rgba(99, 102, 241, 0.28), transparent 60%),
     linear-gradient(180deg, #101728 0%, #0a1120 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   color: rgba(226, 232, 240, 0.92);
 }
 
@@ -226,12 +231,14 @@ async function handleLogout(): Promise<void> {
   border-radius: var(--radius-md);
   transition:
     background var(--transition-fast),
-    color var(--transition-fast);
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .workspace__nav-link:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
+  transform: translateX(2px);
 }
 
 .workspace__nav-link.router-link-active {
@@ -308,6 +315,24 @@ async function handleLogout(): Promise<void> {
   max-width: 76rem;
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-6);
+}
+
+/* 页面切换动效 */
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity var(--transition) ease,
+    transform var(--transition) ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 @media (max-width: 900px) {
