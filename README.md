@@ -246,7 +246,7 @@ main（阶段验收通过后）
 
 ## 14. 当前已完成的功能
 
-> 以下为**已实现并经本地验证**的内容：第一阶段基础工程（M00）与 M03 解析管线。
+> 以下为**已实现并经本地验证**的内容：MVP 闭环（M00–M10）已全部实现。
 
 **前端基础工程**
 - Vue 3 + TypeScript + Vite 骨架，Pinia 与 Vue Router 已接入。
@@ -274,14 +274,19 @@ main（阶段验收通过后）
 **协作与规范**
 - Git 分支规范、Conventional Commits、PR / Issue 模板、CI 检查工作流、`.editorconfig`、前后端 lint/format 配置。
 
-**明确尚未实现（未开发，不在「已完成」范围）**
-- 用户认证与个人工作区（M01）：注册、登录、退出、当前用户。
-- 会议管理（M02）：会议列表、创建、详情、编辑、删除、归档。
-- 会议资料的上传与状态流转（M03，解析管线已合并）、AI 基础服务与 RAG、会前准备、会中记录与问答、纪要与行动项、个人任务、未解决问题（M04–M09）。
+**业务功能（M01–M10）**
+- 用户认证（注册 / 登录 / 退出 / 当前用户，HS256 JWT）。
+- 会议管理（创建 / 列表 / 详情 / 编辑 / 删除 / 归档）。
+- 资料上传与解析（PDF / DOCX / TXT）、RAG 权限内向量检索、模型密钥用户自带（BYOK）。
+- 会前准备、会中记录与问答、纪要、行动项、个人任务、未解决问题。
+- 端到端测试与权限/异常专项（M10）。
+
+**明确尚未实现（非 MVP 范围）**
+- 音频转写、PDF 扫描件 OCR、MIME 嗅探、并发编辑乐观锁（见 `docs/design-baseline.md §四`）。
 
 ## 15. 后续开发规划
 
-按 [`docs/module-task-plan.md`](docs/module-task-plan.md) 的模块拆分与 [`docs/requirements.md`](docs/requirements.md) 的功能需求推进（**均为规划，尚未实现**）：
+按 [`docs/module-task-plan.md`](docs/module-task-plan.md) 的模块拆分与 [`docs/requirements.md`](docs/requirements.md) 的功能需求推进（MVP 已完成，下表为阶段交付回顾）：
 
 | 阶段 | 模块范围 | 目标交付 |
 | --- | --- | --- |

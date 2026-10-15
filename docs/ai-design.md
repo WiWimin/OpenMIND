@@ -135,7 +135,7 @@ class Retriever:
 ```
 
 - `scope=current_meeting`：仅当前会议材料；`current_and_history`：该用户全部会议材料。
-- 排序：`ORDER BY embedding <=> :query_vector`（余弦距离），取前 `top_k`；低于 `min_score` 丢弃。
+- 排序：当前实现为在应用层（`VectorRetriever`）按余弦**相似度**计算并排序，取前 `top_k`，低于 `min_score` 丢弃；pgvector `<=>` 余弦距离与 HNSW 索引待数据量增大后作为优化落地（`database.md 六`）。
 - 无结果或全部低于阈值 → 返回空列表，由上层置 `insufficient_evidence=true`。
 
 ### 5.3 来源返回
