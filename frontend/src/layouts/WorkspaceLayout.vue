@@ -131,15 +131,15 @@ async function handleLogout(): Promise<void> {
   align-items: stretch;
   min-height: 100vh;
   background:
-    radial-gradient(52rem 38rem at -4% -10%, rgba(99, 102, 241, 0.18), transparent 62%),
-    radial-gradient(40rem 26rem at 104% 108%, rgba(139, 92, 246, 0.1), transparent 58%),
+    radial-gradient(52rem 38rem at -4% -10%, rgba(59, 111, 212, 0.16), transparent 62%),
+    radial-gradient(40rem 26rem at 104% 108%, rgba(20, 184, 166, 0.1), transparent 58%),
     linear-gradient(
       108deg,
-      #e6e9f7 0%,
-      #ecedf9 22%,
-      #f2f3fa 48%,
+      #e3e9f5 0%,
+      #e9edf7 22%,
+      #eef1f7 48%,
       var(--color-background) 76%,
-      #f7f8fb 100%
+      #f0f3f8 100%
     );
 }
 
@@ -155,8 +155,8 @@ async function handleLogout(): Promise<void> {
   height: 100vh;
   padding: var(--space-4) var(--space-3) var(--space-3);
   background:
-    radial-gradient(120% 60% at 0% 0%, rgba(99, 102, 241, 0.28), transparent 60%),
-    linear-gradient(180deg, #101728 0%, #0a1120 100%);
+    radial-gradient(120% 60% at 0% 0%, rgba(59, 111, 212, 0.25), transparent 60%),
+    linear-gradient(180deg, #0f2744 0%, #0a1c33 100%);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   color: rgba(226, 232, 240, 0.92);
 }
@@ -178,7 +178,7 @@ async function handleLogout(): Promise<void> {
   color: #ffffff;
   background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
   border-radius: 10px;
-  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.45);
+  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.4);
 }
 
 .workspace__wordmark {
@@ -201,7 +201,7 @@ async function handleLogout(): Promise<void> {
   text-decoration: none;
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   border-radius: var(--radius-pill);
-  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.4);
+  box-shadow: 0 10px 24px rgba(59, 111, 212, 0.35);
   transition:
     transform var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -258,8 +258,8 @@ async function handleLogout(): Promise<void> {
 .workspace__nav-link.router-link-active {
   color: #ffffff;
   font-weight: 600;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.95), rgba(139, 92, 246, 0.9));
-  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.35);
+  background: linear-gradient(135deg, rgba(59, 111, 212, 0.95), rgba(20, 184, 166, 0.85));
+  box-shadow: 0 10px 24px rgba(59, 111, 212, 0.3);
 }
 
 .workspace__icon {
