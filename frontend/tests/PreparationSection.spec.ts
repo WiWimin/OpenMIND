@@ -79,7 +79,7 @@ describe('PreparationSection', () => {
     await flushPromises()
 
     await wrapper.get('#preparation-goal').setValue('确认风险')
-    await button(wrapper, '生成准备稿')?.trigger('click')
+    await button(wrapper, '生成会前准备')?.trigger('click')
     await flushPromises()
 
     expect(preparationsApi.generatePreparation).toHaveBeenCalledWith('mtg_1', {

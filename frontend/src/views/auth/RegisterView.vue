@@ -69,7 +69,7 @@
 
         <p class="auth__footer">
           已有账号？
-          <RouterLink class="auth__link" :to="{ name: ROUTE_NAMES.login }">返回登录</RouterLink>
+          <RouterLink class="auth__link" :to="{ name: ROUTE_NAMES.login }">去登录</RouterLink>
         </p>
       </section>
     </section>

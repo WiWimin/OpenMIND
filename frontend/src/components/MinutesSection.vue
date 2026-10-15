@@ -1,7 +1,7 @@
 <template>
   <div class="minutes-section">
     <div class="minutes-section__toolbar">
-      <AppButton :loading="generating" @click="generate">生成纪要</AppButton>
+      <AppButton :loading="generating" @click="generate">生成会议纪要</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -13,7 +13,7 @@
     <EmptyState
       v-else-if="items.length === 0"
       title="还没有纪要"
-      description="基于会议记录生成纪要草稿，确认后可提取行动项。"
+      description="基于会议记录生成会议纪要草稿，确认后可提取行动项。"
     />
 
     <div v-else class="minutes-section__body">

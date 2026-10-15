@@ -48,9 +48,9 @@
               :loading="busyId === item.action_id"
               @click="openConvert(item)"
             >
-              转任务
+              转为我的个人任务
             </AppButton>
-            <span v-if="item.status === 'converted'" class="action-item__done">已转任务</span>
+            <span v-if="item.status === 'converted'" class="action-item__done">已转为我的个人任务</span>
           </div>
         </li>
       </ul>
@@ -65,7 +65,7 @@
       />
     </template>
 
-    <AppModal :open="convertTarget !== null" title="转为个人任务" @close="closeConvert">
+    <AppModal :open="convertTarget !== null" title="转为我的个人任务" @close="closeConvert">
       <form class="action-section__convert" @submit.prevent="submitConvert">
         <FormField
           id="convert-title"

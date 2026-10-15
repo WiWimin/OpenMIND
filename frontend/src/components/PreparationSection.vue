@@ -8,7 +8,7 @@
         :rows="2"
         placeholder="例如：确认本周里程碑与待解决风险"
       />
-      <AppButton :loading="generating" @click="generate">生成准备稿</AppButton>
+      <AppButton :loading="generating" @click="generate">生成会前准备</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />

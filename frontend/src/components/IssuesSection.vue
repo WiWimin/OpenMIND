@@ -1,7 +1,7 @@
 <template>
   <div class="issues-section">
     <div class="issues-section__toolbar">
-      <AppButton :loading="extracting" @click="extract">提取问题</AppButton>
+      <AppButton :loading="extracting" @click="extract">提取未解决问题</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />

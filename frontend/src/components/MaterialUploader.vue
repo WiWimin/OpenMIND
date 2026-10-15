@@ -16,7 +16,7 @@
 
     <p v-if="error" class="material-uploader__error" role="alert">{{ error }}</p>
 
-    <AppButton :loading="uploading" :disabled="!selected" @click="submit">上传材料</AppButton>
+    <AppButton :loading="uploading" :disabled="!selected" @click="submit">上传资料</AppButton>
   </div>
 </template>
 

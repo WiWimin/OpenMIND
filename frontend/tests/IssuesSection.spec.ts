@@ -70,7 +70,7 @@ describe('IssuesSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '提取问题')?.trigger('click')
+    await button(wrapper, '提取未解决问题')?.trigger('click')
     await flushPromises()
 
     expect(issuesApi.extractIssues).toHaveBeenCalledWith('mtg_1', { record_ids: [] })

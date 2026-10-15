@@ -22,7 +22,7 @@
     </div>
 
     <button class="home__retry" type="button" :disabled="isChecking" @click="refresh">
-      {{ isChecking ? '检测中…' : '重新检测' }}
+      {{ isChecking ? '检测中…' : '检测后端连接' }}
     </button>
   </section>
 </template>

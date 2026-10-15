@@ -8,7 +8,7 @@
         :rows="3"
         :error="formError"
       />
-      <AppButton type="submit" :loading="adding">添加记录</AppButton>
+      <AppButton type="submit" :loading="adding">保存记录</AppButton>
     </form>
 
     <ErrorMessage v-if="actionError" :error="actionError" />

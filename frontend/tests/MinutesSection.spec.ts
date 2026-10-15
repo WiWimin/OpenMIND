@@ -79,7 +79,7 @@ describe('MinutesSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '生成纪要')?.trigger('click')
+    await button(wrapper, '生成会议纪要')?.trigger('click')
     await flushPromises()
 
     expect(minutesApi.generateMinutes).toHaveBeenCalledWith('mtg_1', {

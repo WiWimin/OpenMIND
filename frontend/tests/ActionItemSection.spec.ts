@@ -112,7 +112,7 @@ describe('ActionItemSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '转任务')?.trigger('click')
+    await button(wrapper, '转为我的个人任务')?.trigger('click')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 

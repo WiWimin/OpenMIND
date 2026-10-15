@@ -60,7 +60,7 @@
 
         <p class="auth__footer">
           还没有账号？
-          <RouterLink class="auth__link" :to="{ name: ROUTE_NAMES.register }">立即注册</RouterLink>
+          <RouterLink class="auth__link" :to="{ name: ROUTE_NAMES.register }">去注册</RouterLink>
         </p>
       </section>
     </section>
