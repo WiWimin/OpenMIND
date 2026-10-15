@@ -1,6 +1,6 @@
 """meeting_minutes and action_items tables
 
-Revision ID: 0008_meeting_minutes_action_items
+Revision ID: 0008_minutes_action_items
 Revises: 0007_meeting_records
 Create Date: 2026-10-13
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0008_meeting_minutes_action_items"
+revision: str = "0008_minutes_action_items"
 down_revision: str | None = "0007_meeting_records"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
