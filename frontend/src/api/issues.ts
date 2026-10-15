@@ -7,10 +7,11 @@ import { unwrapData, unwrapList } from '@/utils/apiEnvelope'
 export async function extractIssues(
   meetingId: string,
   payload: ExtractIssuesPayload,
+  signal?: AbortSignal,
 ): Promise<OpenIssue[]> {
   const { data } = await http.post<
     ApiSuccess<{ items: OpenIssue[] }> | { items: OpenIssue[] } | OpenIssue[]
-  >(`/meetings/${meetingId}/issues/extract`, payload)
+  >(`/meetings/${meetingId}/issues/extract`, payload, { signal })
   return unwrapList<OpenIssue>(data)
 }
 

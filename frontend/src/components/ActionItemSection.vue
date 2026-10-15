@@ -2,6 +2,7 @@
   <div class="action-section">
     <div class="action-section__toolbar">
       <AppButton :loading="extracting" @click="extract">提取行动项</AppButton>
+      <AppButton v-if="extracting" variant="ghost" @click="cancelExtract">取消生成</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -129,6 +130,7 @@ import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import type { ActionItem } from '@/types/actionItem'
 import { formatDate } from '@/utils/datetime'
+import { isRequestCancelled } from '@/utils/requests'
 import { actionItemStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
@@ -216,18 +218,37 @@ onMounted(() => {
   void refresh()
 })
 
+let extractController: AbortController | null = null
+
 async function extract(): Promise<void> {
   extracting.value = true
   actionError.value = null
+  const controller = new AbortController()
+  extractController = controller
   try {
-    await actionItemsApi.extractActionItems(props.meetingId, { record_ids: [] })
+    await actionItemsApi.extractActionItems(
+      props.meetingId,
+      { record_ids: [] },
+      controller.signal,
+    )
     await load(1)
     toast.success('已提取行动项')
   } catch (caught) {
-    actionError.value = caught
+    if (isRequestCancelled(caught)) {
+      toast.success('已取消生成')
+    } else {
+      actionError.value = caught
+    }
   } finally {
+    if (extractController === controller) {
+      extractController = null
+    }
     extracting.value = false
   }
+}
+
+function cancelExtract(): void {
+  extractController?.abort()
 }
 
 async function confirmItem(actionId: string): Promise<void> {

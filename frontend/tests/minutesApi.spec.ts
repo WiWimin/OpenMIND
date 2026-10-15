@@ -40,7 +40,11 @@ describe('minutes api', () => {
     post.mockResolvedValue(response(minutes))
 
     await expect(generateMinutes('mtg_1', { record_ids: ['rec_1'] })).resolves.toEqual(minutes)
-    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/minutes/generate', { record_ids: ['rec_1'] })
+    expect(post).toHaveBeenCalledWith(
+      '/meetings/mtg_1/minutes/generate',
+      { record_ids: ['rec_1'] },
+      { signal: undefined },
+    )
   })
 
   it('lists minutes with pagination params', async () => {

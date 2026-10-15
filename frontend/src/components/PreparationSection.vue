@@ -8,7 +8,10 @@
         :rows="2"
         placeholder="例如：确认本周里程碑与待解决风险"
       />
-      <AppButton :loading="generating" @click="generate">生成会前准备</AppButton>
+      <div class="preparation-section__toolbar-actions">
+        <AppButton :loading="generating" @click="generate">生成会前准备</AppButton>
+        <AppButton v-if="generating" variant="ghost" @click="cancelGenerate">取消生成</AppButton>
+      </div>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -76,6 +79,7 @@ import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import type { Preparation } from '@/types/preparation'
 import { formatDateTime } from '@/utils/datetime'
+import { isRequestCancelled } from '@/utils/requests'
 import { preparationStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
@@ -125,22 +129,41 @@ onMounted(() => {
   void refresh()
 })
 
+let generateController: AbortController | null = null
+
 async function generate(): Promise<void> {
   generating.value = true
   actionError.value = null
+  const controller = new AbortController()
+  generateController = controller
   try {
-    const preparation = await preparationsApi.generatePreparation(props.meetingId, {
-      include_history: true,
-      user_goal: userGoal.value.trim() || undefined,
-    })
+    const preparation = await preparationsApi.generatePreparation(
+      props.meetingId,
+      {
+        include_history: true,
+        user_goal: userGoal.value.trim() || undefined,
+      },
+      controller.signal,
+    )
     await load(1)
     select(preparation)
     toast.success('已生成准备稿')
   } catch (caught) {
-    actionError.value = caught
+    if (isRequestCancelled(caught)) {
+      toast.success('已取消生成')
+    } else {
+      actionError.value = caught
+    }
   } finally {
+    if (generateController === controller) {
+      generateController = null
+    }
     generating.value = false
   }
+}
+
+function cancelGenerate(): void {
+  generateController?.abort()
 }
 
 async function save(): Promise<void> {
@@ -181,6 +204,13 @@ async function save(): Promise<void> {
   flex-direction: column;
   gap: var(--space-2);
   align-items: flex-start;
+}
+
+.preparation-section__toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 .preparation-section__state {

@@ -85,7 +85,7 @@ describe('MinutesSection', () => {
     expect(minutesApi.generateMinutes).toHaveBeenCalledWith('mtg_1', {
       record_ids: [],
       include_action_items: true,
-    })
+    }, expect.anything())
     expect(minutesApi.listMinutes).toHaveBeenCalledTimes(2)
     expect(wrapper.find('#minutes-content').exists()).toBe(true)
   })

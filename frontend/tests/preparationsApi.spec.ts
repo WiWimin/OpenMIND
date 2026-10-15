@@ -41,7 +41,9 @@ describe('preparations api', () => {
     await expect(generatePreparation('mtg_1', { user_goal: '确认风险' })).resolves.toEqual(
       preparation,
     )
-    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/prepare', { user_goal: '确认风险' })
+    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/prepare', { user_goal: '确认风险' }, {
+      signal: undefined,
+    })
   })
 
   it('lists preparations with pagination params', async () => {

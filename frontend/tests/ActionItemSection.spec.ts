@@ -80,7 +80,7 @@ describe('ActionItemSection', () => {
     await button(wrapper, '提取行动项')?.trigger('click')
     await flushPromises()
 
-    expect(actionItemsApi.extractActionItems).toHaveBeenCalledWith('mtg_1', { record_ids: [] })
+    expect(actionItemsApi.extractActionItems).toHaveBeenCalledWith('mtg_1', { record_ids: [] }, expect.anything())
     expect(wrapper.text()).toContain('完成接口联调')
   })
 

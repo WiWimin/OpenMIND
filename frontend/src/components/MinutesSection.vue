@@ -2,6 +2,7 @@
   <div class="minutes-section">
     <div class="minutes-section__toolbar">
       <AppButton :loading="generating" @click="generate">生成会议纪要</AppButton>
+      <AppButton v-if="generating" variant="ghost" @click="cancelGenerate">取消生成</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -69,6 +70,7 @@ import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import type { Minutes } from '@/types/minutes'
 import { formatDateTime } from '@/utils/datetime'
+import { isRequestCancelled } from '@/utils/requests'
 import { minutesStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
@@ -114,22 +116,41 @@ onMounted(() => {
   void refresh()
 })
 
+let generateController: AbortController | null = null
+
 async function generate(): Promise<void> {
   generating.value = true
   actionError.value = null
+  const controller = new AbortController()
+  generateController = controller
   try {
-    const minutes = await minutesApi.generateMinutes(props.meetingId, {
-      record_ids: [],
-      include_action_items: true,
-    })
+    const minutes = await minutesApi.generateMinutes(
+      props.meetingId,
+      {
+        record_ids: [],
+        include_action_items: true,
+      },
+      controller.signal,
+    )
     await load(1)
     select(minutes)
     toast.success('已生成纪要草稿')
   } catch (caught) {
-    actionError.value = caught
+    if (isRequestCancelled(caught)) {
+      toast.success('已取消生成')
+    } else {
+      actionError.value = caught
+    }
   } finally {
+    if (generateController === controller) {
+      generateController = null
+    }
     generating.value = false
   }
+}
+
+function cancelGenerate(): void {
+  generateController?.abort()
 }
 
 async function save(): Promise<void> {
