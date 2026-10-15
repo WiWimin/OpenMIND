@@ -130,6 +130,17 @@ async function handleLogout(): Promise<void> {
   display: flex;
   align-items: stretch;
   min-height: 100vh;
+  background:
+    radial-gradient(52rem 38rem at -4% -10%, rgba(99, 102, 241, 0.18), transparent 62%),
+    radial-gradient(40rem 26rem at 104% 108%, rgba(139, 92, 246, 0.1), transparent 58%),
+    linear-gradient(
+      108deg,
+      #e6e9f7 0%,
+      #ecedf9 22%,
+      #f2f3fa 48%,
+      var(--color-background) 76%,
+      #f7f8fb 100%
+    );
 }
 
 /* 左侧深色侧栏 */
