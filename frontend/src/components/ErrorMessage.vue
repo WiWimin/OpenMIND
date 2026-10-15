@@ -37,9 +37,9 @@ const message = computed(() =>
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-surface);
-  border: 1px solid var(--color-down);
-  border-radius: var(--radius-sm);
+  background: rgba(225, 29, 72, 0.06);
+  border: 1px solid rgba(225, 29, 72, 0.22);
+  border-radius: var(--radius-md);
 }
 
 .error-message__text {

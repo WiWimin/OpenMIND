@@ -53,12 +53,12 @@ const errorId = computed(() => `${props.id}-error`)
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
 }
 
 .form-field__label {
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-foreground);
 }
 
@@ -67,22 +67,31 @@ const errorId = computed(() => `${props.id}-error`)
 }
 
 .form-field__input {
-  min-height: 2.5rem;
+  min-height: 2.6rem;
   padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font: inherit;
-  transition: border-color var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.form-field__input::placeholder {
+  color: var(--color-muted-foreground);
 }
 
 .form-field__input:focus {
+  outline: none;
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
 }
 
 .form-field__input[aria-invalid='true'] {
   border-color: var(--color-down);
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.13);
 }
 
 .form-field__error {

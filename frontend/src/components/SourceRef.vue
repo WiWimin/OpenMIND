@@ -26,9 +26,9 @@ withDefaults(
 .source-ref {
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  background: var(--color-background);
-  border-left: 3px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  background: var(--color-surface-strong);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
 }
 
 .source-ref__label {

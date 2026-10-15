@@ -21,12 +21,13 @@ withDefaults(
 .app-tag {
   display: inline-flex;
   align-items: center;
-  padding: 0 var(--space-2);
-  background: var(--color-background);
+  padding: 0 0.6rem;
+  background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   color: var(--color-muted-foreground);
   font-size: 0.75rem;
+  font-weight: 500;
   line-height: 1.5rem;
   white-space: nowrap;
 }

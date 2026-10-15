@@ -28,22 +28,32 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 <style scoped>
 .tabs {
-  display: flex;
-  gap: var(--space-1);
+  display: inline-flex;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
 }
 
 .tabs__tab {
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
+  padding: 0.45rem 0.95rem;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--color-muted-foreground);
   font: inherit;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .tabs__tab:hover {
@@ -51,7 +61,9 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 }
 
 .tabs__tab--active {
-  color: var(--color-primary-strong);
-  border-bottom-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.26);
 }
 </style>

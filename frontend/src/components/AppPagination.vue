@@ -50,4 +50,10 @@ function go(next: number): void {
   color: var(--color-muted-foreground);
   font-size: 0.875rem;
 }
+
+@media (max-width: 560px) {
+  .pagination__info {
+    font-size: 0.8125rem;
+  }
+}
 </style>
