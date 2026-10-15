@@ -29,10 +29,14 @@
 
         <PreparationSection v-else-if="activeTab === 'preparation'" :meeting-id="meetingId" />
 
-        <template v-else-if="activeTab === 'records'">
-          <RecordSection :meeting-id="meetingId" />
-          <ChatPanel class="meeting-detail__chat" :meeting-id="meetingId" />
-        </template>
+        <div v-else-if="activeTab === 'records'" class="meeting-detail__split">
+          <div class="meeting-detail__split-main">
+            <RecordSection :meeting-id="meetingId" />
+          </div>
+          <aside class="meeting-detail__split-aside">
+            <ChatPanel :meeting-id="meetingId" />
+          </aside>
+        </div>
 
         <template v-else-if="activeTab === 'minutes'">
           <MinutesSection :meeting-id="meetingId" />
@@ -220,11 +224,41 @@ async function confirmDelete(): Promise<void> {
 }
 
 .meeting-detail__panel {
-  padding-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
-.meeting-detail__chat,
+/* 记录 Tab：左记录 + 右问答 双栏 */
+.meeting-detail__split {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+}
+
+.meeting-detail__split-aside {
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--color-border);
+}
+
 .meeting-detail__sub {
   margin-top: var(--space-4);
+}
+
+@media (max-width: 900px) {
+  .meeting-detail__split {
+    grid-template-columns: 1fr;
+  }
+
+  .meeting-detail__split-aside {
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-4);
+  }
 }
 </style>

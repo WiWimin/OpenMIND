@@ -121,7 +121,7 @@ function refill(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .chat-panel__actions {
@@ -145,26 +145,35 @@ function refill(): void {
   list-style: none;
 }
 
+/* 问答气泡 */
 .chat-turn {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 
 .chat-turn__question {
+  align-self: flex-end;
   margin: 0;
-  padding-left: var(--space-3);
-  border-left: 3px solid var(--color-border-strong);
-  font-weight: 600;
+  max-width: 88%;
+  padding: var(--space-2) var(--space-3);
+  background: linear-gradient(135deg, var(--color-primary), #4f83e0);
+  border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .chat-turn__answer {
   margin: 0;
+  padding: var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
+  color: var(--color-foreground);
+  font-size: 0.9rem;
+  line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -179,5 +188,6 @@ function refill(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  padding-left: var(--space-1);
 }
 </style>
