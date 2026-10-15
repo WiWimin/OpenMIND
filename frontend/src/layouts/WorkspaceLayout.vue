@@ -68,6 +68,16 @@
       </RouterView>
     </main>
 
+    <footer class="workspace__footer">
+      <p class="workspace__footer-links">
+        <a href="#" class="workspace__footer-link">服务条款</a>
+        <a href="#" class="workspace__footer-link">隐私政策</a>
+        <a href="#" class="workspace__footer-link">安全与合规</a>
+        <a href="#" class="workspace__footer-link">系统状况</a>
+      </p>
+      <p class="workspace__footer-note">OpenMIND · AI 会议个人助理</p>
+    </footer>
+
     <ToastHost />
   </div>
 </template>
@@ -269,6 +279,45 @@ async function handleLogout(): Promise<void> {
   max-width: 78rem;
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-7);
+}
+
+/* 页脚 */
+.workspace__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.workspace__footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.workspace__footer-link {
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.workspace__footer-link:hover {
+  color: var(--color-primary-strong);
+}
+
+.workspace__footer-note {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
 }
 
 /* 页面切换动效 */

@@ -22,34 +22,62 @@
 
       <ErrorMessage v-if="actionError" :error="actionError" />
 
-      <AppTabs v-model="activeTab" :tabs="tabs" />
+      <nav class="meeting-detail__anchors" aria-label="页面小节">
+        <a
+          v-for="tab in tabs"
+          :key="tab.value"
+          :href="`#section-${tab.value}`"
+          class="meeting-detail__anchor"
+          :class="{ 'meeting-detail__anchor--active': activeTab === tab.value }"
+          role="tab"
+          :aria-selected="activeTab === tab.value"
+          @click="activeTab = tab.value"
+        >
+          {{ tab.label }}
+        </a>
+      </nav>
 
       <div class="meeting-detail__panel">
-        <MaterialSection v-if="activeTab === 'materials'" :meeting-id="meetingId" />
+        <section id="section-materials" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">材料</h2>
+          <MaterialSection :meeting-id="meetingId" />
+        </section>
 
-        <PreparationSection v-else-if="activeTab === 'preparation'" :meeting-id="meetingId" />
+        <section id="section-preparation" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">会前准备</h2>
+          <AiAssistantEntry description="会前准备由 AI 基于材料生成，可在右侧问答中追问细节。" />
+          <PreparationSection :meeting-id="meetingId" />
+        </section>
 
-        <div v-else-if="activeTab === 'records'" class="meeting-detail__split">
-          <div class="meeting-detail__split-main">
-            <RecordSection :meeting-id="meetingId" />
+        <section id="section-records" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">记录与问答</h2>
+          <div class="meeting-detail__split">
+            <div class="meeting-detail__split-main">
+              <RecordSection :meeting-id="meetingId" />
+            </div>
+            <aside class="meeting-detail__split-aside">
+              <ChatPanel :meeting-id="meetingId" />
+            </aside>
           </div>
-          <aside class="meeting-detail__split-aside">
-            <ChatPanel :meeting-id="meetingId" />
-          </aside>
-        </div>
+        </section>
 
-        <template v-else-if="activeTab === 'minutes'">
+        <section id="section-minutes" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">纪要与行动项</h2>
+          <AiAssistantEntry description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。" />
           <MinutesSection :meeting-id="meetingId" />
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
-        </template>
+        </section>
 
-        <IssuesSection v-else-if="activeTab === 'issues'" :meeting-id="meetingId" />
+        <section id="section-tasks" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">任务</h2>
+          <EmptyState title="任务" description="该区域将在后续模块（任务）中提供。" />
+        </section>
 
-        <EmptyState
-          v-else
-          :title="activeTabLabel"
-          description="该区域将在后续模块（任务）中提供。"
-        />
+        <section id="section-issues" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">问题</h2>
+          <AiAssistantEntry description="问题由 AI 从纪要与记录中提取，可手动编辑补充。" />
+          <IssuesSection :meeting-id="meetingId" />
+        </section>
       </div>
     </template>
 
@@ -90,8 +118,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
-import AppTabs from '@/components/AppTabs.vue'
 import ActionItemSection from '@/components/ActionItemSection.vue'
+import AiAssistantEntry from '@/components/AiAssistantEntry.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -127,9 +155,6 @@ const tabs: TabItem[] = [
   { value: 'issues', label: '问题' },
 ]
 const activeTab = ref('materials')
-const activeTabLabel = computed(
-  () => tabs.find((tab) => tab.value === activeTab.value)?.label ?? '',
-)
 
 const isArchived = computed(() => store.current?.status === 'archived')
 
@@ -223,7 +248,52 @@ async function confirmDelete(): Promise<void> {
   font-size: 0.875rem;
 }
 
+/* 锚点导航（吸顶小节索引） */
+.meeting-detail__anchors {
+  position: sticky;
+  top: 3.75rem;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  margin-bottom: var(--space-3);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.meeting-detail__anchor {
+  padding: 0.4rem 0.9rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  border-radius: var(--radius-pill);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.meeting-detail__anchor:hover {
+  background: rgba(59, 111, 212, 0.07);
+  color: var(--color-foreground);
+}
+
+.meeting-detail__anchor--active {
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  box-shadow: 0 6px 16px rgba(59, 111, 212, 0.28);
+}
+
 .meeting-detail__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
   padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -233,7 +303,27 @@ async function confirmDelete(): Promise<void> {
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
-/* 记录 Tab：左记录 + 右问答 双栏 */
+/* 单页滚动小节 */
+.meeting-detail__section {
+  scroll-margin-top: 8.5rem;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.meeting-detail__section:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.meeting-detail__section-title {
+  margin: 0 0 var(--space-3);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-foreground);
+}
+
+/* 记录小节：左记录 + 右问答 双栏 */
 .meeting-detail__split {
   display: grid;
   gap: var(--space-4);
