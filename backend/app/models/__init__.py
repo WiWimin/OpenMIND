@@ -5,6 +5,7 @@ from app.models.issue import OpenIssue
 from app.models.material import MeetingMaterial
 from app.models.meeting import Meeting
 from app.models.minutes import MeetingMinutes
+from app.models.model_config import UserModelConfig
 from app.models.preparation import Preparation
 from app.models.record import MeetingRecord
 from app.models.task import PersonalTask
@@ -22,4 +23,5 @@ __all__ = [
     "PersonalTask",
     "Preparation",
     "User",
+    "UserModelConfig",
 ]

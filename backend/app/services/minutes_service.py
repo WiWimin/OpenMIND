@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.ai.llm import LLMClient
 from app.ai.minutes import MinutesService
 from app.core.exceptions import AppError
 from app.models.meeting import Meeting
@@ -10,6 +9,11 @@ from app.models.minutes import MeetingMinutes
 from app.repositories import minutes_repository, record_repository
 from app.schemas.minutes import MinutesGenerateRequest, MinutesUpdate
 from app.services import meeting_service
+from app.services.model_config_service import (
+    ModelConfig,
+    build_llm_client,
+    resolve_model_config,
+)
 from app.utils.ids import new_id
 
 _STATUS_DRAFT = "draft"
@@ -17,11 +21,15 @@ _STATUS_CONFIRMED = "confirmed"
 _MAX_RECORDS = 100
 
 
-def generate_text(meeting: Meeting, transcripts: list[str]) -> str:
+def generate_text(
+    meeting: Meeting, transcripts: list[str], config: ModelConfig
+) -> str:
     topic_parts = [meeting.title]
     if meeting.topic:
         topic_parts.append(meeting.topic)
-    return MinutesService(LLMClient()).generate(" / ".join(topic_parts), transcripts)
+    return MinutesService(build_llm_client(config)).generate(
+        " / ".join(topic_parts), transcripts
+    )
 
 
 def _not_found() -> AppError:
@@ -43,7 +51,8 @@ def generate_minutes(
 ) -> MeetingMinutes:
     meeting = meeting_service.get_owned_meeting(db, meeting_id, user_id)
     transcripts, record_ids = _gather(db, meeting_id, payload.record_ids)
-    content = generate_text(meeting, transcripts)
+    config = resolve_model_config(db, user_id)
+    content = generate_text(meeting, transcripts, config)
     minutes = minutes_repository.create(
         db,
         minutes_id=new_id("min"),

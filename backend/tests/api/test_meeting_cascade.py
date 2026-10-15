@@ -28,7 +28,7 @@ def fake_extract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         action_item_service,
         "extract_candidates",
-        lambda transcripts: [ActionItemCandidate(content="完成接口联调")],
+        lambda transcripts, config=None: [ActionItemCandidate(content="完成接口联调")],
     )
 
 

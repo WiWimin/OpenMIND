@@ -5,13 +5,17 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.ai.extraction import ActionItemCandidate, ActionItemExtractor
-from app.ai.llm import LLMClient
 from app.core.exceptions import AppError
 from app.models.action_item import ActionItem
 from app.models.task import PersonalTask
 from app.repositories import action_item_repository, record_repository, task_repository
 from app.schemas.action_item import ActionItemUpdate, ConvertToTaskRequest
 from app.services import meeting_service
+from app.services.model_config_service import (
+    ModelConfig,
+    build_llm_client,
+    resolve_model_config,
+)
 from app.utils.ids import new_id
 
 _PENDING = "pending_confirmation"
@@ -20,8 +24,10 @@ _CONVERTED = "converted"
 _MAX_RECORDS = 100
 
 
-def extract_candidates(transcripts: list[str]) -> list[ActionItemCandidate]:
-    return ActionItemExtractor(LLMClient()).extract(transcripts)
+def extract_candidates(
+    transcripts: list[str], config: ModelConfig
+) -> list[ActionItemCandidate]:
+    return ActionItemExtractor(build_llm_client(config)).extract(transcripts)
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -52,7 +58,8 @@ def extract_action_items(
 ) -> list[ActionItem]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
     transcripts = _gather_transcripts(db, meeting_id, record_ids)
-    candidates = extract_candidates(transcripts)
+    config = resolve_model_config(db, user_id)
+    candidates = extract_candidates(transcripts, config)
     items: list[ActionItem] = []
     for candidate in candidates:
         items.append(

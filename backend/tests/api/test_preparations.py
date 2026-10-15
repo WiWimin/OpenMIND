@@ -13,7 +13,7 @@ PASSWORD = "secret123"
 
 @pytest.fixture()
 def fake_draft(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake(meeting, snippets, user_goal):
+    def fake(meeting, snippets, user_goal, config=None):
         return PreparationDraft(summary="会议摘要", checklist=["确认里程碑", "排查风险"])
 
     monkeypatch.setattr(preparation_service, "generate_draft", fake)
@@ -79,7 +79,7 @@ def test_generate_cross_user_forbidden(client: TestClient, fake_draft: None) -> 
 def test_generate_ai_failure_propagates(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(meeting, snippets, user_goal):
+    def boom(meeting, snippets, user_goal, config=None):
         raise AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
 
     monkeypatch.setattr(preparation_service, "generate_draft", boom)
