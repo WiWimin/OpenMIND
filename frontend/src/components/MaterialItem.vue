@@ -35,21 +35,27 @@ const status = computed(() => materialStatusMeta[props.material.processing_statu
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.material-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .material-item__main {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
   min-width: 0;
 }
 
 .material-item__name {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-foreground);
   overflow-wrap: anywhere;
 }

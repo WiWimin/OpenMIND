@@ -190,7 +190,7 @@ async function confirm(): Promise<void> {
 .minutes-section__list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -202,16 +202,25 @@ async function confirm(): Promise<void> {
   justify-content: space-between;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font: inherit;
   cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.minutes-section__item:hover {
+  background: var(--color-surface-strong);
+  border-color: var(--color-border-strong);
 }
 
 .minutes-section__item--active {
   border-color: var(--color-primary);
+  background: rgba(99, 102, 241, 0.07);
 }
 
 .minutes-section__time {
@@ -222,7 +231,12 @@ async function confirm(): Promise<void> {
 .minutes-section__editor {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .minutes-section__editor-head {

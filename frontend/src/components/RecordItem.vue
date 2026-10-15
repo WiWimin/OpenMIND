@@ -85,10 +85,16 @@ function save(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.record-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .record-item__meta {

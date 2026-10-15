@@ -234,10 +234,16 @@ async function submitConvert(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.action-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .action-item__head {
@@ -248,7 +254,7 @@ async function submitConvert(): Promise<void> {
 }
 
 .action-item__content {
-  font-weight: 500;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 

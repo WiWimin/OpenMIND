@@ -187,10 +187,16 @@ async function save(issueId: string): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.issue-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .issue-item__head {
@@ -201,7 +207,7 @@ async function save(issueId: string): Promise<void> {
 }
 
 .issue-item__description {
-  font-weight: 500;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 

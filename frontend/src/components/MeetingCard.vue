@@ -26,22 +26,44 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 
 <style scoped>
 .meeting-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
   width: 100%;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4);
+  overflow: hidden;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   text-align: left;
   font: inherit;
   cursor: pointer;
-  transition: border-color var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.meeting-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
+  opacity: 0;
+  transition: opacity var(--transition-fast);
 }
 
 .meeting-card:hover {
-  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-glow);
+}
+
+.meeting-card:hover::before {
+  opacity: 1;
 }
 
 .meeting-card__head {
@@ -52,7 +74,8 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 }
 
 .meeting-card__title {
-  font-size: 1rem;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
   font-weight: 600;
   color: var(--color-foreground);
 }
@@ -63,6 +86,7 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 }
 
 .meeting-card__time {
+  margin-top: var(--space-1);
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
 }

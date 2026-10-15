@@ -111,7 +111,7 @@ async function ask(): Promise<void> {
 .chat-panel__turns {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -121,14 +121,17 @@ async function ask(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-turn__question {
   margin: 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--color-border-strong);
   font-weight: 600;
 }
 

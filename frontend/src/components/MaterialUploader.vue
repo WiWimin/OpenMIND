@@ -72,10 +72,10 @@ function submit(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
 }
 
 .material-uploader__fields {
@@ -87,17 +87,34 @@ function submit(): void {
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
 }
 
 .form-field__label {
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-foreground);
 }
 
 .material-uploader__file {
+  min-height: 2.6rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   font: inherit;
+}
+
+.material-uploader__file::file-selector-button {
+  margin-right: var(--space-2);
+  padding: 0.35rem 0.8rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-foreground);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .material-uploader__error {
