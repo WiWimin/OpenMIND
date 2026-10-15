@@ -154,6 +154,7 @@ import FormSelect from '@/components/FormSelect.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useTasksStore, type TaskStatusFilter } from '@/stores/tasks'
 import type { PersonalTask, TaskStatus } from '@/types/task'
@@ -163,6 +164,7 @@ import { taskStatusMeta } from '@/utils/statusLabels'
 
 const store = useTasksStore()
 const router = useRouter()
+const toast = useToast()
 
 const filterOptions: SelectOption[] = [
   { value: '', label: '全部' },
@@ -245,6 +247,7 @@ async function saveEdit(): Promise<void> {
       due_date: editDue.value || undefined,
     })
     editId.value = null
+    toast.success('任务已更新')
   } catch (caught) {
     editError.value = caught
   } finally {
@@ -270,6 +273,7 @@ function onFilter(value: string): void {
 
 function changeStatus(task: PersonalTask, value: string): void {
   void store.updateTask(task.task_id, { status: value as TaskStatus })
+  toast.success('任务状态已更新')
 }
 
 function askCancel(taskId: string): void {
@@ -290,6 +294,7 @@ async function confirmCancel(): Promise<void> {
   try {
     await store.cancelTask(pendingCancelId.value)
     showCancel.value = false
+    toast.success('任务已取消')
   } finally {
     cancelling.value = false
     pendingCancelId.value = null

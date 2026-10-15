@@ -79,11 +79,14 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { IssueStatus, OpenIssue } from '@/types/issue'
 import type { SelectOption } from '@/types/ui'
 import { issueStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, pagination, loading, error, load } = useAsyncList<OpenIssue>({
   fetcher: ({ page, page_size }) => issuesApi.listIssues(props.meetingId, { page, page_size }),
@@ -121,6 +124,7 @@ async function extract(): Promise<void> {
   try {
     await issuesApi.extractIssues(props.meetingId, { record_ids: [] })
     await load(1)
+    toast.success('已提取问题')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -148,6 +152,7 @@ async function save(issueId: string): Promise<void> {
     })
     editingId.value = null
     await load()
+    toast.success('问题已保存')
   } catch (caught) {
     actionError.value = caught
   } finally {

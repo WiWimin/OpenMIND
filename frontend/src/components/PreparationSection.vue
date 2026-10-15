@@ -73,11 +73,14 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { Preparation } from '@/types/preparation'
 import { formatDateTime } from '@/utils/datetime'
 import { preparationStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, loading, error, load } = useAsyncList<Preparation>({
   fetcher: ({ page, page_size }) =>
@@ -132,6 +135,7 @@ async function generate(): Promise<void> {
     })
     await load(1)
     select(preparation)
+    toast.success('已生成准备稿')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -156,6 +160,7 @@ async function save(): Promise<void> {
     })
     syncSelected(updated)
     await load()
+    toast.success('准备稿已保存')
   } catch (caught) {
     actionError.value = caught
   } finally {

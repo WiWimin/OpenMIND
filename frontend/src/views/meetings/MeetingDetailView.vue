@@ -100,6 +100,7 @@ import MinutesSection from '@/components/MinutesSection.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PreparationSection from '@/components/PreparationSection.vue'
 import RecordSection from '@/components/RecordSection.vue'
+import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore } from '@/stores/meetings'
 import type { CreateMeetingPayload } from '@/types/meeting'
@@ -108,6 +109,7 @@ import { formatDateTime } from '@/utils/datetime'
 
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 const store = useMeetingsStore()
 
 const meetingId = computed(() => String(route.params.meetingId))
@@ -162,6 +164,7 @@ async function saveEdit(payload: CreateMeetingPayload): Promise<void> {
   try {
     await store.updateMeeting(meetingId.value, payload)
     showEdit.value = false
+    toast.success('会议已更新')
   } catch (caught) {
     saveError.value = caught
   } finally {
@@ -175,6 +178,7 @@ async function confirmArchive(): Promise<void> {
   try {
     await store.archiveMeeting(meetingId.value)
     showArchive.value = false
+    toast.success('会议已归档')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -188,6 +192,7 @@ async function confirmDelete(): Promise<void> {
   try {
     await store.deleteMeeting(meetingId.value)
     showDelete.value = false
+    toast.success('会议已删除')
     await router.push({ name: ROUTE_NAMES.meetings })
   } catch (caught) {
     actionError.value = caught

@@ -62,6 +62,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MeetingList from '@/components/MeetingList.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore, type MeetingStatusFilter } from '@/stores/meetings'
 import type { CreateMeetingPayload } from '@/types/meeting'
@@ -70,6 +71,7 @@ import type { SelectOption } from '@/types/ui'
 const store = useMeetingsStore()
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 
 const showForm = ref(false)
 const saving = ref(false)
@@ -112,6 +114,7 @@ async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
   try {
     await store.createMeeting(payload)
     showForm.value = false
+    toast.success('会议已创建')
   } catch (caught) {
     saveError.value = caught
   } finally {

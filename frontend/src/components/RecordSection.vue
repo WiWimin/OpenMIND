@@ -69,9 +69,12 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import RecordItem from '@/components/RecordItem.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { MeetingRecord } from '@/types/record'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, pagination, loading, error, load } = useAsyncList<MeetingRecord>({
   fetcher: ({ page, page_size }) => recordsApi.listRecords(props.meetingId, { page, page_size }),
@@ -106,6 +109,7 @@ async function add(): Promise<void> {
     await recordsApi.createRecord(props.meetingId, { content, record_type: 'manual' })
     newContent.value = ''
     await load(1)
+    toast.success('记录已保存')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -118,6 +122,7 @@ async function saveEdit(recordId: string, content: string): Promise<void> {
   try {
     await recordsApi.updateRecord(recordId, { content })
     await load()
+    toast.success('记录已更新')
   } catch (caught) {
     actionError.value = caught
   }
@@ -143,6 +148,7 @@ async function confirmDelete(): Promise<void> {
     await recordsApi.deleteRecord(pendingDeleteId.value)
     showDelete.value = false
     await load()
+    toast.success('记录已删除')
   } catch (caught) {
     actionError.value = caught
   } finally {

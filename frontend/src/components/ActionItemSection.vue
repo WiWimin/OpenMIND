@@ -126,11 +126,14 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import SourceRef from '@/components/SourceRef.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { ActionItem } from '@/types/actionItem'
 import { formatDate } from '@/utils/datetime'
 import { actionItemStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, pagination, loading, error, load } = useAsyncList<ActionItem>({
   fetcher: ({ page, page_size }) =>
@@ -189,6 +192,7 @@ async function saveEdit(): Promise<void> {
     })
     editId.value = null
     await load()
+    toast.success('行动项已更新')
   } catch (caught) {
     editError.value = caught
   } finally {
@@ -218,6 +222,7 @@ async function extract(): Promise<void> {
   try {
     await actionItemsApi.extractActionItems(props.meetingId, { record_ids: [] })
     await load(1)
+    toast.success('已提取行动项')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -231,6 +236,7 @@ async function confirmItem(actionId: string): Promise<void> {
   try {
     await actionItemsApi.confirmActionItem(actionId)
     await load()
+    toast.success('行动项已确认')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -269,6 +275,7 @@ async function submitConvert(): Promise<void> {
     })
     convertTarget.value = null
     await load()
+    toast.success('已转为我的个人任务')
   } catch (caught) {
     convertError.value = caught
   } finally {

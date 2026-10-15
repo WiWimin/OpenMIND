@@ -92,6 +92,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MaterialList from '@/components/MaterialList.vue'
 import MaterialUploader from '@/components/MaterialUploader.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { Material, MaterialUploadPayload } from '@/types/material'
 import { formatDateTime } from '@/utils/datetime'
 import { materialStatusMeta } from '@/utils/statusLabels'
@@ -99,6 +100,8 @@ import { materialStatusMeta } from '@/utils/statusLabels'
 const POLL_INTERVAL_MS = 3000
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, pagination, loading, error, load } = useAsyncList<Material>({
   fetcher: ({ page, page_size }) => materialsApi.listMaterials(props.meetingId, { page, page_size }),
@@ -180,6 +183,7 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
   try {
     await materialsApi.uploadMaterial(props.meetingId, payload)
     await load(1)
+    toast.success('资料已上传')
   } catch (caught) {
     uploadError.value = caught
   } finally {
@@ -207,6 +211,7 @@ async function confirmDelete(): Promise<void> {
     await materialsApi.deleteMaterial(pendingDeleteId.value)
     showDelete.value = false
     await load()
+    toast.success('资料已删除')
   } catch (caught) {
     actionError.value = caught
   } finally {

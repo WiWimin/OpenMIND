@@ -94,6 +94,8 @@
         </RouterView>
       </main>
     </div>
+
+    <ToastHost />
   </div>
 </template>
 
@@ -102,6 +104,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
+import ToastHost from '@/components/ToastHost.vue'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 

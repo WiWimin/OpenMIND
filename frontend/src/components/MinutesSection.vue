@@ -66,11 +66,14 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { Minutes } from '@/types/minutes'
 import { formatDateTime } from '@/utils/datetime'
 import { minutesStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, loading, error, load } = useAsyncList<Minutes>({
   fetcher: ({ page, page_size }) => minutesApi.listMinutes(props.meetingId, { page, page_size }),
@@ -121,6 +124,7 @@ async function generate(): Promise<void> {
     })
     await load(1)
     select(minutes)
+    toast.success('已生成纪要草稿')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -138,6 +142,7 @@ async function save(): Promise<void> {
     const updated = await minutesApi.updateMinutes(selected.value.minutes_id, { content: draft.value })
     syncSelected(updated)
     await load()
+    toast.success('纪要草稿已保存')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -155,6 +160,7 @@ async function confirm(): Promise<void> {
     const updated = await minutesApi.confirmMinutes(selected.value.minutes_id)
     syncSelected(updated)
     await load()
+    toast.success('纪要已确认')
   } catch (caught) {
     actionError.value = caught
   } finally {
