@@ -49,8 +49,8 @@ withDefaults(
 
 .status-badge--info {
   color: var(--color-primary-strong);
-  background: rgba(99, 102, 241, 0.1);
-  border-color: rgba(99, 102, 241, 0.22);
+  background: rgba(59, 111, 212, 0.1);
+  border-color: rgba(59, 111, 212, 0.22);
 }
 
 .status-badge--success {

@@ -66,11 +66,11 @@ withDefaults(
 .app-button--primary {
   color: var(--color-primary-contrast);
   background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.26);
+  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.26);
 }
 
 .app-button--primary:hover:not(:disabled) {
-  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34);
+  box-shadow: 0 12px 26px rgba(59, 111, 212, 0.34);
 }
 
 .app-button--ghost {

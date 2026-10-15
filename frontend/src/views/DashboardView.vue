@@ -360,7 +360,7 @@ onMounted(() => {
   gap: var(--space-4);
   padding: var(--space-5);
   color: #e2e8f0;
-  background: linear-gradient(135deg, #111a2e 0%, #131c33 55%, #1a1440 100%);
+  background: linear-gradient(135deg, #0f2744 0%, #12304f 55%, #0e2a47 100%);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
 }
@@ -437,12 +437,12 @@ onMounted(() => {
 .hero-btn--primary {
   color: #ffffff;
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.45);
+  box-shadow: 0 10px 24px rgba(59, 111, 212, 0.45);
 }
 
 .hero-btn--primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 30px rgba(79, 70, 229, 0.55);
+  box-shadow: 0 14px 30px rgba(59, 111, 212, 0.55);
 }
 
 .dashboard__hero-glow {
@@ -452,7 +452,7 @@ onMounted(() => {
   width: 22rem;
   height: 22rem;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(139, 92, 246, 0.5), transparent 70%);
+  background: radial-gradient(closest-side, rgba(20, 184, 166, 0.5), transparent 70%);
   pointer-events: none;
 }
 
@@ -518,7 +518,7 @@ onMounted(() => {
 }
 
 .stat-card__icon--indigo {
-  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  background: linear-gradient(135deg, #3b6fd4, #3b82f6);
 }
 
 .stat-card__icon--violet {
@@ -829,7 +829,7 @@ onMounted(() => {
   font-weight: 700;
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   border-radius: 50%;
-  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 6px 14px rgba(59, 111, 212, 0.3);
 }
 
 .flow__title {

@@ -122,7 +122,7 @@ onUnmounted(() => {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.26);
+  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.26);
   transition:
     background var(--transition-fast),
     box-shadow var(--transition-fast),
@@ -131,7 +131,7 @@ onUnmounted(() => {
 
 .home__retry:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.34);
+  box-shadow: 0 12px 26px rgba(59, 111, 212, 0.34);
 }
 
 .home__retry:disabled {

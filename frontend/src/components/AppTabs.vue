@@ -64,6 +64,6 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
   color: var(--color-primary-contrast);
   font-weight: 600;
   background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.26);
+  box-shadow: 0 6px 16px rgba(59, 111, 212, 0.26);
 }
 </style>

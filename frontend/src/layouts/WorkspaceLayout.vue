@@ -209,7 +209,7 @@ async function handleLogout(): Promise<void> {
 
 .workspace__cta:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 30px rgba(79, 70, 229, 0.5);
+  box-shadow: 0 14px 30px rgba(59, 111, 212, 0.5);
 }
 
 .workspace__nav {

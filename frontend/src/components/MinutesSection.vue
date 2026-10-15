@@ -247,7 +247,7 @@ async function confirm(): Promise<void> {
 
 .minutes-section__item--active {
   border-color: var(--color-primary);
-  background: rgba(99, 102, 241, 0.07);
+  background: rgba(59, 111, 212, 0.07);
 }
 
 .minutes-section__time {
