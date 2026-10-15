@@ -20,7 +20,7 @@
     />
 
     <template v-else>
-      <MaterialList :items="items" @delete="askDelete" />
+      <MaterialList :items="items" @delete="askDelete" @view="askView" />
       <AppPagination
         v-if="pagination.total_pages > 1"
         class="material-section__pagination"
@@ -32,6 +32,38 @@
     </template>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
+
+    <AppModal :open="viewTarget !== null" title="资料详情" @close="pendingViewId = null">
+      <dl v-if="viewTarget" class="material-detail">
+        <div class="material-detail__row">
+          <dt>文件名</dt>
+          <dd>{{ viewTarget.file_name }}</dd>
+        </div>
+        <div class="material-detail__row">
+          <dt>类型</dt>
+          <dd>{{ viewTarget.type.toUpperCase() }}</dd>
+        </div>
+        <div class="material-detail__row">
+          <dt>来源</dt>
+          <dd>{{ viewTarget.source ?? '未填写' }}</dd>
+        </div>
+        <div class="material-detail__row">
+          <dt>上传时间</dt>
+          <dd>{{ createdAtOf(viewTarget) }}</dd>
+        </div>
+        <div class="material-detail__row">
+          <dt>处理状态</dt>
+          <dd>{{ statusOf(viewTarget) }}</dd>
+        </div>
+        <div v-if="viewTarget.parse_error" class="material-detail__row">
+          <dt>解析错误</dt>
+          <dd class="material-detail__error">{{ viewTarget.parse_error }}</dd>
+        </div>
+      </dl>
+      <template #footer>
+        <AppButton variant="ghost" @click="pendingViewId = null">关闭</AppButton>
+      </template>
+    </AppModal>
 
     <ConfirmDialog
       :open="showDelete"
@@ -50,6 +82,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import * as materialsApi from '@/api/materials'
+import AppButton from '@/components/AppButton.vue'
+import AppModal from '@/components/AppModal.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -59,6 +93,8 @@ import MaterialList from '@/components/MaterialList.vue'
 import MaterialUploader from '@/components/MaterialUploader.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
 import type { Material, MaterialUploadPayload } from '@/types/material'
+import { formatDateTime } from '@/utils/datetime'
+import { materialStatusMeta } from '@/utils/statusLabels'
 
 const POLL_INTERVAL_MS = 3000
 
@@ -74,6 +110,23 @@ const actionError = ref<unknown>(null)
 const showDelete = ref(false)
 const deleting = ref(false)
 const pendingDeleteId = ref<string | null>(null)
+const pendingViewId = ref<string | null>(null)
+
+const viewTarget = computed(
+  () => items.value.find((item) => item.material_id === pendingViewId.value) ?? null,
+)
+
+function askView(materialId: string): void {
+  pendingViewId.value = materialId
+}
+
+function createdAtOf(material: Material): string {
+  return formatDateTime(material.created_at)
+}
+
+function statusOf(material: Material): string {
+  return materialStatusMeta[material.processing_status].label
+}
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let isActive = true
@@ -178,5 +231,36 @@ async function confirmDelete(): Promise<void> {
 
 .material-section__pagination {
   margin-top: var(--space-2);
+}
+
+.material-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.material-detail__row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.material-detail__row dt {
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.material-detail__row dd {
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.material-detail__error {
+  color: var(--color-down);
 }
 </style>

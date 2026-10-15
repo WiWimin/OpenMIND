@@ -84,6 +84,24 @@ describe('ActionItemSection', () => {
     expect(wrapper.text()).toContain('完成接口联调')
   })
 
+  it('edits a pending action item', async () => {
+    vi.mocked(actionItemsApi.listActionItems).mockResolvedValue(listOf([makeItem('pending_confirmation')]))
+    vi.mocked(actionItemsApi.updateActionItem).mockResolvedValue(makeItem('pending_confirmation'))
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '编辑')?.trigger('click')
+    await wrapper.get('#action-edit-content').setValue('更新后的内容')
+    await wrapper.get('.action-item__edit').trigger('submit')
+    await flushPromises()
+
+    expect(actionItemsApi.updateActionItem).toHaveBeenCalledWith('act_1', {
+      content: '更新后的内容',
+      assignee: '张三',
+      due_date: '2026-10-05',
+    })
+  })
+
   it('confirms a pending action item', async () => {
     vi.mocked(actionItemsApi.listActionItems).mockResolvedValue(listOf([makeItem('pending_confirmation')]))
     vi.mocked(actionItemsApi.confirmActionItem).mockResolvedValue(makeItem('confirmed'))

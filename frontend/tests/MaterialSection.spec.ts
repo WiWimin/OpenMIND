@@ -105,7 +105,10 @@ describe('MaterialSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await wrapper.get('.material-item .app-button').trigger('click')
+    const deleteButton = wrapper
+      .findAll('.material-item .app-button')
+      .find((button) => button.text() === '删除')
+    await deleteButton?.trigger('click')
     const confirm = wrapper
       .get('.modal')
       .findAll('button')
@@ -114,6 +117,22 @@ describe('MaterialSection', () => {
     await flushPromises()
 
     expect(materialsApi.deleteMaterial).toHaveBeenCalledWith('mat_1')
+  })
+
+  it('shows material details on demand', async () => {
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue(listOf([processed]))
+    const wrapper = mountSection()
+    await flushPromises()
+
+    const viewButton = wrapper
+      .findAll('.material-item .app-button')
+      .find((button) => button.text() === '查看详情')
+    await viewButton?.trigger('click')
+
+    const modal = wrapper.get('.modal')
+    expect(modal.text()).toContain('项目方案.pdf')
+    expect(modal.text()).toContain('未填写')
+    expect(modal.text()).toContain('已解析')
   })
 
   it('polls while a material is processing', async () => {

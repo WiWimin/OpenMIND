@@ -6,6 +6,7 @@
     </span>
     <span v-if="meeting.topic" class="meeting-card__topic">{{ meeting.topic }}</span>
     <span class="meeting-card__time">{{ time }}</span>
+    <span class="meeting-card__enter" aria-hidden="true">进入会议 →</span>
   </button>
 </template>
 
@@ -89,5 +90,23 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
   margin-top: var(--space-1);
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
+}
+
+.meeting-card__enter {
+  margin-top: var(--space-1);
+  color: var(--color-primary-strong);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.meeting-card:hover .meeting-card__enter,
+.meeting-card:focus-visible .meeting-card__enter {
+  opacity: 1;
+  transform: translateX(0);
 }
 </style>

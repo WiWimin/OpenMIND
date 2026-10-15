@@ -35,7 +35,33 @@
             :reference="item.source.record_id ?? ''"
           />
 
-          <div class="action-item__actions">
+          <form
+            v-if="editId === item.action_id"
+            class="action-item__edit"
+            @submit.prevent="saveEdit"
+          >
+            <FormField
+              id="action-edit-content"
+              v-model="editContent"
+              label="行动项内容"
+              required
+              :error="editFormError"
+            />
+            <FormField id="action-edit-assignee" v-model="editAssignee" label="负责人（可选）" />
+            <FormField id="action-edit-due" v-model="editDue" label="截止日期" type="date" />
+            <ErrorMessage v-if="editError" :error="editError" />
+            <div class="action-item__edit-actions">
+              <AppButton type="button" variant="ghost" :disabled="editSaving" @click="cancelEdit">
+                取消
+              </AppButton>
+              <AppButton type="submit" :loading="editSaving">保存</AppButton>
+            </div>
+          </form>
+
+          <div v-else class="action-item__actions">
+            <AppButton v-if="item.status !== 'converted'" variant="ghost" @click="startEdit(item)">
+              编辑
+            </AppButton>
             <AppButton
               v-if="item.status === 'pending_confirmation'"
               :loading="busyId === item.action_id"
@@ -50,7 +76,7 @@
             >
               转为我的个人任务
             </AppButton>
-            <span v-if="item.status === 'converted'" class="action-item__done">已转为我的个人任务</span>
+            <span v-if="item.status === 'converted'" class="action-item__done">已转任务</span>
           </div>
         </li>
       </ul>
@@ -121,6 +147,54 @@ const convertDue = ref('')
 const convertFormError = ref('')
 const convertError = ref<unknown>(null)
 const converting = ref(false)
+
+const editId = ref<string | null>(null)
+const editContent = ref('')
+const editAssignee = ref('')
+const editDue = ref('')
+const editFormError = ref('')
+const editError = ref<unknown>(null)
+const editSaving = ref(false)
+
+function startEdit(item: ActionItem): void {
+  editId.value = item.action_id
+  editContent.value = item.content
+  editAssignee.value = item.assignee ?? ''
+  editDue.value = item.due_date ?? ''
+  editFormError.value = ''
+  editError.value = null
+}
+
+function cancelEdit(): void {
+  editId.value = null
+}
+
+async function saveEdit(): Promise<void> {
+  if (!editId.value) {
+    return
+  }
+  const content = editContent.value.trim()
+  if (!content) {
+    editFormError.value = '请输入行动项内容'
+    return
+  }
+  editFormError.value = ''
+  editSaving.value = true
+  editError.value = null
+  try {
+    await actionItemsApi.updateActionItem(editId.value, {
+      content,
+      assignee: editAssignee.value.trim() || undefined,
+      due_date: editDue.value || undefined,
+    })
+    editId.value = null
+    await load()
+  } catch (caught) {
+    editError.value = caught
+  } finally {
+    editSaving.value = false
+  }
+}
 
 function statusOf(item: ActionItem) {
   return actionItemStatusMeta[item.status]
@@ -278,6 +352,22 @@ async function submitConvert(): Promise<void> {
 .action-item__done {
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
+}
+
+.action-item__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.action-item__edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .action-section__pagination {

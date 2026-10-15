@@ -10,7 +10,10 @@
       <p v-if="material.parse_error" class="material-item__error">{{ material.parse_error }}</p>
     </div>
 
-    <AppButton variant="ghost" @click="emit('delete', material.material_id)">删除</AppButton>
+    <div class="material-item__actions">
+      <AppButton variant="ghost" @click="emit('view', material.material_id)">查看详情</AppButton>
+      <AppButton variant="ghost" @click="emit('delete', material.material_id)">删除</AppButton>
+    </div>
   </li>
 </template>
 
@@ -24,7 +27,7 @@ import type { Material } from '@/types/material'
 import { materialStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ material: Material }>()
-const emit = defineEmits<{ delete: [materialId: string] }>()
+const emit = defineEmits<{ delete: [materialId: string]; view: [materialId: string] }>()
 
 const status = computed(() => materialStatusMeta[props.material.processing_status])
 </script>
@@ -71,5 +74,11 @@ const status = computed(() => materialStatusMeta[props.material.processing_statu
   margin: 0;
   color: var(--color-down);
   font-size: 0.8125rem;
+}
+
+.material-item__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
 }
 </style>
