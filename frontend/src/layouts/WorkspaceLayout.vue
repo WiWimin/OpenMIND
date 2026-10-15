@@ -1,7 +1,7 @@
 <template>
   <div class="workspace">
     <aside class="workspace__sidebar">
-      <RouterLink class="workspace__brand" :to="{ name: ROUTE_NAMES.meetings }">
+      <RouterLink class="workspace__brand" :to="{ name: ROUTE_NAMES.dashboard }">
         <span class="workspace__mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
             <path
@@ -15,7 +15,7 @@
         <span class="workspace__wordmark">OpenMIND</span>
       </RouterLink>
 
-      <RouterLink class="workspace__cta" :to="{ name: ROUTE_NAMES.meetings, query: { create: '1' } }">
+      <RouterLink class="workspace__cta" :to="{ name: ROUTE_NAMES.dashboard, query: { create: '1' } }">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
           <path d="M12 5.5v13M5.5 12h13" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
@@ -33,15 +33,6 @@
             <rect x="13.5" y="11" width="7" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6" />
           </svg>
           <span class="workspace__nav-label">仪表盘</span>
-        </RouterLink>
-
-        <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.meetings }">
-          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" stroke-width="1.6" />
-            <path d="M8 3.5v3M16 3.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            <path d="M3.5 10.5h17" stroke="currentColor" stroke-width="1.6" />
-          </svg>
-          <span class="workspace__nav-label">会议</span>
         </RouterLink>
 
         <p class="workspace__group">我的</p>
@@ -127,20 +118,28 @@ async function handleLogout(): Promise<void> {
 
 <style scoped>
 .workspace {
+  position: relative;
   display: flex;
   align-items: stretch;
   min-height: 100vh;
   background:
-    radial-gradient(52rem 38rem at -4% -10%, rgba(59, 111, 212, 0.16), transparent 62%),
-    radial-gradient(40rem 26rem at 104% 108%, rgba(20, 184, 166, 0.1), transparent 58%),
-    linear-gradient(
-      108deg,
-      #e3e9f5 0%,
-      #e9edf7 22%,
-      #eef1f7 48%,
-      var(--color-background) 76%,
-      #f0f3f8 100%
-    );
+    /* 白纱：整体提亮 */
+    linear-gradient(rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.42)),
+    /* 细网格纹理（对角淡线） */
+    repeating-linear-gradient(
+      -42deg,
+      transparent,
+      transparent 3px,
+      rgba(59, 111, 212, 0.018) 3px,
+      rgba(59, 111, 212, 0.018) 4px
+    ),
+    /* 浅蓝云纹（图1） */
+    radial-gradient(58rem 42rem at 8% 18%, rgba(125, 180, 235, 0.45), transparent 62%),
+    radial-gradient(46rem 34rem at 92% 88%, rgba(110, 190, 228, 0.38), transparent 58%),
+    radial-gradient(40rem 28rem at 78% 8%, rgba(160, 205, 242, 0.34), transparent 52%),
+    radial-gradient(34rem 26rem at 18% 92%, rgba(95, 180, 222, 0.28), transparent 52%),
+    radial-gradient(30rem 22rem at 55% 52%, rgba(255, 255, 255, 0.65), transparent 60%),
+    linear-gradient(135deg, #dceaf6 0%, #e7f1fa 30%, #eff5fb 55%, #e3edf8 80%, #dceaf5 100%);
 }
 
 /* 左侧深色侧栏 */

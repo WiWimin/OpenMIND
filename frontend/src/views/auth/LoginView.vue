@@ -112,13 +112,30 @@ async function submit(): Promise<void> {
 
 <style scoped>
 .auth {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   min-height: 100vh;
-  background: var(--color-background);
+  background:
+    radial-gradient(80% 60% at 12% 14%, rgba(59, 111, 212, 0.1), transparent 55%),
+    radial-gradient(60% 45% at 88% 90%, rgba(20, 184, 166, 0.06), transparent 55%),
+    linear-gradient(160deg, #eef2f8 0%, #e8edf5 48%, #eef2f8 100%);
 }
 
-/* 左侧品牌区（浅色网格纹理） */
+/* 全页网格纹理 */
+.auth::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(59, 111, 212, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 111, 212, 0.055) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(130% 110% at 30% 25%, #000 30%, transparent 92%);
+  pointer-events: none;
+}
+
+/* 左侧品牌区 */
 .auth__aside {
   position: relative;
   display: flex;
@@ -127,22 +144,6 @@ async function submit(): Promise<void> {
   gap: var(--space-5);
   padding: var(--space-6) var(--space-5);
   color: var(--color-foreground);
-  background:
-    radial-gradient(90% 70% at 0% 0%, rgba(59, 111, 212, 0.12), transparent 55%),
-    radial-gradient(70% 50% at 100% 100%, rgba(20, 184, 166, 0.08), transparent 55%),
-    linear-gradient(160deg, #eef1f7 0%, #e8edf5 100%);
-}
-
-.auth__aside::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(59, 111, 212, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(59, 111, 212, 0.06) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(110% 100% at 30% 30%, #000 20%, transparent 80%);
-  pointer-events: none;
 }
 
 .auth__brand,
