@@ -63,6 +63,7 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-17 | 会议列表筛选 | MVP 支持 `page`/`page_size`/`status`；`keyword`/`start_time`/`end_time` 为后续增强 | `api.md 三.1` |
 | D-18 | 错误详情 | 可选 `details` 用于字段校验错误与 `FILE_PARSE_FAILED.reason` | `api.md 一.2/1.3` |
 | D-19 | 登录落点与外壳 | 认证后默认落点 `/meetings`；全局外壳（顶栏/导航）归 M02；根路径按登录态重定向到登录页或 `/meetings` | `module-development-spec.md M02`、`frontend/src/router` |
+| D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 LLM/Embedding 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.10` |
 
 ## 四、待确认事项
 
@@ -80,3 +81,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 建立设计基线 | 汇总已定决策 D-01…D-18，明确文档职责与引用关系 |
 | 2026-10 | 补充 M05 确认与登录落点 | 新增 `api.md 5.6` 确认准备稿（Issue #28）；新增 D-19 登录落点与全局外壳 |
 | 2026-10 | 建立协作与分支规则 | 新增 `collaboration-rules.md`：三流分工、先合 `develop`、定期同步、`develop → main` 推进 |
+| 2026-10 | 模型密钥用户自带 | 新增 D-20：`/me/settings/model` BYOK + Fernet 加密存库 + 用户>全局优先级 |

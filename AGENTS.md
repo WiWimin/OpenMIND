@@ -40,7 +40,7 @@ OpenMIND 是「AI 会议个人助理」，MVP 闭环为：创建会议 → 导�
 - 原始数据与 AI 结果分离：不以 AI 结果覆盖用户原文。
 - 候选与确认分离：AI 生成的纪要/行动项必须经用户编辑确认。
 - 业务状态由后端控制，前端不能通过直接修改状态字段绕过权限或业务规则。
-- LLM/Embedding 密钥仅存在于服务端环境变量，禁止硬编码或下发前端。
+- 模型密钥：用户可在 `/me/settings/model` 自备（`Fernet` 加密存库，永不明文返回前端），或走服务端 `docker/.env` 全局配置；优先级为用户配置 > 全局，禁止硬编码。见 `docs/ai-design.md`。
 - 鉴权：HS256 JWT + `Authorization: Bearer <token>`，MVP 无 refresh（见 `docs/api.md 一/二`）。
 - 错误响应统一包含 `status`、`error_code`、`message`、`retryable`（可选 `details`）；错误码见 `docs/api.md 一.3`。
 - 涉及数据库结构的改动必须附带 Alembic 迁移文件。

@@ -55,6 +55,7 @@
 | `FILE_PARSE_FAILED` | 422 | 文件无法解析（原因见 `details.reason`，见下） | 通常否 |
 | `MODEL_TIMEOUT` | 504 | 模型调用超时 | 是 |
 | `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析 | 视情况 |
+| `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/维度不符/额度不足等） | 否 |
 | `RATE_LIMITED` | 429 | 请求频率超过限制 | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
 | `INTERNAL_ERROR` | 500 | 未预期的服务端错误 | 视情况 |
@@ -177,6 +178,50 @@
 ### 2.4 当前用户 `GET /api/v1/auth/me`
 
 响应 `200`：`data` 为用户对象。
+
+### 2.5 模型配置（用户自带 BYOK，M04，B）
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/me/settings/model` | 读取当前生效的模型配置（密钥脱敏） |
+| PUT | `/api/v1/me/settings/model` | 保存/替换模型配置（probe 校验后加密存库） |
+| DELETE | `/api/v1/me/settings/model` | 清空自备配置，回退服务端全局 |
+
+PUT 请求（字段可按提供方整体省略，省略即清空该提供方）：
+
+```json
+{
+  "llm_api_base": "https://api.example.com/v1",
+  "llm_api_key": "sk-...",
+  "llm_model": "model-name",
+  "embedding_api_base": "https://api.example.com/v1",
+  "embedding_api_key": "sk-...",
+  "embedding_model": "text-embedding-1024"
+}
+```
+
+GET/PUT 响应（密钥一律脱敏，不回显明文）：
+
+```json
+{
+  "status": "success",
+  "data": {
+    "llm_api_base": "https://api.example.com/v1",
+    "llm_model": "model-name",
+    "llm_api_key_masked": "sk-...abcd",
+    "embedding_api_base": "https://api.example.com/v1",
+    "embedding_model": "text-embedding-1024",
+    "embedding_api_key_masked": "sk-...abcd",
+    "embedding_dim": 1024
+  }
+}
+```
+
+规则：
+- 密钥 `Fernet` 加密存库，永不明文返回；`_masked` 仅展示前后缀。
+- 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成；失败返回 `400 MODEL_CONFIG_INVALID`。
+- 生效优先级：用户配置 > 服务端全局（`docker/.env`）；全局留空即不兜底。
+- 未配置任何模型时，AI 相关接口返回 `MODEL_CONFIG_INVALID`。
 
 ## 三、会议管理（M02，A）
 
