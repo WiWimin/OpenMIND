@@ -138,3 +138,51 @@ def test_update_preparation_increments_version(client: TestClient, fake_draft: N
     assert data["summary"] == "更新后的摘要"
     assert data["checklist"] == ["仅一项"]
     assert data["version"] == 2
+
+
+def test_confirm_preparation(client: TestClient, fake_draft: None) -> None:
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    preparation = _generate(client, headers, meeting["meeting_id"])
+
+    response = client.post(
+        f"/api/v1/preparations/{preparation['preparation_id']}/confirm", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "confirmed"
+    assert data["version"] == 1
+
+
+def test_confirm_preparation_is_idempotent(client: TestClient, fake_draft: None) -> None:
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    preparation = _generate(client, headers, meeting["meeting_id"])
+    url = f"/api/v1/preparations/{preparation['preparation_id']}/confirm"
+
+    first = client.post(url, headers=headers)
+    assert first.status_code == 200
+    second = client.post(url, headers=headers)
+    assert second.status_code == 200
+    data = second.json()["data"]
+    assert data["status"] == "confirmed"
+    assert data["version"] == 1
+
+
+def test_confirm_preparation_cross_user_forbidden(
+    client: TestClient, fake_draft: None
+) -> None:
+    alice = _auth(client, "alice")
+    meeting = _create_meeting(client, alice)
+    preparation = _generate(client, alice, meeting["meeting_id"])
+    bob = _auth(client, "bob")
+
+    response = client.post(
+        f"/api/v1/preparations/{preparation['preparation_id']}/confirm", headers=bob
+    )
+    assert response.status_code == 404
+
+
+def test_confirm_preparation_requires_auth(client: TestClient, fake_draft: None) -> None:
+    response = client.post("/api/v1/preparations/prep_x/confirm")
+    assert response.status_code == 401

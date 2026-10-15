@@ -82,3 +82,16 @@ def update_preparation(
         db, preparation_id, current_user.user_id, payload
     )
     return Envelope(data=PreparationRead.model_validate(preparation))
+
+
+@router.post(
+    "/preparations/{preparation_id}/confirm",
+    response_model=Envelope[PreparationRead],
+)
+def confirm_preparation(
+    preparation_id: str, db: DbSession, current_user: CurrentUser
+) -> Envelope[PreparationRead]:
+    preparation = preparation_service.confirm_preparation(
+        db, preparation_id, current_user.user_id
+    )
+    return Envelope(data=PreparationRead.model_validate(preparation))

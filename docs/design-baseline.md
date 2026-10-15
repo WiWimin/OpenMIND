@@ -58,10 +58,11 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-12 | M09 定义 | M09 = **未解决问题管理**；异常处理、联调、部署归 **M10** | `requirements.md`、`module-task-plan.md` |
 | D-13 | 会议删除 | 存在已转换行动项或个人任务引用时**禁止删除，返回 409**；`action_items.meeting_id` 保持非空 | `database.md 七`、`api.md 三.5` |
 | D-14 | 版本策略 | 每次**生成**新增记录（1:N）；对同一条记录的**编辑**原地更新并 `version` 递增；不保留编辑中间态历史 | `database.md 三.5/3.6`、`ai-design.md 八.1/8.4`、`api.md 五` |
-| D-15 | 提取幂等 | 重复 extract 不去重（可能产生重复候选）；转任务以 `action_id` 唯一保证幂等 | `api.md 五.14/5.15`、`database.md 三.8` |
+| D-15 | 提取幂等 | 重复 extract 不去重（可能产生重复候选）；转任务以 `action_id` 唯一保证幂等 | `api.md 五.15/5.16`、`database.md 三.8` |
 | D-16 | 上传限制 | 允许扩展名 `pdf/docx/txt`；单文件 ≤ `MAX_UPLOAD_MB`（默认 20MB）；MIME 嗅探为后续 | `api.md 四`、`database.md 三.3` |
 | D-17 | 会议列表筛选 | MVP 支持 `page`/`page_size`/`status`；`keyword`/`start_time`/`end_time` 为后续增强 | `api.md 三.1` |
 | D-18 | 错误详情 | 可选 `details` 用于字段校验错误与 `FILE_PARSE_FAILED.reason` | `api.md 一.2/1.3` |
+| D-19 | 登录落点与外壳 | 认证后默认落点 `/meetings`；全局外壳（顶栏/导航）归 M02；根路径按登录态重定向到登录页或 `/meetings` | `module-development-spec.md M02`、`frontend/src/router` |
 
 ## 四、待确认事项
 
@@ -77,4 +78,5 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 日期 | 变更 | 说明 |
 | --- | --- | --- |
 | 2026-10 | 建立设计基线 | 汇总已定决策 D-01…D-18，明确文档职责与引用关系 |
+| 2026-10 | 补充 M05 确认与登录落点 | 新增 `api.md 5.6` 确认准备稿（Issue #28）；新增 D-19 登录落点与全局外壳 |
 | 2026-10 | 建立协作与分支规则 | 新增 `collaboration-rules.md`：三流分工、先合 `develop`、定期同步、`develop → main` 推进 |

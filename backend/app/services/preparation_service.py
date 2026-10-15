@@ -13,6 +13,7 @@ from app.services import meeting_service
 from app.utils.ids import new_id
 
 _STATUS_DRAFT = "draft"
+_STATUS_CONFIRMED = "confirmed"
 
 
 def generate_draft(
@@ -74,3 +75,11 @@ def update_preparation(
         setattr(preparation, field, value)
     preparation.version += 1
     return preparation_repository.update(db, preparation)
+
+
+def confirm_preparation(db: Session, preparation_id: str, user_id: str) -> Preparation:
+    preparation = get_owned_preparation(db, preparation_id, user_id)
+    if preparation.status != _STATUS_CONFIRMED:
+        preparation.status = _STATUS_CONFIRMED
+        preparation_repository.update(db, preparation)
+    return preparation

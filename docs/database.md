@@ -239,6 +239,7 @@
 
 - Meeting：`scheduled` ↔ `archived`（归档只读，MVP 不提供开始/完成操作）。
 - Material：`uploaded → processing → processed | failed`；重试允许 `failed → processing`。
+- Preparation：`generating → draft → confirmed`；生成失败 `failed`；确认动作幂等（`api.md 5.6`）。
 - ActionItem：`pending_confirmation → confirmed → converted`；可由待确认/已确认进入 `cancelled`；**仅 `confirmed` 可转任务**。
 - PersonalTask：`todo → in_progress → completed`；未完成可 `cancelled`。
 - OpenIssue：`open → resolved | cancelled`。

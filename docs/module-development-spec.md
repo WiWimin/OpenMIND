@@ -604,7 +604,8 @@ M04 消费 M03 的解析文本；为 M05（准备）、M06（问答）、M07（�
 | POST | `/api/v1/meetings/{meeting_id}/prepare` | 生成会前摘要与清单 |
 | GET | `/api/v1/meetings/{meeting_id}/preparations` | 准备稿历史 |
 | GET | `/api/v1/preparations/{preparation_id}` | 准备稿详情 |
-| PATCH | `/api/v1/preparations/{preparation_id}` | 编辑/确认 |
+| PATCH | `/api/v1/preparations/{preparation_id}` | 编辑准备稿 |
+| POST | `/api/v1/preparations/{preparation_id}/confirm` | 确认准备稿（幂等） |
 
 #### 3. 后端子模块
 
@@ -629,7 +630,7 @@ M04 消费 M03 的解析文本；为 M05（准备）、M06（问答）、M07（�
 | M05-01 | `preparations` 表 + 迁移 | A | M02-01 | 字段符合 `database.md 三` |
 | M05-02 | schemas/repository | A | M05-01 | 越权被拒 |
 | M05-03 | 摘要/清单生成 | B | M04-05 | 生成草稿可保存 |
-| M05-04 | `api/v1/preparations.py` 路由 | A | M05-02、M05-03 | 生成/历史/详情/PATCH 可用 |
+| M05-04 | `api/v1/preparations.py` 路由 | A | M05-02、M05-03 | 生成/历史/详情/编辑/确认 可用 |
 | M05-05 | 准备页前端 | C | M05-04 | 生成/编辑/确认流程可用 |
 | M05-06 | 准备 store + API 封装 | C | M05-04 | 状态与请求正确 |
 | M05-07 | 失败态与重试测试 | B | M05-03 | 生成失败状态正确 |
@@ -736,7 +737,7 @@ AI 生成/提取（`api.md 五`）：
 | POST | `/api/v1/action-items/{action_id}/confirm` | 确认行动项 |
 | POST | `/api/v1/action-items/{action_id}/convert-to-task` | 转为任务 |
 
-> `api.md 五.10–5.13` 已提案纪要读取/编辑/确认接口（`GET /meetings/{id}/minutes`、`GET /minutes/{id}`、`PATCH /minutes/{id}`、`POST /minutes/{id}/confirm`），待团队确认后转正式。
+> `api.md 五.11–5.14` 已提案纪要读取/编辑/确认接口（`GET /meetings/{id}/minutes`、`GET /minutes/{id}`、`PATCH /minutes/{id}`、`POST /minutes/{id}/confirm`），待团队确认后转正式。
 
 #### 3. 后端子模块
 
@@ -748,7 +749,7 @@ AI 生成/提取（`api.md 五`）：
 
 #### 4. 前端子模块
 
-- **4.1 纪要页**（`views/minutes/`）：生成、展示、编辑/确认（`api.md 五.10–5.13` [提案]）。
+- **4.1 纪要页**（`views/minutes/`）：生成、展示、编辑/确认（`api.md 五.11–5.14` [提案]）。
 - **4.2 行动项确认/编辑/转任务入口**。
 
 #### 5. 数据与状态
@@ -772,7 +773,7 @@ AI 生成/提取（`api.md 五`）：
 
 #### 7. 风险与注意事项
 
-- 纪要读取/编辑/确认接口已提案（`api.md 五.10–5.13`），待团队确认。
+- 纪要读取/编辑/确认接口已提案（`api.md 五.11–5.14`），待团队确认。
 - 行动项重复提取不去重（可能产生重复候选）；转任务以 `action_id` 唯一幂等（`design-baseline.md` D-15）。
 - 「候选与确认分离」是本模块底线（`database.md 一`）。
 
@@ -937,7 +938,7 @@ AI 提取（`api.md 五`）：
 | 六 行动项与个人任务 | M07（行动项）、M08（任务） | A |
 | 七 未解决问题 | M09 | A |
 
-> 本文不新增接口；材料列表、纪要读取/编辑/确认已在 `api.md 四.3`、`五.10–5.13` 提出（`[提案]`）。
+> 本文不新增接口；材料列表、纪要读取/编辑/确认已在 `api.md 四.3`、`五.11–5.14` 提出（`[提案]`）。
 
 ### 4.3 建议开发顺序
 
