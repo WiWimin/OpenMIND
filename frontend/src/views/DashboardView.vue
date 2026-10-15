@@ -164,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { listMeetings } from '@/api/meetings'
@@ -180,6 +180,7 @@ import TaskSection from '@/components/TaskSection.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore, type MeetingStatusFilter } from '@/stores/meetings'
+import { useTasksStore, type TaskStatusFilter } from '@/stores/tasks'
 import type { CreateMeetingPayload } from '@/types/meeting'
 import type { SelectOption } from '@/types/ui'
 
@@ -208,9 +209,54 @@ const statusOptions: SelectOption[] = [
 ]
 
 const store = useMeetingsStore()
+const tasksStore = useTasksStore()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+
+const TASK_STATUSES = ['todo', 'in_progress', 'completed', 'cancelled']
+
+function parseTaskStatus(raw: unknown): TaskStatusFilter | undefined {
+  if (typeof raw !== 'string' || !TASK_STATUSES.includes(raw)) {
+    return undefined
+  }
+  return raw as TaskStatusFilter
+}
+
+// 页面进入（含 /tasks 复用同一组件）时按 ?status 同步任务筛选
+function syncTasksFromRoute(): void {
+  if (route.name !== ROUTE_NAMES.tasks) {
+    return
+  }
+  const status = parseTaskStatus(route.query.status) ?? ''
+  if (status !== tasksStore.filters.status) {
+    void tasksStore.setStatusFilter(status)
+  }
+}
+
+// /tasks 首次进入：直接按 ?status 复位筛选，由 TaskSection 挂载后拉取
+if (route.name === ROUTE_NAMES.tasks) {
+  tasksStore.filters.status = parseTaskStatus(route.query.status) ?? ''
+}
+
+function scrollToTarget(target: string, attempts = 30): void {
+  const node = document.querySelector(target)
+  if (node instanceof HTMLElement) {
+    node.scrollIntoView({ block: 'start' })
+    return
+  }
+  if (attempts > 0) {
+    requestAnimationFrame(() => scrollToTarget(target, attempts - 1))
+  }
+}
+
+function scrollFromRoute(): void {
+  const target =
+    route.hash || (route.name === ROUTE_NAMES.tasks ? '#section-tasks' : '')
+  if (target) {
+    scrollToTarget(target)
+  }
+}
 
 const statsLoading = ref(true)
 const statsError = ref<unknown>(null)
@@ -295,18 +341,26 @@ async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
 onMounted(() => {
   void loadStats()
   void store.fetchList()
+  syncTasksFromRoute()
   if (route.query.create === '1') {
     openCreate()
     void router.replace({ query: {} })
   }
-  const target =
-    route.hash || (route.name === ROUTE_NAMES.tasks ? '#section-tasks' : '')
-  if (target) {
-    requestAnimationFrame(() => {
-      document.querySelector(target)?.scrollIntoView({ block: 'start' })
-    })
-  }
+  scrollFromRoute()
 })
+
+// /dashboard、/meetings、/tasks 复用同一组件实例，路由变化在这里联动
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.query.create === '1') {
+      openCreate()
+      void router.replace({ query: {} })
+    }
+    syncTasksFromRoute()
+    scrollFromRoute()
+  },
+)
 </script>
 
 <style scoped>
@@ -318,6 +372,7 @@ onMounted(() => {
 
 /* 顶部横幅 */
 .dashboard__hero {
+  scroll-margin-top: 5.5rem;
   position: relative;
   overflow: hidden;
   display: flex;
