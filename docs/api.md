@@ -363,9 +363,16 @@
 
 ### 5.5 编辑准备稿 `PATCH /api/v1/preparations/{preparation_id}`
 
-可更新字段：`summary`、`checklist`。响应 `200` 为更新后对象，`version` 递增。
+可更新字段：`summary`、`checklist`。响应 `200` 为更新后对象，`version` 递增。状态流转见 5.6。
 
-### 5.6 会议问答 `POST /api/v1/meetings/{meeting_id}/chat`
+### 5.6 确认准备稿 `POST /api/v1/preparations/{preparation_id}/confirm`
+
+无请求体。将准备稿由 `draft` 置为 `confirmed`，响应 `200` 为更新后的准备稿对象（`status = confirmed`）。
+
+- 幂等：已确认的准备稿重复调用返回同样结果，`version` 不再递增。
+- 仅准备稿所属会议的拥有者可操作；不存在或越权统一 `404 RESOURCE_NOT_FOUND`。
+
+### 5.7 会议问答 `POST /api/v1/meetings/{meeting_id}/chat`
 
 ```json
 { "question": "上次会议决定了什么？", "context_scope": "current_and_history", "include_sources": true }
@@ -391,7 +398,7 @@
 - `sources` 可为空数组，不得伪造引用。
 - 证据不足时 `insufficient_evidence = true`。
 
-### 5.7 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
+### 5.8 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
 
 ```json
 { "record_ids": ["rec_xxx"], "style": "structured" }
@@ -405,7 +412,7 @@
 
 > 该结果为临时整理，不落库（无对应表）。
 
-### 5.8 纪要对象
+### 5.9 纪要对象
 
 ```json
 {
@@ -422,7 +429,7 @@
 
 `status`：`draft` / `confirmed`。
 
-### 5.9 生成纪要 `POST /api/v1/meetings/{meeting_id}/minutes/generate`
+### 5.10 生成纪要 `POST /api/v1/meetings/{meeting_id}/minutes/generate`
 
 ```json
 { "record_ids": ["rec_xxx"], "include_action_items": true }
@@ -431,23 +438,23 @@
 响应 `201`：纪要对象（`status = draft`）。
 每次生成**新增一条**纪要记录；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
 
-### 5.10 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes` [提案]
+### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes` [提案]
 
 响应 `200`：分页结构，按 `created_at` 倒序。
 
-### 5.11 纪要详情 `GET /api/v1/minutes/{minutes_id}` [提案]
+### 5.12 纪要详情 `GET /api/v1/minutes/{minutes_id}` [提案]
 
 响应 `200`：纪要对象。
 
-### 5.12 编辑纪要 `PATCH /api/v1/minutes/{minutes_id}` [提案]
+### 5.13 编辑纪要 `PATCH /api/v1/minutes/{minutes_id}` [提案]
 
 可更新字段：`content`。响应 `200` 为更新后对象，`version` 递增。
 
-### 5.13 确认纪要 `POST /api/v1/minutes/{minutes_id}/confirm` [提案]
+### 5.14 确认纪要 `POST /api/v1/minutes/{minutes_id}/confirm` [提案]
 
 响应 `200`：返回 `status = confirmed` 的纪要对象。
 
-### 5.14 提取行动项 `POST /api/v1/meetings/{meeting_id}/action-items/extract`
+### 5.15 提取行动项 `POST /api/v1/meetings/{meeting_id}/action-items/extract`
 
 ```json
 { "record_ids": ["rec_xxx"] }
@@ -477,7 +484,7 @@
 AI 提取默认 `pending_confirmation`，不得自动转任务。
 - 重复提取可能产生重复候选，MVP 不做去重；转任务以 `action_id` 唯一保证幂等。
 
-### 5.15 提取问题 `POST /api/v1/meetings/{meeting_id}/issues/extract`
+### 5.16 提取问题 `POST /api/v1/meetings/{meeting_id}/issues/extract`
 
 ```json
 { "record_ids": ["rec_xxx"] }
@@ -611,7 +618,7 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 | PATCH | `/api/v1/issues/{issue_id}` | 修改问题 |
 
 - 编辑可更新 `description`、`status`、`follow_up`。
-- AI 提取接口见 §5.15（负责人 B）；问题 CRUD/状态（本页）负责人 A。
+- AI 提取接口见 §5.16（负责人 B）；问题 CRUD/状态（本页）负责人 A。
 
 ## 八、接口联调顺序
 

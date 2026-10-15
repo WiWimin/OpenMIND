@@ -56,6 +56,14 @@
 
         <div class="preparation-section__actions">
           <AppButton :loading="saving" @click="save">保存</AppButton>
+          <AppButton
+            v-if="selected.status !== 'confirmed'"
+            variant="ghost"
+            :loading="confirming"
+            @click="confirm"
+          >
+            确认
+          </AppButton>
         </div>
       </div>
     </div>
@@ -90,6 +98,7 @@ const draftSummary = ref('')
 const draftChecklist = ref('')
 const generating = ref(false)
 const saving = ref(false)
+const confirming = ref(false)
 const actionError = ref<unknown>(null)
 
 function statusOf(preparation: Preparation) {
@@ -160,6 +169,23 @@ async function save(): Promise<void> {
     actionError.value = caught
   } finally {
     saving.value = false
+  }
+}
+
+async function confirm(): Promise<void> {
+  if (!selected.value) {
+    return
+  }
+  confirming.value = true
+  actionError.value = null
+  try {
+    const updated = await preparationsApi.confirmPreparation(selected.value.preparation_id)
+    syncSelected(updated)
+    await load()
+  } catch (caught) {
+    actionError.value = caught
+  } finally {
+    confirming.value = false
   }
 }
 </script>

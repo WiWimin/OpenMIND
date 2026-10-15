@@ -15,7 +15,7 @@ export async function generateMinutes(
   return unwrapData(data)
 }
 
-// [提案] 纪要读取/编辑/确认接口（api.md 5.10–5.13），待团队确认
+// [提案] 纪要读取/编辑/确认接口（api.md 5.11–5.14），待团队确认
 export async function listMinutes(
   meetingId: string,
   params: PageParams = {},

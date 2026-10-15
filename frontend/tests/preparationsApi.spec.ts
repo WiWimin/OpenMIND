@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
 import {
+  confirmPreparation,
   generatePreparation,
   getPreparation,
   listPreparations,
@@ -67,5 +68,13 @@ describe('preparations api', () => {
 
     await expect(updatePreparation('prep_1', { checklist: ['a'] })).resolves.toEqual(preparation)
     expect(patch).toHaveBeenCalledWith('/preparations/prep_1', { checklist: ['a'] })
+  })
+
+  it('confirms a preparation', async () => {
+    const confirmed: Preparation = { ...preparation, status: 'confirmed' }
+    post.mockResolvedValue(response(confirmed))
+
+    await expect(confirmPreparation('prep_1')).resolves.toEqual(confirmed)
+    expect(post).toHaveBeenCalledWith('/preparations/prep_1/confirm')
   })
 })
