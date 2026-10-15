@@ -2,9 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as actionItemsApi from '@/api/actionItems'
+import * as issuesApi from '@/api/issues'
 import * as meetingsApi from '@/api/meetings'
 import * as materialsApi from '@/api/materials'
+import * as minutesApi from '@/api/minutes'
 import * as preparationsApi from '@/api/preparations'
+import * as recordsApi from '@/api/records'
 import type { Meeting } from '@/types/meeting'
 import MeetingDetailView from '@/views/meetings/MeetingDetailView.vue'
 
@@ -38,6 +42,42 @@ vi.mock('@/api/preparations', () => ({
   updatePreparation: vi.fn(),
 }))
 
+vi.mock('@/api/minutes', () => ({
+  listMinutes: vi.fn(),
+  generateMinutes: vi.fn(),
+  getMinutes: vi.fn(),
+  updateMinutes: vi.fn(),
+  confirmMinutes: vi.fn(),
+}))
+
+vi.mock('@/api/actionItems', () => ({
+  extractActionItems: vi.fn(),
+  listActionItems: vi.fn(),
+  getActionItem: vi.fn(),
+  updateActionItem: vi.fn(),
+  deleteActionItem: vi.fn(),
+  confirmActionItem: vi.fn(),
+  convertActionItemToTask: vi.fn(),
+}))
+
+vi.mock('@/api/records', () => ({
+  listRecords: vi.fn(),
+  createRecord: vi.fn(),
+  updateRecord: vi.fn(),
+  deleteRecord: vi.fn(),
+}))
+
+vi.mock('@/api/chat', () => ({
+  askMeeting: vi.fn(),
+  organizeRecords: vi.fn(),
+}))
+
+vi.mock('@/api/issues', () => ({
+  extractIssues: vi.fn(),
+  listIssues: vi.fn(),
+  updateIssue: vi.fn(),
+}))
+
 const meeting: Meeting = {
   meeting_id: 'mtg_1',
   title: '项目周会',
@@ -63,6 +103,22 @@ describe('MeetingDetailView', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(materialsApi.listMaterials).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(actionItemsApi.listActionItems).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(recordsApi.listRecords).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(issuesApi.listIssues).mockResolvedValue({
       items: [],
       pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
     })
@@ -102,6 +158,44 @@ describe('MeetingDetailView', () => {
     await flushPromises()
 
     expect(wrapper.find('.preparation-section').exists()).toBe(true)
+  })
+
+  it('renders records and chat on the records tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const recordsTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '记录')
+    await recordsTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.record-section').exists()).toBe(true)
+    expect(wrapper.find('.chat-panel').exists()).toBe(true)
+  })
+
+  it('renders minutes and action items on the minutes tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const minutesTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '纪要')
+    await minutesTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.minutes-section').exists()).toBe(true)
+    expect(wrapper.find('.action-section').exists()).toBe(true)
+  })
+
+  it('renders the issues section on the issues tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const issuesTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '问题')
+    await issuesTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.issues-section').exists()).toBe(true)
   })
 
   it('disables editing and archiving for an archived meeting', async () => {

@@ -1,4 +1,4 @@
-// 详情/删除接口为 [提案]（api.md 6.1）；source 字段以提取示例为准（待确认）
+// 与后端 schemas/action_item.py 对齐：source 恒存在，其字段可空
 export type ActionItemStatus =
   | 'pending_confirmation'
   | 'confirmed'
@@ -6,8 +6,8 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export interface ActionItemSource {
-  record_id: string
-  excerpt: string
+  record_id: string | null
+  excerpt: string | null
 }
 
 export interface ActionItem {
@@ -17,7 +17,7 @@ export interface ActionItem {
   assignee: string | null
   due_date: string | null
   status: ActionItemStatus
-  source: ActionItemSource | null
+  source: ActionItemSource
   created_at: string
   updated_at: string
 }

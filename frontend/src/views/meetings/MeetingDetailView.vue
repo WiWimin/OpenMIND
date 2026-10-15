@@ -27,15 +27,24 @@
       <div class="meeting-detail__panel">
         <MaterialSection v-if="activeTab === 'materials'" :meeting-id="meetingId" />
 
-        <PreparationSection
-          v-else-if="activeTab === 'preparation'"
-          :meeting-id="meetingId"
-        />
+        <PreparationSection v-else-if="activeTab === 'preparation'" :meeting-id="meetingId" />
+
+        <template v-else-if="activeTab === 'records'">
+          <RecordSection :meeting-id="meetingId" />
+          <ChatPanel class="meeting-detail__chat" :meeting-id="meetingId" />
+        </template>
+
+        <template v-else-if="activeTab === 'minutes'">
+          <MinutesSection :meeting-id="meetingId" />
+          <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
+        </template>
+
+        <IssuesSection v-else-if="activeTab === 'issues'" :meeting-id="meetingId" />
 
         <EmptyState
           v-else
           :title="activeTabLabel"
-          description="该区域将在后续模块（记录 / 纪要 / 任务 / 问题）中提供。"
+          description="该区域将在后续模块（任务）中提供。"
         />
       </div>
     </template>
@@ -78,14 +87,19 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import AppTabs from '@/components/AppTabs.vue'
+import ActionItemSection from '@/components/ActionItemSection.vue'
+import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
+import IssuesSection from '@/components/IssuesSection.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MaterialSection from '@/components/MaterialSection.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
+import MinutesSection from '@/components/MinutesSection.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PreparationSection from '@/components/PreparationSection.vue'
+import RecordSection from '@/components/RecordSection.vue'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore } from '@/stores/meetings'
 import type { CreateMeetingPayload } from '@/types/meeting'
@@ -202,5 +216,10 @@ async function confirmDelete(): Promise<void> {
 
 .meeting-detail__panel {
   padding-top: var(--space-4);
+}
+
+.meeting-detail__chat,
+.meeting-detail__sub {
+  margin-top: var(--space-4);
 }
 </style>

@@ -1,0 +1,243 @@
+<template>
+  <div class="minutes-section">
+    <div class="minutes-section__toolbar">
+      <AppButton :loading="generating" @click="generate">生成纪要</AppButton>
+    </div>
+
+    <ErrorMessage v-if="actionError" :error="actionError" />
+
+    <LoadingSpinner v-if="loading && items.length === 0" class="minutes-section__state" />
+
+    <ErrorMessage v-else-if="error" :error="error" retryable @retry="refresh()" />
+
+    <EmptyState
+      v-else-if="items.length === 0"
+      title="还没有纪要"
+      description="基于会议记录生成纪要草稿，确认后可提取行动项。"
+    />
+
+    <div v-else class="minutes-section__body">
+      <ul class="minutes-section__list">
+        <li v-for="item in items" :key="item.minutes_id">
+          <button
+            type="button"
+            class="minutes-section__item"
+            :class="{ 'minutes-section__item--active': selected?.minutes_id === item.minutes_id }"
+            @click="select(item)"
+          >
+            <StatusBadge :label="statusOf(item).label" :tone="statusOf(item).tone" />
+            <span class="minutes-section__time">{{ timeOf(item) }}</span>
+          </button>
+        </li>
+      </ul>
+
+      <div v-if="selected" class="minutes-section__editor">
+        <div class="minutes-section__editor-head">
+          <StatusBadge :label="statusOf(selected).label" :tone="statusOf(selected).tone" />
+          <span class="minutes-section__version">v{{ selected.version }}</span>
+        </div>
+
+        <FormTextarea id="minutes-content" v-model="draft" label="纪要内容" :rows="8" />
+
+        <div class="minutes-section__actions">
+          <AppButton :loading="saving" @click="save">保存</AppButton>
+          <AppButton
+            v-if="selected.status !== 'confirmed'"
+            variant="ghost"
+            :loading="confirming"
+            @click="confirm"
+          >
+            确认
+          </AppButton>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+
+import * as minutesApi from '@/api/minutes'
+import AppButton from '@/components/AppButton.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import ErrorMessage from '@/components/ErrorMessage.vue'
+import FormTextarea from '@/components/FormTextarea.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
+import { useAsyncList } from '@/composables/useAsyncList'
+import type { Minutes } from '@/types/minutes'
+import { formatDateTime } from '@/utils/datetime'
+import { minutesStatusMeta } from '@/utils/statusLabels'
+
+const props = defineProps<{ meetingId: string }>()
+
+const { items, loading, error, load } = useAsyncList<Minutes>({
+  fetcher: ({ page, page_size }) => minutesApi.listMinutes(props.meetingId, { page, page_size }),
+})
+
+const selected = ref<Minutes | null>(null)
+const draft = ref('')
+const generating = ref(false)
+const saving = ref(false)
+const confirming = ref(false)
+const actionError = ref<unknown>(null)
+
+function statusOf(minutes: Minutes) {
+  return minutesStatusMeta[minutes.status]
+}
+
+function timeOf(minutes: Minutes): string {
+  return formatDateTime(minutes.created_at)
+}
+
+function select(minutes: Minutes): void {
+  selected.value = minutes
+  draft.value = minutes.content
+}
+
+function syncSelected(updated: Minutes): void {
+  if (selected.value?.minutes_id === updated.minutes_id) {
+    selected.value = updated
+    draft.value = updated.content
+  }
+}
+
+function refresh(): Promise<void> {
+  return load()
+}
+
+onMounted(() => {
+  void refresh()
+})
+
+async function generate(): Promise<void> {
+  generating.value = true
+  actionError.value = null
+  try {
+    const minutes = await minutesApi.generateMinutes(props.meetingId, {
+      record_ids: [],
+      include_action_items: true,
+    })
+    await load(1)
+    select(minutes)
+  } catch (caught) {
+    actionError.value = caught
+  } finally {
+    generating.value = false
+  }
+}
+
+async function save(): Promise<void> {
+  if (!selected.value) {
+    return
+  }
+  saving.value = true
+  actionError.value = null
+  try {
+    const updated = await minutesApi.updateMinutes(selected.value.minutes_id, { content: draft.value })
+    syncSelected(updated)
+    await load()
+  } catch (caught) {
+    actionError.value = caught
+  } finally {
+    saving.value = false
+  }
+}
+
+async function confirm(): Promise<void> {
+  if (!selected.value) {
+    return
+  }
+  confirming.value = true
+  actionError.value = null
+  try {
+    const updated = await minutesApi.confirmMinutes(selected.value.minutes_id)
+    syncSelected(updated)
+    await load()
+  } catch (caught) {
+    actionError.value = caught
+  } finally {
+    confirming.value = false
+  }
+}
+</script>
+
+<style scoped>
+.minutes-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.minutes-section__toolbar {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.minutes-section__state {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.minutes-section__body {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(10rem, 16rem) 1fr;
+}
+
+.minutes-section__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.minutes-section__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  cursor: pointer;
+}
+
+.minutes-section__item--active {
+  border-color: var(--color-primary);
+}
+
+.minutes-section__time {
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.minutes-section__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.minutes-section__editor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.minutes-section__version {
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.minutes-section__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+</style>

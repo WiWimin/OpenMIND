@@ -12,6 +12,13 @@ declare module 'vue-router' {
 
 const routes: RouteRecordRaw[] = [
   {
+    path: ROUTE_PATHS.root,
+    name: ROUTE_NAMES.root,
+    redirect: () => ({
+      name: useAuthStore().isAuthenticated ? ROUTE_NAMES.meetings : ROUTE_NAMES.login,
+    }),
+  },
+  {
     path: ROUTE_PATHS.home,
     name: ROUTE_NAMES.home,
     component: () => import('@/views/HomeView.vue'),
@@ -46,8 +53,20 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: ROUTE_PATHS.tasks,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.tasks,
+        component: () => import('@/views/tasks/TaskListView.vue'),
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
-    redirect: { name: ROUTE_NAMES.home },
+    redirect: { name: ROUTE_NAMES.root },
   },
 ]
 

@@ -1,9 +1,9 @@
-// 字段以 api.md 5.6 / 5.7 示例为准，B 实现后可能微调（待确认）
+// 与后端 schemas/chat.py 对齐
 export type ChatContextScope = 'current_meeting' | 'current_and_history'
 
 export interface ChatSource {
   meeting_id: string
-  material_id: string | null
+  material_id: string
   record_id: string | null
   excerpt: string
 }
