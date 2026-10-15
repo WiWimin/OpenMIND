@@ -15,7 +15,26 @@
         <span class="workspace__wordmark">OpenMIND</span>
       </RouterLink>
 
-      <nav class="workspace__nav">
+      <RouterLink class="workspace__cta" :to="{ name: ROUTE_NAMES.meetings, query: { create: '1' } }">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path d="M12 5.5v13M5.5 12h13" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span class="workspace__cta-label">新建会议</span>
+      </RouterLink>
+
+      <nav class="workspace__nav" aria-label="主导航">
+        <p class="workspace__group">工作台</p>
+
+        <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.dashboard }">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" stroke="currentColor" stroke-width="1.6" />
+            <rect x="13.5" y="3.5" width="7" height="4.5" rx="1.8" stroke="currentColor" stroke-width="1.6" />
+            <rect x="3.5" y="13.5" width="7" height="7" rx="1.8" stroke="currentColor" stroke-width="1.6" />
+            <rect x="13.5" y="11" width="7" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6" />
+          </svg>
+          <span class="workspace__nav-label">仪表盘</span>
+        </RouterLink>
+
         <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.meetings }">
           <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
             <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" stroke-width="1.6" />
@@ -24,6 +43,8 @@
           </svg>
           <span class="workspace__nav-label">会议</span>
         </RouterLink>
+
+        <p class="workspace__group">我的</p>
 
         <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.tasks }">
           <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
@@ -36,7 +57,20 @@
               stroke-linejoin="round"
             />
           </svg>
-          <span class="workspace__nav-label">任务</span>
+          <span class="workspace__nav-label">个人任务</span>
+        </RouterLink>
+
+        <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.home }">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <path
+              d="M3.5 12h4l2-5 3 10 2.5-6 1.6 3h3.9"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span class="workspace__nav-label">健康检查</span>
         </RouterLink>
       </nav>
 
@@ -136,11 +170,49 @@ async function handleLogout(): Promise<void> {
   color: #ffffff;
 }
 
+.workspace__cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.4rem;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  border-radius: var(--radius-pill);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.4);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.workspace__cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(79, 70, 229, 0.5);
+}
+
 .workspace__nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 3px;
   flex: 1;
+  overflow-y: auto;
+}
+
+.workspace__group {
+  margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-2);
+  color: rgba(148, 163, 184, 0.7);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace__group:first-child {
+  margin-top: 0;
 }
 
 .workspace__nav-link {
@@ -253,7 +325,9 @@ async function handleLogout(): Promise<void> {
 
   .workspace__wordmark,
   .workspace__nav-label,
-  .workspace__tagline {
+  .workspace__tagline,
+  .workspace__cta-label,
+  .workspace__group {
     display: none;
   }
 

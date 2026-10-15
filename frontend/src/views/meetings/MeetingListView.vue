@@ -51,7 +51,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import AppPagination from '@/components/AppPagination.vue'
@@ -68,6 +68,7 @@ import type { CreateMeetingPayload } from '@/types/meeting'
 import type { SelectOption } from '@/types/ui'
 
 const store = useMeetingsStore()
+const route = useRoute()
 const router = useRouter()
 
 const showForm = ref(false)
@@ -82,6 +83,10 @@ const statusOptions: SelectOption[] = [
 
 onMounted(() => {
   void store.fetchList()
+  if (route.query.create === '1') {
+    openCreate()
+    void router.replace({ query: {} })
+  }
 })
 
 function openCreate(): void {

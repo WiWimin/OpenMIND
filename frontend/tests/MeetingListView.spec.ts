@@ -7,9 +7,16 @@ import type { ListData } from '@/types/api'
 import type { Meeting } from '@/types/meeting'
 import MeetingListView from '@/views/meetings/MeetingListView.vue'
 
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
+const { pushMock, replaceMock, routeState } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  replaceMock: vi.fn(),
+  routeState: { query: {} as Record<string, string | undefined> },
+}))
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: pushMock }) }))
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRoute: () => routeState,
+}))
 
 vi.mock('@/api/meetings', () => ({
   listMeetings: vi.fn(),
@@ -47,6 +54,7 @@ function mountView() {
 describe('MeetingListView', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    routeState.query = {}
   })
 
   it('shows the empty state when there are no meetings', async () => {
@@ -96,6 +104,16 @@ describe('MeetingListView', () => {
       meeting_time: undefined,
     })
     expect(wrapper.find('.meeting-form').exists()).toBe(false)
+  })
+
+  it('opens the create dialog when arriving with ?create=1', async () => {
+    vi.mocked(meetingsApi.listMeetings).mockResolvedValue(listOf([]))
+    routeState.query = { create: '1' }
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.meeting-form').exists()).toBe(true)
+    expect(replaceMock).toHaveBeenCalledWith({ query: {} })
   })
 
   it('shows an error state and retries on demand', async () => {
