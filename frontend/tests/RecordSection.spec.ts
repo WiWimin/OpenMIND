@@ -1,6 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as chatApi from '@/api/chat'
 import * as recordsApi from '@/api/records'
 import RecordSection from '@/components/RecordSection.vue'
 import type { ListData } from '@/types/api'
@@ -11,6 +12,11 @@ vi.mock('@/api/records', () => ({
   createRecord: vi.fn(),
   updateRecord: vi.fn(),
   deleteRecord: vi.fn(),
+}))
+
+vi.mock('@/api/chat', () => ({
+  askMeeting: vi.fn(),
+  organizeRecords: vi.fn(),
 }))
 
 const record: MeetingRecord = {
@@ -105,5 +111,59 @@ describe('RecordSection', () => {
     await flushPromises()
 
     expect(recordsApi.deleteRecord).toHaveBeenCalledWith('rec_1')
+  })
+
+  it('organizes the selected records and shows an editable result', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
+    vi.mocked(chatApi.organizeRecords).mockResolvedValue({
+      organized_content: '主要议题：进度对齐；待确认：上线时间。',
+      source_record_ids: ['rec_1'],
+    })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    const checkbox = wrapper.get('.record-section__checkbox')
+    await checkbox.setValue(true)
+    await button(wrapper, 'AI 整理所选（1）')?.trigger('click')
+    await flushPromises()
+
+    expect(chatApi.organizeRecords).toHaveBeenCalledWith('mtg_1', { record_ids: ['rec_1'] })
+    const result = wrapper.get('#record-organized-content').element as HTMLTextAreaElement
+    expect(result.value).toBe('主要议题：进度对齐；待确认：上线时间。')
+    expect(wrapper.text()).toContain('AI 整理结果')
+  })
+
+  it('saves the edited organize result as a new record', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
+    vi.mocked(chatApi.organizeRecords).mockResolvedValue({
+      organized_content: '整理稿',
+      source_record_ids: ['rec_1'],
+    })
+    vi.mocked(recordsApi.createRecord).mockResolvedValue({ ...record, record_id: 'rec_2' })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('.record-section__checkbox').setValue(true)
+    await button(wrapper, 'AI 整理所选（1）')?.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('#record-organized-content').setValue('用户修改后的整理稿')
+    await button(wrapper, '另存为记录')?.trigger('click')
+    await flushPromises()
+
+    expect(recordsApi.createRecord).toHaveBeenCalledWith('mtg_1', {
+      content: '用户修改后的整理稿',
+      record_type: 'manual',
+    })
+    expect(wrapper.find('.record-section__result').exists()).toBe(false)
+  })
+
+  it('disables the organize button when nothing is selected', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
+    const wrapper = mountSection()
+    await flushPromises()
+
+    const organizeButton = button(wrapper, 'AI 整理所选（0）')
+    expect(organizeButton?.attributes('disabled')).toBeDefined()
   })
 })

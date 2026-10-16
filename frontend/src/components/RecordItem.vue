@@ -1,5 +1,5 @@
 <template>
-  <li class="record-item">
+  <div class="record-item">
     <div class="record-item__meta">
       <AppTag :label="typeLabel" />
       <span class="record-item__time">{{ time }}</span>
@@ -20,7 +20,7 @@
         <AppButton variant="ghost" @click="emit('delete')">删除</AppButton>
       </div>
     </template>
-  </li>
+  </div>
 </template>
 
 <script setup lang="ts">

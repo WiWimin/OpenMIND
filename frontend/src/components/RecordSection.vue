@@ -24,14 +24,32 @@
     />
 
     <template v-else>
+      <div class="record-section__organize">
+        <AppButton :disabled="selectedIds.length === 0" :loading="organizing" @click="organize">
+          AI 整理所选（{{ selectedIds.length }}）
+        </AppButton>
+        <p class="record-section__organize-hint">
+          勾选讨论记录后，AI 会整理出议题、观点、待确认事项与当前进展，结果可修改后另存为记录。
+        </p>
+      </div>
+      <ErrorMessage v-if="organizeError" :error="organizeError" />
+
       <ul class="record-section__list">
-        <RecordItem
-          v-for="record in items"
-          :key="record.record_id"
-          :record="record"
-          @save="(content) => saveEdit(record.record_id, content)"
-          @delete="askDelete(record.record_id)"
-        />
+        <li v-for="record in items" :key="record.record_id" class="record-section__row">
+          <input
+            v-model="selectedIds"
+            type="checkbox"
+            class="record-section__checkbox"
+            :value="record.record_id"
+            :aria-label="`选择记录 ${record.record_id}`"
+          />
+          <RecordItem
+            class="record-section__item"
+            :record="record"
+            @save="(content) => saveEdit(record.record_id, content)"
+            @delete="askDelete(record.record_id)"
+          />
+        </li>
       </ul>
       <AppPagination
         v-if="pagination.total_pages > 1"
@@ -42,6 +60,22 @@
         @update:page="load"
       />
     </template>
+
+    <div v-if="organizedVisible" class="record-section__result">
+      <header class="record-section__result-head">
+        <h3 class="record-section__result-title">AI 整理结果</h3>
+        <AppButton variant="ghost" @click="clearOrganized">关闭</AppButton>
+      </header>
+      <FormTextarea
+        id="record-organized-content"
+        v-model="organizedDraft"
+        label="整理内容"
+        :rows="10"
+      />
+      <div class="record-section__result-actions">
+        <AppButton :loading="savingOrganized" @click="saveOrganized">另存为记录</AppButton>
+      </div>
+    </div>
 
     <ConfirmDialog
       :open="showDelete"
@@ -59,6 +93,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
+import { organizeRecords } from '@/api/chat'
 import * as recordsApi from '@/api/records'
 import AppButton from '@/components/AppButton.vue'
 import AppPagination from '@/components/AppPagination.vue'
@@ -87,6 +122,13 @@ const actionError = ref<unknown>(null)
 const showDelete = ref(false)
 const deleting = ref(false)
 const pendingDeleteId = ref<string | null>(null)
+
+const selectedIds = ref<string[]>([])
+const organizing = ref(false)
+const organizeError = ref<unknown>(null)
+const organizedVisible = ref(false)
+const organizedDraft = ref('')
+const savingOrganized = ref(false)
 
 function refresh(): Promise<void> {
   return load()
@@ -156,6 +198,50 @@ async function confirmDelete(): Promise<void> {
     pendingDeleteId.value = null
   }
 }
+
+async function organize(): Promise<void> {
+  if (selectedIds.value.length === 0) {
+    return
+  }
+  organizing.value = true
+  organizeError.value = null
+  try {
+    const result = await organizeRecords(props.meetingId, {
+      record_ids: selectedIds.value,
+    })
+    organizedDraft.value = result.organized_content
+    organizedVisible.value = true
+  } catch (caught) {
+    organizeError.value = caught
+  } finally {
+    organizing.value = false
+  }
+}
+
+function clearOrganized(): void {
+  organizedVisible.value = false
+  organizedDraft.value = ''
+}
+
+async function saveOrganized(): Promise<void> {
+  const content = organizedDraft.value.trim()
+  if (!content) {
+    toast.error('整理内容不能为空')
+    return
+  }
+  savingOrganized.value = true
+  organizeError.value = null
+  try {
+    await recordsApi.createRecord(props.meetingId, { content, record_type: 'manual' })
+    clearOrganized()
+    await load(1)
+    toast.success('整理结果已另存为记录')
+  } catch (caught) {
+    organizeError.value = caught
+  } finally {
+    savingOrganized.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -179,6 +265,69 @@ async function confirmDelete(): Promise<void> {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.record-section__organize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.record-section__organize-hint {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.record-section__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.record-section__checkbox {
+  margin-top: var(--space-3);
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.record-section__item {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-section__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid rgba(59, 111, 212, 0.28);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.record-section__result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.record-section__result-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-primary-strong);
+}
+
+.record-section__result-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .record-section__state {
