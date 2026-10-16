@@ -7,17 +7,10 @@ import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/types/auth'
 
-const { pushMock, replaceMock } = vi.hoisted(() => ({
-  pushMock: vi.fn(),
-  replaceMock: vi.fn(),
-}))
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({
-    push: pushMock,
-    replace: replaceMock,
-    currentRoute: { value: { name: 'dashboard' } },
-  }),
+  useRouter: () => ({ push: pushMock }),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -67,28 +60,5 @@ describe('WorkspaceLayout', () => {
     expect(authApi.logout).toHaveBeenCalledTimes(1)
     expect(auth.isAuthenticated).toBe(false)
     expect(pushMock).toHaveBeenCalledWith({ name: 'login' })
-  })
-
-  it('lists nav feature titles in the footer sitemap', () => {
-    const { wrapper } = mountLayout()
-    const footer = wrapper.get('.workspace__footer-cols')
-
-    expect(footer.text()).toContain('仪表盘')
-    expect(footer.text()).toContain('我的会议')
-    expect(footer.text()).toContain('我的任务')
-    expect(footer.text()).toContain('待办任务')
-    expect(footer.text()).toContain('进行中')
-    expect(footer.text()).toContain('已完成')
-  })
-
-  it('jumps to page sections and task filters from the footer', async () => {
-    const { wrapper } = mountLayout()
-    const links = wrapper.findAll('.workspace__footer-link')
-
-    await links.find((item) => item.text() === '我的会议')?.trigger('click')
-    expect(replaceMock).toHaveBeenCalledWith({ hash: '#section-meetings' })
-
-    await links.find((item) => item.text() === '待办任务')?.trigger('click')
-    expect(pushMock).toHaveBeenCalledWith({ path: '/tasks', query: { status: 'todo' } })
   })
 })

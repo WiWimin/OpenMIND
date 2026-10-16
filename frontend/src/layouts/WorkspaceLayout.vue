@@ -74,77 +74,6 @@
           </Transition>
         </RouterView>
       </main>
-
-      <footer class="workspace__footer">
-        <div class="workspace__footer-cols">
-          <nav class="workspace__footer-col" aria-label="仪表盘">
-            <p class="workspace__footer-heading">仪表盘</p>
-            <a
-              class="workspace__footer-link"
-              :href="`${ROUTE_PATHS.dashboard}#section-overview`"
-              @click.prevent="goToSection('#section-overview')"
-            >
-              仪表盘
-            </a>
-            <a
-              class="workspace__footer-link"
-              :href="`${ROUTE_PATHS.dashboard}#section-meetings`"
-              @click.prevent="goToSection('#section-meetings')"
-            >
-              我的会议
-            </a>
-            <a
-              class="workspace__footer-link"
-              :href="`${ROUTE_PATHS.dashboard}#section-tasks`"
-              @click.prevent="goToSection('#section-tasks')"
-            >
-              我的任务
-            </a>
-          </nav>
-
-          <nav class="workspace__footer-col" aria-label="个人任务">
-            <p class="workspace__footer-heading">个人任务</p>
-            <a
-              class="workspace__footer-link"
-              :href="ROUTE_PATHS.tasks"
-              @click.prevent="goToTasks()"
-            >
-              我的任务
-            </a>
-            <a
-              class="workspace__footer-link"
-              :href="`${ROUTE_PATHS.tasks}?status=todo`"
-              @click.prevent="goToTasks('todo')"
-            >
-              待办任务
-            </a>
-            <a
-              class="workspace__footer-link"
-              :href="`${ROUTE_PATHS.tasks}?status=in_progress`"
-              @click.prevent="goToTasks('in_progress')"
-            >
-              进行中
-            </a>
-            <a
-              class="workspace__footer-link"
-              :href="`${ROUTE_PATHS.tasks}?status=completed`"
-              @click.prevent="goToTasks('completed')"
-            >
-              已完成
-            </a>
-          </nav>
-        </div>
-
-        <div class="workspace__footer-meta">
-          <p class="workspace__footer-links">
-            <a href="#" class="workspace__footer-legal">服务条款</a>
-            <a href="#" class="workspace__footer-legal">隐私政策</a>
-            <a href="#" class="workspace__footer-legal">安全与合规</a>
-            <a href="#" class="workspace__footer-legal">系统状况</a>
-          </p>
-          <p class="workspace__footer-note">OpenMIND · AI 会议个人助理</p>
-        </div>
-      </footer>
     </div>
 
     <ToastHost />
@@ -157,34 +86,14 @@ import { useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import ToastHost from '@/components/ToastHost.vue'
-import { ROUTE_NAMES, ROUTE_PATHS } from '@/constants/routeNames'
+import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
 const isLoggingOut = ref(false)
 
-const DASHBOARD_RENDERING_ROUTES: string[] = [
-  ROUTE_NAMES.dashboard,
-  ROUTE_NAMES.meetings,
-  ROUTE_NAMES.tasks,
-]
-
 const initial = computed(() => (auth.user?.name ?? '?').slice(0, 1).toUpperCase())
-
-function goToSection(hash: string): void {
-  const name = router.currentRoute.value.name
-  if (typeof name === 'string' && DASHBOARD_RENDERING_ROUTES.includes(name)) {
-    document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    void router.replace({ hash })
-  } else {
-    void router.push({ path: ROUTE_PATHS.dashboard, hash })
-  }
-}
-
-function goToTasks(status?: string): void {
-  void router.push({ path: ROUTE_PATHS.tasks, query: status ? { status } : undefined })
-}
 
 async function handleLogout(): Promise<void> {
   isLoggingOut.value = true
@@ -411,85 +320,6 @@ async function handleLogout(): Promise<void> {
   padding: var(--space-5) var(--space-5) var(--space-6);
 }
 
-/* 页脚：Fathom 式栏目 */
-.workspace__footer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-5) var(--space-4);
-  border-top: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.6);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-}
-
-.workspace__footer-cols {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-7);
-}
-
-.workspace__footer-col {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 6.5rem;
-}
-
-.workspace__footer-heading {
-  margin: 0 0 var(--space-1);
-  color: var(--color-foreground);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.workspace__footer-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.workspace__footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  margin: 0;
-}
-
-.workspace__footer-link {
-  color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-.workspace__footer-link:hover {
-  color: var(--color-primary-strong);
-}
-
-.workspace__footer-legal {
-  color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-.workspace__footer-legal:hover {
-  color: var(--color-primary-strong);
-}
-
-.workspace__footer-note {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-}
-
 /* 页面切换动效 */
 .page-enter-active,
 .page-leave-active {
@@ -535,10 +365,6 @@ async function handleLogout(): Promise<void> {
 
   .workspace__main {
     padding: var(--space-4) var(--space-3) var(--space-5);
-  }
-
-  .workspace__footer {
-    padding: var(--space-4) var(--space-3);
   }
 }
 </style>
