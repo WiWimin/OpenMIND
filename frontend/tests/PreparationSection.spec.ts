@@ -11,6 +11,7 @@ vi.mock('@/api/preparations', () => ({
   listPreparations: vi.fn(),
   getPreparation: vi.fn(),
   updatePreparation: vi.fn(),
+  confirmPreparation: vi.fn(),
 }))
 
 const preparation: Preparation = {
@@ -115,5 +116,33 @@ describe('PreparationSection', () => {
 
     expect(wrapper.find('.error-message').exists()).toBe(false)
     expect(button(wrapper, '取消生成')).toBeFalsy()
+  })
+
+  it('confirms a preparation', async () => {
+    vi.mocked(preparationsApi.listPreparations).mockResolvedValue(listOf([preparation]))
+    vi.mocked(preparationsApi.confirmPreparation).mockResolvedValue({
+      ...preparation,
+      status: 'confirmed',
+    })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('.preparation-section__item').trigger('click')
+    await button(wrapper, '确认')?.trigger('click')
+    await flushPromises()
+
+    expect(preparationsApi.confirmPreparation).toHaveBeenCalledWith('prep_1')
+  })
+
+  it('hides the confirm button once confirmed', async () => {
+    vi.mocked(preparationsApi.listPreparations).mockResolvedValue(
+      listOf([{ ...preparation, status: 'confirmed' }]),
+    )
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('.preparation-section__item').trigger('click')
+
+    expect(button(wrapper, '确认')).toBeUndefined()
   })
 })

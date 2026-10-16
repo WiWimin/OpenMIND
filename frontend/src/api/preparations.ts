@@ -49,3 +49,10 @@ export async function updatePreparation(
   )
   return unwrapData(data)
 }
+
+export async function confirmPreparation(preparationId: string): Promise<Preparation> {
+  const { data } = await http.post<ApiSuccess<Preparation> | Preparation>(
+    `/preparations/${preparationId}/confirm`,
+  )
+  return unwrapData(data)
+}
