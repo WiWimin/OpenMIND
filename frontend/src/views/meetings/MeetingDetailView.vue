@@ -150,6 +150,7 @@
       :meeting-id="meetingId"
       @close="assistantOpen = false"
       @minutes-saved="onAssistantMinutesSaved"
+      @navigate="onAssistantNavigate"
     />
   </section>
 </template>
@@ -235,6 +236,11 @@ function openAssistant(): void {
 function onAssistantMinutesSaved(): void {
   minutesSectionKey.value += 1
   activeTab.value = 'minutes'
+}
+
+function onAssistantNavigate(tab: string): void {
+  activeTab.value = tab
+  assistantOpen.value = false
 }
 
 function reload(): void {

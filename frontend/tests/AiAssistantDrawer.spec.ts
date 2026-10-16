@@ -138,4 +138,46 @@ describe('AiAssistantDrawer', () => {
     await wrapper.get('.ai-drawer__close').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
+
+  it('navigates to the records tab with a guide when asked to organize', async () => {
+    const wrapper = mountDrawer()
+
+    await submitQuestion(wrapper, '帮我整理一下讨论记录')
+
+    expect(chatApi.askMeeting).not.toHaveBeenCalled()
+    expect(wrapper.emitted('navigate')?.[0]).toEqual(['records'])
+    expect(wrapper.text()).toContain('AI 整理所选')
+  })
+
+  it('navigates to the issues tab with a guide when asked about open questions', async () => {
+    const wrapper = mountDrawer()
+
+    await submitQuestion(wrapper, '有哪些待确认问题')
+
+    expect(wrapper.emitted('navigate')?.[0]).toEqual(['issues'])
+    expect(wrapper.text()).toContain('提取问题')
+  })
+
+  it('navigates to the materials tab when asked about uploading documents', async () => {
+    const wrapper = mountDrawer()
+
+    await submitQuestion(wrapper, '在哪里上传会议材料')
+
+    expect(wrapper.emitted('navigate')?.[0]).toEqual(['materials'])
+    expect(wrapper.text()).toContain('「材料」小节')
+  })
+
+  it('still asks the chat for ordinary questions', async () => {
+    vi.mocked(chatApi.askMeeting).mockResolvedValue({
+      answer: '目标已完成。',
+      sources: [],
+      insufficient_evidence: false,
+    })
+    const wrapper = mountDrawer()
+
+    await submitQuestion(wrapper, '第三季度目标完成了吗')
+
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(chatApi.askMeeting).toHaveBeenCalled()
+  })
 })

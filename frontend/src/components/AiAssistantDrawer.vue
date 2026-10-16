@@ -107,7 +107,7 @@ import type { Minutes } from '@/types/minutes'
 import { isRequestCancelled } from '@/utils/requests'
 
 const props = defineProps<{ open: boolean; meetingId: string }>()
-const emit = defineEmits<{ close: []; 'minutes-saved': [] }>()
+const emit = defineEmits<{ close: []; 'minutes-saved': []; navigate: [tab: string] }>()
 
 const toast = useToast()
 
@@ -157,6 +157,50 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 const minutesIntent = /纪要/
 
+interface NavIntent {
+  test: RegExp
+  tab: string
+  guide: string
+}
+
+const navIntents: NavIntent[] = [
+  {
+    test: /整理|归纳/,
+    tab: 'records',
+    guide: '请切到「记录」小节，勾选要整理的讨论记录后点击「AI 整理所选」，结果可修改并另存为记录。',
+  },
+  {
+    test: /行动项|待办/,
+    tab: 'minutes',
+    guide: '请切到「纪要」小节，在下方「行动项」区域点击「提取行动项」，确认后可转为个人任务。',
+  },
+  {
+    test: /问题|疑问|待确认事项/,
+    tab: 'issues',
+    guide: '请切到「问题」小节，点击「提取问题」，AI 会从纪要与记录中列出待确认事项。',
+  },
+  {
+    test: /材料|上传|文档/,
+    tab: 'materials',
+    guide: '请切到「材料」小节，可上传会议相关文档，供会前准备与问答引用。',
+  },
+  {
+    test: /准备|会前/,
+    tab: 'preparation',
+    guide: '请切到「会前准备」小节，点击「生成会前准备」，AI 会基于已上传材料整理要点。',
+  },
+  {
+    test: /收尾|归档|检查/,
+    tab: 'checklist',
+    guide: '请切到「收尾」小节，可查看纪要、行动项与问题的处理状态，全部处理完即完成收尾。',
+  },
+  {
+    test: /任务/,
+    tab: 'checklist',
+    guide: '行动项确认后可在「纪要」小节转为个人任务；个人任务请在左侧导航打开「我的任务」页面查看跟进。',
+  },
+]
+
 async function ask(): Promise<void> {
   const text = question.value.trim()
   if (!text) {
@@ -169,6 +213,13 @@ async function ask(): Promise<void> {
 
   if (minutesIntent.test(text)) {
     await generateMinutes()
+    return
+  }
+
+  const navIntent = navIntents.find((intent) => intent.test.test(text))
+  if (navIntent) {
+    turns.value.push({ role: 'assistant', text: navIntent.guide })
+    emit('navigate', navIntent.tab)
     return
   }
 
