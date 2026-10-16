@@ -23,10 +23,10 @@
       <ErrorMessage v-if="actionError" :error="actionError" />
 
       <nav class="meeting-detail__anchors" aria-label="页面小节">
-        <a
+        <button
           v-for="tab in tabs"
           :key="tab.value"
-          :href="`#section-${tab.value}`"
+          type="button"
           class="meeting-detail__anchor"
           :class="{ 'meeting-detail__anchor--active': activeTab === tab.value }"
           role="tab"
@@ -34,22 +34,25 @@
           @click="activeTab = tab.value"
         >
           {{ tab.label }}
-        </a>
+        </button>
       </nav>
 
       <div class="meeting-detail__panel">
-        <section id="section-materials" class="meeting-detail__section">
+        <section v-if="activeTab === 'materials'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">材料</h2>
           <MaterialSection :meeting-id="meetingId" />
         </section>
 
-        <section id="section-preparation" class="meeting-detail__section">
+        <section v-else-if="activeTab === 'preparation'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">会前准备</h2>
-          <AiAssistantEntry description="会前准备由 AI 基于材料生成，可在右侧问答中追问细节。" />
+          <AiAssistantEntry
+            description="会前准备由 AI 基于材料生成，可在问答中追问细节。"
+            @go-to-chat="activeTab = 'records'"
+          />
           <PreparationSection :meeting-id="meetingId" />
         </section>
 
-        <section id="section-records" class="meeting-detail__section">
+        <section v-else-if="activeTab === 'records'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">记录与问答</h2>
           <div class="meeting-detail__split">
             <div class="meeting-detail__split-main">
@@ -61,21 +64,27 @@
           </div>
         </section>
 
-        <section id="section-minutes" class="meeting-detail__section">
+        <section v-else-if="activeTab === 'minutes'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">纪要与行动项</h2>
-          <AiAssistantEntry description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。" />
+          <AiAssistantEntry
+            description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。"
+            @go-to-chat="activeTab = 'records'"
+          />
           <MinutesSection :meeting-id="meetingId" />
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
         </section>
 
-        <section id="section-tasks" class="meeting-detail__section">
+        <section v-else-if="activeTab === 'tasks'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">任务</h2>
           <EmptyState title="任务" description="该区域将在后续模块（任务）中提供。" />
         </section>
 
-        <section id="section-issues" class="meeting-detail__section">
+        <section v-else class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">问题</h2>
-          <AiAssistantEntry description="问题由 AI 从纪要与记录中提取，可手动编辑补充。" />
+          <AiAssistantEntry
+            description="问题由 AI 从纪要与记录中提取，可手动编辑补充。"
+            @go-to-chat="activeTab = 'records'"
+          />
           <IssuesSection :meeting-id="meetingId" />
         </section>
       </div>
@@ -248,11 +257,8 @@ async function confirmDelete(): Promise<void> {
   font-size: 0.875rem;
 }
 
-/* 锚点导航（吸顶小节索引） */
+/* 小节切换导航 */
 .meeting-detail__anchors {
-  position: sticky;
-  top: 3.75rem;
-  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
@@ -271,8 +277,12 @@ async function confirmDelete(): Promise<void> {
   color: var(--color-muted-foreground);
   font-size: 0.875rem;
   font-weight: 500;
+  font: inherit;
   text-decoration: none;
+  border: none;
+  background: transparent;
   border-radius: var(--radius-pill);
+  cursor: pointer;
   transition:
     background var(--transition-fast),
     color var(--transition-fast);
@@ -303,9 +313,8 @@ async function confirmDelete(): Promise<void> {
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
-/* 单页滚动小节 */
+/* 当前小节 */
 .meeting-detail__section {
-  scroll-margin-top: 8.5rem;
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
 }

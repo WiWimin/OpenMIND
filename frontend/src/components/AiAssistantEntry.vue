@@ -15,7 +15,7 @@
       <p class="ai-entry__title">AI 助手</p>
       <p class="ai-entry__desc">{{ description }}</p>
     </div>
-    <AppButton variant="ghost" @click="goToChat">去提问</AppButton>
+    <AppButton variant="ghost" @click="emit('go-to-chat')">去提问</AppButton>
   </div>
 </template>
 
@@ -27,11 +27,7 @@ withDefaults(
   { description: '此功能由 AI 生成，遇到问题可直接向会议 AI 助手提问。' },
 )
 
-function goToChat(): void {
-  document
-    .getElementById('section-records')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
+const emit = defineEmits<{ 'go-to-chat': [] }>()
 </script>
 
 <style scoped>

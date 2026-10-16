@@ -146,6 +146,23 @@ describe('MeetingDetailView', () => {
     expect(wrapper.find('.material-uploader').exists()).toBe(true)
   })
 
+  it('shows only the active section instead of stacking every panel', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.preparation-section').exists()).toBe(false)
+
+    const preparationTab = wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text() === '会前准备')
+    await preparationTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.preparation-section').exists()).toBe(true)
+    expect(wrapper.find('.material-uploader').exists()).toBe(false)
+  })
+
   it('renders the preparation section on the preparation tab', async () => {
     vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
     const wrapper = mountView()
