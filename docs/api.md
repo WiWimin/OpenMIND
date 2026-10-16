@@ -209,9 +209,11 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
     "llm_api_base": "https://api.example.com/v1",
     "llm_model": "model-name",
     "llm_api_key_masked": "sk-...abcd",
+    "llm_source": "user",
     "embedding_api_base": "https://api.example.com/v1",
     "embedding_model": "text-embedding-1024",
     "embedding_api_key_masked": "sk-...abcd",
+    "embedding_source": "user",
     "embedding_dim": 1024
   }
 }
@@ -221,6 +223,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 密钥 `Fernet` 加密存库，永不明文返回；`_masked` 仅展示前后缀。
 - 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成；失败返回 `400 MODEL_CONFIG_INVALID`。
 - 生效优先级：用户配置 > 服务端全局（`docker/.env`）；全局留空即不兜底。
+- `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
 - 未配置任何模型时，AI 相关接口返回 `MODEL_CONFIG_INVALID`。
 
 ## 三、会议管理（M02，A）
