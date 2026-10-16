@@ -64,7 +64,10 @@
                 :options="statusOptions"
                 @update:model-value="(value) => changeStatus(task, value)"
               />
-              <span v-if="task.due_date" class="task-item__due">截止 {{ dueOf(task) }}</span>
+              <span v-if="task.due_date" class="task-item__due">
+                截止 {{ dueOf(task) }}
+                <StatusBadge v-if="isOverdue(task)" class="task-item__overdue" label="已逾期" tone="danger" />
+              </span>
             </div>
 
             <div class="task-item__actions">
@@ -105,7 +108,10 @@
         </div>
         <div class="task-detail__row">
           <dt>截止日期</dt>
-          <dd>{{ dueOf(detailTask) }}</dd>
+          <dd>
+            {{ dueOf(detailTask) }}
+            <StatusBadge v-if="isOverdue(detailTask)" label="已逾期" tone="danger" />
+          </dd>
         </div>
         <div class="task-detail__row">
           <dt>创建时间</dt>
@@ -200,6 +206,17 @@ function metaOf(task: PersonalTask) {
 
 function dueOf(task: PersonalTask): string {
   return formatDate(task.due_date)
+}
+
+function isOverdue(task: PersonalTask): boolean {
+  if (!task.due_date || task.status === 'completed' || task.status === 'cancelled') {
+    return false
+  }
+  const due = new Date(`${task.due_date}T23:59:59`)
+  if (Number.isNaN(due.getTime())) {
+    return false
+  }
+  return due.getTime() < Date.now()
 }
 
 function createdOf(task: PersonalTask): string {

@@ -133,6 +133,31 @@ describe('TaskSection', () => {
     })
   })
 
+  it('marks an incomplete task with a past due date as overdue', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(
+      listOf([{ ...task, due_date: '2020-01-01' }]),
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    const overdue = wrapper.find('.task-item__overdue')
+    expect(overdue.exists()).toBe(true)
+    expect(overdue.text()).toBe('已逾期')
+  })
+
+  it('does not mark completed or future-due tasks as overdue', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(
+      listOf([
+        { ...task, task_id: 'tsk_done', status: 'completed', due_date: '2020-01-01' },
+        { ...task, task_id: 'tsk_future', due_date: '2099-12-31' },
+      ]),
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.task-item__overdue').exists()).toBe(false)
+  })
+
   it('cancels a task after confirmation', async () => {
     vi.mocked(tasksApi.listTasks).mockResolvedValue(listOf([task]))
     vi.mocked(tasksApi.cancelTask).mockResolvedValue({ ...task, status: 'cancelled' })
