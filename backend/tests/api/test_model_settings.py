@@ -48,6 +48,8 @@ def test_put_and_get_masks_keys(client: TestClient, fake_probes: None) -> None:
     assert data["llm_api_key_masked"].startswith("sk-")
     assert data["llm_api_key_masked"].endswith("-key")
     assert data["llm_model"] == "custom-model"
+    assert data["llm_source"] == "user"
+    assert data["embedding_source"] == "user"
     assert data["embedding_dim"] == 1024
 
     got = client.get("/api/v1/me/settings/model", headers=headers)
@@ -75,6 +77,7 @@ def test_config_isolated_per_user(client: TestClient, fake_probes: None) -> None
     bob_read = client.get("/api/v1/me/settings/model", headers=bob).json()["data"]
     assert bob_read["llm_model"] == get_settings().llm_model
     assert bob_read["llm_model"] != "custom-model"
+    assert bob_read["llm_source"] != "user"
 
 
 def test_embedding_dim_mismatch_rejected(
@@ -114,6 +117,8 @@ def test_delete_clears_config(client: TestClient, fake_probes: None) -> None:
     after = client.get("/api/v1/me/settings/model", headers=headers).json()["data"]
     assert after["llm_model"] == get_settings().llm_model
     assert after["llm_model"] != "custom-model"
+    assert after["llm_source"] != "user"
+    assert after["embedding_source"] != "user"
 
 
 def test_requires_auth(client: TestClient) -> None:
