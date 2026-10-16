@@ -53,6 +53,19 @@
           </svg>
           <span class="workspace__nav-label">个人任务</span>
         </RouterLink>
+
+        <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.settings }">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
+            <path
+              d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M17.9 6.1l-1.4 1.4M7.5 16.5l-1.4 1.4M17.9 17.9l-1.4-1.4M7.5 7.5 6.1 6.1"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span class="workspace__nav-label">模型设置</span>
+        </RouterLink>
       </nav>
 
       <p class="workspace__tagline">AI 会议个人助理</p>
