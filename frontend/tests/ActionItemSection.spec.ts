@@ -80,8 +80,26 @@ describe('ActionItemSection', () => {
     await button(wrapper, '提取行动项')?.trigger('click')
     await flushPromises()
 
-    expect(actionItemsApi.extractActionItems).toHaveBeenCalledWith('mtg_1', { record_ids: [] })
+    expect(actionItemsApi.extractActionItems).toHaveBeenCalledWith('mtg_1', { record_ids: [] }, expect.anything())
     expect(wrapper.text()).toContain('完成接口联调')
+  })
+
+  it('edits a pending action item', async () => {
+    vi.mocked(actionItemsApi.listActionItems).mockResolvedValue(listOf([makeItem('pending_confirmation')]))
+    vi.mocked(actionItemsApi.updateActionItem).mockResolvedValue(makeItem('pending_confirmation'))
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '编辑')?.trigger('click')
+    await wrapper.get('#action-edit-content').setValue('更新后的内容')
+    await wrapper.get('.action-item__edit').trigger('submit')
+    await flushPromises()
+
+    expect(actionItemsApi.updateActionItem).toHaveBeenCalledWith('act_1', {
+      content: '更新后的内容',
+      assignee: '张三',
+      due_date: '2026-10-05',
+    })
   })
 
   it('confirms a pending action item', async () => {
@@ -112,7 +130,7 @@ describe('ActionItemSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '转任务')?.trigger('click')
+    await button(wrapper, '转为我的个人任务')?.trigger('click')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 

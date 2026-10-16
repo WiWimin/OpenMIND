@@ -3,9 +3,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as tasksApi from '@/api/tasks'
+import TaskSection from '@/components/TaskSection.vue'
 import type { ListData } from '@/types/api'
 import type { PersonalTask } from '@/types/task'
-import TaskListView from '@/views/tasks/TaskListView.vue'
+
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
+
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: pushMock }) }))
 
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
@@ -36,14 +40,14 @@ function listOf(items: PersonalTask[]): ListData<PersonalTask> {
 function mountView(): VueWrapper {
   const pinia = createPinia()
   setActivePinia(pinia)
-  return mount(TaskListView, { global: { plugins: [pinia] } })
+  return mount(TaskSection, { global: { plugins: [pinia] } })
 }
 
 function button(wrapper: VueWrapper, text: string) {
   return wrapper.findAll('button').find((item) => item.text() === text)
 }
 
-describe('TaskListView', () => {
+describe('TaskSection', () => {
   beforeEach(() => {
     vi.resetAllMocks()
   })
@@ -90,6 +94,68 @@ describe('TaskListView', () => {
     await flushPromises()
 
     expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
+  })
+
+  it('shows the task detail dialog and jumps to the source meeting', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(listOf([task]))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await button(wrapper, '查看详情')?.trigger('click')
+
+    const modal = wrapper.get('.modal')
+    expect(modal.text()).toContain('完成接口联调')
+    expect(modal.text()).toContain('mtg_1')
+
+    const jump = modal.findAll('button').find((item) => item.text() === '跳转来源会议')
+    await jump?.trigger('click')
+
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'meeting-detail',
+      params: { meetingId: 'mtg_1' },
+    })
+  })
+
+  it('edits a task title and due date', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(listOf([task]))
+    vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, title: '更新后的任务' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await button(wrapper, '编辑任务')?.trigger('click')
+    await wrapper.get('#task-edit-title-tsk_1').setValue('更新后的任务')
+    await wrapper.get('.task-item__edit').trigger('submit')
+    await flushPromises()
+
+    expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', {
+      title: '更新后的任务',
+      due_date: '2026-10-05',
+    })
+  })
+
+  it('marks an incomplete task with a past due date as overdue', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(
+      listOf([{ ...task, due_date: '2020-01-01' }]),
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    const overdue = wrapper.find('.task-item__overdue')
+    expect(overdue.exists()).toBe(true)
+    expect(overdue.text()).toBe('已逾期')
+  })
+
+  it('does not mark completed or future-due tasks as overdue', async () => {
+    vi.mocked(tasksApi.listTasks).mockResolvedValue(
+      listOf([
+        { ...task, task_id: 'tsk_done', status: 'completed', due_date: '2020-01-01' },
+        { ...task, task_id: 'tsk_future', due_date: '2099-12-31' },
+      ]),
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.task-item__overdue').exists()).toBe(false)
   })
 
   it('cancels a task after confirmation', async () => {

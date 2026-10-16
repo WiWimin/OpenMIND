@@ -1,7 +1,8 @@
 <template>
   <div class="issues-section">
     <div class="issues-section__toolbar">
-      <AppButton :loading="extracting" @click="extract">提取问题</AppButton>
+      <AppButton :loading="extracting" @click="extract">提取未解决问题</AppButton>
+      <AppButton v-if="extracting" variant="ghost" @click="cancelExtract">取消生成</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -79,11 +80,15 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { IssueStatus, OpenIssue } from '@/types/issue'
 import type { SelectOption } from '@/types/ui'
+import { isRequestCancelled } from '@/utils/requests'
 import { issueStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, pagination, loading, error, load } = useAsyncList<OpenIssue>({
   fetcher: ({ page, page_size }) => issuesApi.listIssues(props.meetingId, { page, page_size }),
@@ -115,17 +120,33 @@ onMounted(() => {
   void refresh()
 })
 
+let extractController: AbortController | null = null
+
 async function extract(): Promise<void> {
   extracting.value = true
   actionError.value = null
+  const controller = new AbortController()
+  extractController = controller
   try {
-    await issuesApi.extractIssues(props.meetingId, { record_ids: [] })
+    await issuesApi.extractIssues(props.meetingId, { record_ids: [] }, controller.signal)
     await load(1)
+    toast.success('已提取问题')
   } catch (caught) {
-    actionError.value = caught
+    if (isRequestCancelled(caught)) {
+      toast.success('已取消生成')
+    } else {
+      actionError.value = caught
+    }
   } finally {
+    if (extractController === controller) {
+      extractController = null
+    }
     extracting.value = false
   }
+}
+
+function cancelExtract(): void {
+  extractController?.abort()
 }
 
 function startEdit(issue: OpenIssue): void {
@@ -148,6 +169,7 @@ async function save(issueId: string): Promise<void> {
     })
     editingId.value = null
     await load()
+    toast.success('问题已保存')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -187,10 +209,16 @@ async function save(issueId: string): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.issue-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .issue-item__head {
@@ -201,7 +229,7 @@ async function save(issueId: string): Promise<void> {
 }
 
 .issue-item__description {
-  font-weight: 500;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 

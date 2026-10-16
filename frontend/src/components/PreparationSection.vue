@@ -8,7 +8,10 @@
         :rows="2"
         placeholder="例如：确认本周里程碑与待解决风险"
       />
-      <AppButton :loading="generating" @click="generate">生成准备稿</AppButton>
+      <div class="preparation-section__toolbar-actions">
+        <AppButton :loading="generating" @click="generate">生成会前准备</AppButton>
+        <AppButton v-if="generating" variant="ghost" @click="cancelGenerate">取消生成</AppButton>
+      </div>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -81,11 +84,15 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { Preparation } from '@/types/preparation'
 import { formatDateTime } from '@/utils/datetime'
+import { isRequestCancelled } from '@/utils/requests'
 import { preparationStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, loading, error, load } = useAsyncList<Preparation>({
   fetcher: ({ page, page_size }) =>
@@ -131,21 +138,41 @@ onMounted(() => {
   void refresh()
 })
 
+let generateController: AbortController | null = null
+
 async function generate(): Promise<void> {
   generating.value = true
   actionError.value = null
+  const controller = new AbortController()
+  generateController = controller
   try {
-    const preparation = await preparationsApi.generatePreparation(props.meetingId, {
-      include_history: true,
-      user_goal: userGoal.value.trim() || undefined,
-    })
+    const preparation = await preparationsApi.generatePreparation(
+      props.meetingId,
+      {
+        include_history: true,
+        user_goal: userGoal.value.trim() || undefined,
+      },
+      controller.signal,
+    )
     await load(1)
     select(preparation)
+    toast.success('已生成准备稿')
   } catch (caught) {
-    actionError.value = caught
+    if (isRequestCancelled(caught)) {
+      toast.success('已取消生成')
+    } else {
+      actionError.value = caught
+    }
   } finally {
+    if (generateController === controller) {
+      generateController = null
+    }
     generating.value = false
   }
+}
+
+function cancelGenerate(): void {
+  generateController?.abort()
 }
 
 async function save(): Promise<void> {
@@ -165,6 +192,7 @@ async function save(): Promise<void> {
     })
     syncSelected(updated)
     await load()
+    toast.success('准备稿已保存')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -204,6 +232,13 @@ async function confirm(): Promise<void> {
   align-items: flex-start;
 }
 
+.preparation-section__toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 .preparation-section__state {
   display: flex;
   justify-content: center;
@@ -219,7 +254,7 @@ async function confirm(): Promise<void> {
 .preparation-section__list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -231,16 +266,25 @@ async function confirm(): Promise<void> {
   justify-content: space-between;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font: inherit;
   cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.preparation-section__item:hover {
+  background: var(--color-surface-strong);
+  border-color: var(--color-border-strong);
 }
 
 .preparation-section__item--active {
   border-color: var(--color-primary);
+  background: rgba(59, 111, 212, 0.07);
 }
 
 .preparation-section__time {
@@ -251,7 +295,12 @@ async function confirm(): Promise<void> {
 .preparation-section__editor {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .preparation-section__editor-head {

@@ -8,7 +8,17 @@
         :rows="2"
         :error="formError"
       />
-      <AppButton type="submit" :loading="asking">提问</AppButton>
+      <div class="chat-panel__actions">
+        <AppButton type="submit" :loading="asking">提问</AppButton>
+        <AppButton
+          type="button"
+          variant="ghost"
+          :disabled="turns.length === 0 || asking"
+          @click="refill"
+        >
+          重新提问
+        </AppButton>
+      </div>
     </form>
 
     <ErrorMessage v-if="error" :error="error" />
@@ -38,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import * as chatApi from '@/api/chat'
 import AppButton from '@/components/AppButton.vue'
@@ -86,6 +96,18 @@ async function ask(): Promise<void> {
     asking.value = false
   }
 }
+
+function refill(): void {
+  const last = turns.value[turns.value.length - 1]
+  if (!last) {
+    return
+  }
+  formError.value = ''
+  question.value = last.question
+  void nextTick(() => {
+    document.getElementById('chat-question')?.focus()
+  })
+}
 </script>
 
 <style scoped>
@@ -99,7 +121,13 @@ async function ask(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  align-items: flex-start;
+  align-items: stretch;
+}
+
+.chat-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .chat-panel__hint {
@@ -111,29 +139,41 @@ async function ask(): Promise<void> {
 .chat-panel__turns {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* 问答气泡 */
 .chat-turn {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
 }
 
 .chat-turn__question {
+  align-self: flex-end;
   margin: 0;
-  font-weight: 600;
+  max-width: 88%;
+  padding: var(--space-2) var(--space-3);
+  background: linear-gradient(135deg, var(--color-primary), #4f83e0);
+  border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .chat-turn__answer {
   margin: 0;
+  padding: var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
+  color: var(--color-foreground);
+  font-size: 0.9rem;
+  line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -148,5 +188,6 @@ async function ask(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  padding-left: var(--space-1);
 }
 </style>

@@ -33,8 +33,8 @@ withDefaults(
   display: block;
   width: 1.25rem;
   height: 1.25rem;
-  border: 2px solid var(--color-primary);
-  border-top-color: transparent;
+  border: 2px solid rgba(59, 111, 212, 0.25);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: loading-spinner-spin 0.6s linear infinite;
 }

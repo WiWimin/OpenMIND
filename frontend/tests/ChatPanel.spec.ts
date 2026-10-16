@@ -56,6 +56,24 @@ describe('ChatPanel', () => {
     expect(wrapper.text()).toContain('证据不足')
   })
 
+  it('refills the last question when asking again', async () => {
+    vi.mocked(chatApi.askMeeting).mockResolvedValue(result)
+    const wrapper = mount(ChatPanel, { props: { meetingId: 'mtg_1' } })
+
+    const again = wrapper.findAll('button').find((button) => button.text() === '重新提问')
+    expect(again?.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('#chat-question').setValue('上次决定什么？')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const refill = wrapper.findAll('button').find((button) => button.text() === '重新提问')
+    await refill?.trigger('click')
+
+    const textarea = wrapper.get('#chat-question').element as HTMLTextAreaElement
+    expect(textarea.value).toBe('上次决定什么？')
+  })
+
   it('shows an error when the request fails', async () => {
     vi.mocked(chatApi.askMeeting).mockRejectedValue({
       error_code: 'MODEL_TIMEOUT',

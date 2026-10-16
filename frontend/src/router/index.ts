@@ -15,13 +15,20 @@ const routes: RouteRecordRaw[] = [
     path: ROUTE_PATHS.root,
     name: ROUTE_NAMES.root,
     redirect: () => ({
-      name: useAuthStore().isAuthenticated ? ROUTE_NAMES.meetings : ROUTE_NAMES.login,
+      name: useAuthStore().isAuthenticated ? ROUTE_NAMES.dashboard : ROUTE_NAMES.login,
     }),
   },
   {
-    path: ROUTE_PATHS.home,
-    name: ROUTE_NAMES.home,
-    component: () => import('@/views/HomeView.vue'),
+    path: ROUTE_PATHS.dashboard,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.dashboard,
+        component: () => import('@/views/DashboardView.vue'),
+      },
+    ],
   },
   {
     path: ROUTE_PATHS.login,
@@ -43,7 +50,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: ROUTE_NAMES.meetings,
-        component: () => import('@/views/meetings/MeetingListView.vue'),
+        component: () => import('@/views/DashboardView.vue'),
       },
       {
         path: ':meetingId',
@@ -60,7 +67,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: ROUTE_NAMES.tasks,
-        component: () => import('@/views/tasks/TaskListView.vue'),
+        component: () => import('@/views/TasksView.vue'),
       },
     ],
   },
@@ -84,7 +91,7 @@ export function createAppRouter(): Router {
     }
 
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      return { name: ROUTE_NAMES.meetings }
+      return { name: ROUTE_NAMES.dashboard }
     }
 
     if (auth.isAuthenticated && !auth.user) {

@@ -5,6 +5,7 @@ import * as minutesApi from '@/api/minutes'
 import MinutesSection from '@/components/MinutesSection.vue'
 import type { ListData } from '@/types/api'
 import type { Minutes } from '@/types/minutes'
+import * as minutesDocx from '@/utils/minutesDocx'
 
 vi.mock('@/api/minutes', () => ({
   listMinutes: vi.fn(),
@@ -12,6 +13,20 @@ vi.mock('@/api/minutes', () => ({
   getMinutes: vi.fn(),
   updateMinutes: vi.fn(),
   confirmMinutes: vi.fn(),
+}))
+
+vi.mock('@/components/RichTextEditor.vue', () => ({
+  default: {
+    props: { id: String, modelValue: String, label: String },
+    emits: ['update:modelValue'],
+    template:
+      '<div><label :for="id">{{ label }}</label><textarea :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
+  },
+}))
+
+vi.mock('@/utils/minutesDocx', () => ({
+  buildMinutesDocxBlob: vi.fn(),
+  downloadBlob: vi.fn(),
 }))
 
 const minutes: Minutes = {
@@ -79,13 +94,13 @@ describe('MinutesSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '生成纪要')?.trigger('click')
+    await button(wrapper, '生成会议纪要')?.trigger('click')
     await flushPromises()
 
     expect(minutesApi.generateMinutes).toHaveBeenCalledWith('mtg_1', {
       record_ids: [],
       include_action_items: true,
-    })
+    }, expect.anything())
     expect(minutesApi.listMinutes).toHaveBeenCalledTimes(2)
     expect(wrapper.find('#minutes-content').exists()).toBe(true)
   })
@@ -102,5 +117,25 @@ describe('MinutesSection', () => {
 
     expect(minutesApi.confirmMinutes).toHaveBeenCalledWith('min_1')
     expect(wrapper.text()).toContain('已确认')
+  })
+
+  it('exports the selected draft as docx', async () => {
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
+    const blob = new Blob(['docx'], { type: 'application/octet-stream' })
+    vi.mocked(minutesDocx.buildMinutesDocxBlob).mockResolvedValue(blob)
+    const wrapper = mount(MinutesSection, {
+      props: { meetingId: 'mtg_1', meetingTitle: '项目周会' },
+    })
+    await flushPromises()
+
+    await wrapper.get('.minutes-section__item').trigger('click')
+    await button(wrapper, '导出 DOCX')?.trigger('click')
+    await flushPromises()
+
+    expect(minutesDocx.buildMinutesDocxBlob).toHaveBeenCalledWith(
+      '项目周会 · 会议纪要',
+      '会议纪要草稿',
+    )
+    expect(minutesDocx.downloadBlob).toHaveBeenCalledWith(blob, '项目周会 · 会议纪要.docx')
   })
 })

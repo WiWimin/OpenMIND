@@ -18,7 +18,7 @@ const emit = defineEmits<{ select: [meetingId: string] }>()
 .meeting-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -26,5 +26,9 @@ const emit = defineEmits<{ select: [meetingId: string] }>()
 
 .meeting-list__item {
   display: flex;
+}
+
+.meeting-list__item > * {
+  flex: 1;
 }
 </style>

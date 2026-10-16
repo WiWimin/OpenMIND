@@ -74,6 +74,6 @@ describe('RegisterView', () => {
     await flushPromises()
 
     expect(authApi.register).toHaveBeenCalledWith({ name: 'Alice', password: 'secret123' })
-    expect(pushMock).toHaveBeenCalledWith({ name: 'meetings' })
+    expect(pushMock).toHaveBeenCalledWith({ name: 'dashboard' })
   })
 })

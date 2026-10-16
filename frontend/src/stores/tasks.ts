@@ -32,6 +32,10 @@ export const useTasksStore = defineStore('tasks', () => {
     return list.load(1)
   }
 
+  function loadMore(): Promise<void> {
+    return list.loadMore()
+  }
+
   function sync(task: PersonalTask): void {
     const index = list.items.value.findIndex((item) => item.task_id === task.task_id)
     if (index !== -1) {
@@ -60,6 +64,7 @@ export const useTasksStore = defineStore('tasks', () => {
     fetchList,
     setPage,
     setStatusFilter,
+    loadMore,
     updateTask,
     cancelTask,
   }

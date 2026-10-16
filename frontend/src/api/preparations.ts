@@ -11,10 +11,12 @@ import { unwrapData } from '@/utils/apiEnvelope'
 export async function generatePreparation(
   meetingId: string,
   payload: GeneratePreparationPayload,
+  signal?: AbortSignal,
 ): Promise<Preparation> {
   const { data } = await http.post<ApiSuccess<Preparation> | Preparation>(
     `/meetings/${meetingId}/prepare`,
     payload,
+    { signal },
   )
   return unwrapData(data)
 }

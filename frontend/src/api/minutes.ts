@@ -7,10 +7,12 @@ import { unwrapData } from '@/utils/apiEnvelope'
 export async function generateMinutes(
   meetingId: string,
   payload: GenerateMinutesPayload,
+  signal?: AbortSignal,
 ): Promise<Minutes> {
   const { data } = await http.post<ApiSuccess<Minutes> | Minutes>(
     `/meetings/${meetingId}/minutes/generate`,
     payload,
+    { signal },
   )
   return unwrapData(data)
 }

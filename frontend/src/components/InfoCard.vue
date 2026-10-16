@@ -34,8 +34,9 @@ withDefaults(
 .info-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
 }
 
 .info-card__head {
@@ -47,8 +48,9 @@ withDefaults(
 
 .info-card__label {
   margin: 0;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--color-muted-foreground);
 }
 
@@ -59,8 +61,9 @@ withDefaults(
 
 .info-card__value {
   margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 

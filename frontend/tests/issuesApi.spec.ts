@@ -36,7 +36,7 @@ describe('issues api', () => {
     await expect(extractIssues('mtg_1', { record_ids: ['rec_1'] })).resolves.toEqual([issue])
     expect(post).toHaveBeenCalledWith('/meetings/mtg_1/issues/extract', {
       record_ids: ['rec_1'],
-    })
+    }, { signal: undefined })
   })
 
   it('lists issues with pagination params', async () => {

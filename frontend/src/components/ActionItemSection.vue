@@ -2,6 +2,7 @@
   <div class="action-section">
     <div class="action-section__toolbar">
       <AppButton :loading="extracting" @click="extract">提取行动项</AppButton>
+      <AppButton v-if="extracting" variant="ghost" @click="cancelExtract">取消生成</AppButton>
     </div>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -35,7 +36,33 @@
             :reference="item.source.record_id ?? ''"
           />
 
-          <div class="action-item__actions">
+          <form
+            v-if="editId === item.action_id"
+            class="action-item__edit"
+            @submit.prevent="saveEdit"
+          >
+            <FormField
+              id="action-edit-content"
+              v-model="editContent"
+              label="行动项内容"
+              required
+              :error="editFormError"
+            />
+            <FormField id="action-edit-assignee" v-model="editAssignee" label="负责人（可选）" />
+            <FormField id="action-edit-due" v-model="editDue" label="截止日期" type="date" />
+            <ErrorMessage v-if="editError" :error="editError" />
+            <div class="action-item__edit-actions">
+              <AppButton type="button" variant="ghost" :disabled="editSaving" @click="cancelEdit">
+                取消
+              </AppButton>
+              <AppButton type="submit" :loading="editSaving">保存</AppButton>
+            </div>
+          </form>
+
+          <div v-else class="action-item__actions">
+            <AppButton v-if="item.status !== 'converted'" variant="ghost" @click="startEdit(item)">
+              编辑
+            </AppButton>
             <AppButton
               v-if="item.status === 'pending_confirmation'"
               :loading="busyId === item.action_id"
@@ -48,7 +75,7 @@
               :loading="busyId === item.action_id"
               @click="openConvert(item)"
             >
-              转任务
+              转为我的个人任务
             </AppButton>
             <span v-if="item.status === 'converted'" class="action-item__done">已转任务</span>
           </div>
@@ -65,7 +92,7 @@
       />
     </template>
 
-    <AppModal :open="convertTarget !== null" title="转为个人任务" @close="closeConvert">
+    <AppModal :open="convertTarget !== null" title="转为我的个人任务" @close="closeConvert">
       <form class="action-section__convert" @submit.prevent="submitConvert">
         <FormField
           id="convert-title"
@@ -100,11 +127,15 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import SourceRef from '@/components/SourceRef.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useToast } from '@/composables/useToast'
 import type { ActionItem } from '@/types/actionItem'
 import { formatDate } from '@/utils/datetime'
+import { isRequestCancelled } from '@/utils/requests'
 import { actionItemStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
+
+const toast = useToast()
 
 const { items, pagination, loading, error, load } = useAsyncList<ActionItem>({
   fetcher: ({ page, page_size }) =>
@@ -122,6 +153,55 @@ const convertFormError = ref('')
 const convertError = ref<unknown>(null)
 const converting = ref(false)
 
+const editId = ref<string | null>(null)
+const editContent = ref('')
+const editAssignee = ref('')
+const editDue = ref('')
+const editFormError = ref('')
+const editError = ref<unknown>(null)
+const editSaving = ref(false)
+
+function startEdit(item: ActionItem): void {
+  editId.value = item.action_id
+  editContent.value = item.content
+  editAssignee.value = item.assignee ?? ''
+  editDue.value = item.due_date ?? ''
+  editFormError.value = ''
+  editError.value = null
+}
+
+function cancelEdit(): void {
+  editId.value = null
+}
+
+async function saveEdit(): Promise<void> {
+  if (!editId.value) {
+    return
+  }
+  const content = editContent.value.trim()
+  if (!content) {
+    editFormError.value = '请输入行动项内容'
+    return
+  }
+  editFormError.value = ''
+  editSaving.value = true
+  editError.value = null
+  try {
+    await actionItemsApi.updateActionItem(editId.value, {
+      content,
+      assignee: editAssignee.value.trim() || undefined,
+      due_date: editDue.value || undefined,
+    })
+    editId.value = null
+    await load()
+    toast.success('行动项已更新')
+  } catch (caught) {
+    editError.value = caught
+  } finally {
+    editSaving.value = false
+  }
+}
+
 function statusOf(item: ActionItem) {
   return actionItemStatusMeta[item.status]
 }
@@ -138,17 +218,37 @@ onMounted(() => {
   void refresh()
 })
 
+let extractController: AbortController | null = null
+
 async function extract(): Promise<void> {
   extracting.value = true
   actionError.value = null
+  const controller = new AbortController()
+  extractController = controller
   try {
-    await actionItemsApi.extractActionItems(props.meetingId, { record_ids: [] })
+    await actionItemsApi.extractActionItems(
+      props.meetingId,
+      { record_ids: [] },
+      controller.signal,
+    )
     await load(1)
+    toast.success('已提取行动项')
   } catch (caught) {
-    actionError.value = caught
+    if (isRequestCancelled(caught)) {
+      toast.success('已取消生成')
+    } else {
+      actionError.value = caught
+    }
   } finally {
+    if (extractController === controller) {
+      extractController = null
+    }
     extracting.value = false
   }
+}
+
+function cancelExtract(): void {
+  extractController?.abort()
 }
 
 async function confirmItem(actionId: string): Promise<void> {
@@ -157,6 +257,7 @@ async function confirmItem(actionId: string): Promise<void> {
   try {
     await actionItemsApi.confirmActionItem(actionId)
     await load()
+    toast.success('行动项已确认')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -195,6 +296,7 @@ async function submitConvert(): Promise<void> {
     })
     convertTarget.value = null
     await load()
+    toast.success('已转为我的个人任务')
   } catch (caught) {
     convertError.value = caught
   } finally {
@@ -234,10 +336,16 @@ async function submitConvert(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.action-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .action-item__head {
@@ -248,7 +356,7 @@ async function submitConvert(): Promise<void> {
 }
 
 .action-item__content {
-  font-weight: 500;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -272,6 +380,22 @@ async function submitConvert(): Promise<void> {
 .action-item__done {
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
+}
+
+.action-item__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.action-item__edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .action-section__pagination {

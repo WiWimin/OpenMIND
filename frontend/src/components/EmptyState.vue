@@ -25,13 +25,14 @@ withDefaults(
   padding: var(--space-5) var(--space-4);
   background: var(--color-surface);
   border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   text-align: center;
 }
 
 .empty-state__title {
   margin: 0;
-  font-size: 1.125rem;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
   font-weight: 600;
 }
 

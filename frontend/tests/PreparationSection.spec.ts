@@ -80,15 +80,42 @@ describe('PreparationSection', () => {
     await flushPromises()
 
     await wrapper.get('#preparation-goal').setValue('确认风险')
-    await button(wrapper, '生成准备稿')?.trigger('click')
+    await button(wrapper, '生成会前准备')?.trigger('click')
     await flushPromises()
 
     expect(preparationsApi.generatePreparation).toHaveBeenCalledWith('mtg_1', {
       include_history: true,
       user_goal: '确认风险',
-    })
+    }, expect.anything())
     expect(preparationsApi.listPreparations).toHaveBeenCalledTimes(2)
     expect(wrapper.find('#preparation-summary').exists()).toBe(true)
+  })
+
+  it('cancels an in-flight generation', async () => {
+    vi.mocked(preparationsApi.listPreparations).mockResolvedValue(listOf([]))
+    vi.mocked(preparationsApi.generatePreparation).mockImplementation(
+      (_meetingId, _payload, signal) =>
+        new Promise<Preparation>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('cancelled')
+            error.name = 'CanceledError'
+            reject(error)
+          })
+        }),
+    )
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '生成会前准备')?.trigger('click')
+    await flushPromises()
+
+    const cancelButton = button(wrapper, '取消生成')
+    expect(cancelButton).toBeTruthy()
+    await cancelButton?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.error-message').exists()).toBe(false)
+    expect(button(wrapper, '取消生成')).toBeFalsy()
   })
 
   it('confirms a preparation', async () => {

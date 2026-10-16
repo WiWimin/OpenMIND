@@ -22,30 +22,79 @@
 
       <ErrorMessage v-if="actionError" :error="actionError" />
 
-      <AppTabs v-model="activeTab" :tabs="tabs" />
+      <nav class="meeting-detail__anchors" aria-label="页面小节">
+        <button
+          v-for="tab in tabs"
+          :key="tab.value"
+          type="button"
+          class="meeting-detail__anchor"
+          :class="{ 'meeting-detail__anchor--active': activeTab === tab.value }"
+          role="tab"
+          :aria-selected="activeTab === tab.value"
+          @click="activeTab = tab.value"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
 
       <div class="meeting-detail__panel">
-        <MaterialSection v-if="activeTab === 'materials'" :meeting-id="meetingId" />
+        <section v-if="activeTab === 'materials'" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">材料</h2>
+          <MaterialSection :meeting-id="meetingId" />
+        </section>
 
-        <PreparationSection v-else-if="activeTab === 'preparation'" :meeting-id="meetingId" />
+        <section v-else-if="activeTab === 'preparation'" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">会前准备</h2>
+          <AiAssistantEntry
+            description="会前准备由 AI 基于材料生成，可在问答中追问细节。"
+            @go-to-chat="openAssistant"
+          />
+          <PreparationSection :meeting-id="meetingId" />
+        </section>
 
-        <template v-else-if="activeTab === 'records'">
-          <RecordSection :meeting-id="meetingId" />
-          <ChatPanel class="meeting-detail__chat" :meeting-id="meetingId" />
-        </template>
+        <section v-else-if="activeTab === 'records'" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">记录与问答</h2>
+          <div class="meeting-detail__split">
+            <div class="meeting-detail__split-main">
+              <RecordSection :meeting-id="meetingId" />
+            </div>
+            <aside class="meeting-detail__split-aside">
+              <ChatPanel :meeting-id="meetingId" />
+            </aside>
+          </div>
+        </section>
 
-        <template v-else-if="activeTab === 'minutes'">
-          <MinutesSection :meeting-id="meetingId" />
+        <section v-else-if="activeTab === 'minutes'" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">纪要与行动项</h2>
+          <AiAssistantEntry
+            description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。"
+            @go-to-chat="openAssistant"
+          />
+          <MinutesSection
+            :key="minutesSectionKey"
+            :meeting-id="meetingId"
+            :meeting-title="store.current.title"
+          />
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
-        </template>
+        </section>
 
-        <IssuesSection v-else-if="activeTab === 'issues'" :meeting-id="meetingId" />
+        <section v-else-if="activeTab === 'issues'" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">问题</h2>
+          <AiAssistantEntry
+            description="问题由 AI 从纪要与记录中提取，可手动编辑补充。"
+            @go-to-chat="openAssistant"
+          />
+          <IssuesSection :meeting-id="meetingId" />
+        </section>
 
-        <EmptyState
-          v-else
-          :title="activeTabLabel"
-          description="该区域将在后续模块（任务）中提供。"
-        />
+        <section v-else class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">会后收尾</h2>
+          <PostMeetingChecklist
+            :key="checklistKey"
+            :meeting-id="meetingId"
+            @go-to-tab="activeTab = $event"
+          />
+        </section>
       </div>
     </template>
 
@@ -78,19 +127,48 @@
       @confirm="confirmDelete"
       @cancel="showDelete = false"
     />
+
+    <button
+      type="button"
+      class="meeting-detail__ai-fab"
+      aria-label="打开 AI 助手"
+      @click="openAssistant"
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+        <path
+          d="M12 3.5 13.6 8.4 18.5 10 13.6 11.6 12 16.5 10.4 11.6 5.5 10 10.4 8.4 12 3.5Z"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M18.5 15.5 19.3 17.7 21.5 18.5 19.3 19.3 18.5 21.5 17.7 19.3 15.5 18.5 17.7 17.7 18.5 15.5Z"
+          fill="currentColor"
+        />
+      </svg>
+      <span>AI 助手</span>
+    </button>
+
+    <AiAssistantDrawer
+      :open="assistantOpen"
+      :meeting-id="meetingId"
+      @close="assistantOpen = false"
+      @minutes-saved="onAssistantMinutesSaved"
+      @navigate="onAssistantNavigate"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
-import AppTabs from '@/components/AppTabs.vue'
 import ActionItemSection from '@/components/ActionItemSection.vue'
+import AiAssistantDrawer from '@/components/AiAssistantDrawer.vue'
+import AiAssistantEntry from '@/components/AiAssistantEntry.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import IssuesSection from '@/components/IssuesSection.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -98,8 +176,10 @@ import MaterialSection from '@/components/MaterialSection.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MinutesSection from '@/components/MinutesSection.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PostMeetingChecklist from '@/components/PostMeetingChecklist.vue'
 import PreparationSection from '@/components/PreparationSection.vue'
 import RecordSection from '@/components/RecordSection.vue'
+import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore } from '@/stores/meetings'
 import type { CreateMeetingPayload } from '@/types/meeting'
@@ -108,6 +188,7 @@ import { formatDateTime } from '@/utils/datetime'
 
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 const store = useMeetingsStore()
 
 const meetingId = computed(() => String(route.params.meetingId))
@@ -117,13 +198,10 @@ const tabs: TabItem[] = [
   { value: 'preparation', label: '会前准备' },
   { value: 'records', label: '记录' },
   { value: 'minutes', label: '纪要' },
-  { value: 'tasks', label: '任务' },
   { value: 'issues', label: '问题' },
+  { value: 'checklist', label: '收尾' },
 ]
 const activeTab = ref('materials')
-const activeTabLabel = computed(
-  () => tabs.find((tab) => tab.value === activeTab.value)?.label ?? '',
-)
 
 const isArchived = computed(() => store.current?.status === 'archived')
 
@@ -145,6 +223,30 @@ const showDelete = ref(false)
 const deleting = ref(false)
 const actionError = ref<unknown>(null)
 
+const assistantOpen = ref(false)
+const minutesSectionKey = ref(0)
+const checklistKey = ref(0)
+
+watch(activeTab, (tab) => {
+  if (tab === 'checklist') {
+    checklistKey.value += 1
+  }
+})
+
+function openAssistant(): void {
+  assistantOpen.value = true
+}
+
+function onAssistantMinutesSaved(): void {
+  minutesSectionKey.value += 1
+  activeTab.value = 'minutes'
+}
+
+function onAssistantNavigate(tab: string): void {
+  activeTab.value = tab
+  assistantOpen.value = false
+}
+
 function reload(): void {
   void store.fetchMeeting(meetingId.value)
 }
@@ -162,6 +264,7 @@ async function saveEdit(payload: CreateMeetingPayload): Promise<void> {
   try {
     await store.updateMeeting(meetingId.value, payload)
     showEdit.value = false
+    toast.success('会议已更新')
   } catch (caught) {
     saveError.value = caught
   } finally {
@@ -175,6 +278,7 @@ async function confirmArchive(): Promise<void> {
   try {
     await store.archiveMeeting(meetingId.value)
     showArchive.value = false
+    toast.success('会议已归档')
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -188,6 +292,7 @@ async function confirmDelete(): Promise<void> {
   try {
     await store.deleteMeeting(meetingId.value)
     showDelete.value = false
+    toast.success('会议已删除')
     await router.push({ name: ROUTE_NAMES.meetings })
   } catch (caught) {
     actionError.value = caught
@@ -207,19 +312,143 @@ async function confirmDelete(): Promise<void> {
 .meeting-detail__archived {
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-muted-foreground);
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.24);
+  border-radius: var(--radius-md);
+  color: #92400e;
   font-size: 0.875rem;
 }
 
-.meeting-detail__panel {
-  padding-top: var(--space-4);
+/* 小节切换导航 */
+.meeting-detail__anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  margin-bottom: var(--space-3);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
-.meeting-detail__chat,
+.meeting-detail__anchor {
+  padding: 0.4rem 0.9rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font: inherit;
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.meeting-detail__anchor:hover {
+  background: rgba(59, 111, 212, 0.07);
+  color: var(--color-foreground);
+}
+
+.meeting-detail__anchor--active {
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  box-shadow: 0 6px 16px rgba(59, 111, 212, 0.28);
+}
+
+.meeting-detail__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* 当前小节 */
+.meeting-detail__section {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.meeting-detail__section:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.meeting-detail__section-title {
+  margin: 0 0 var(--space-3);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-foreground);
+}
+
+/* 记录小节：左记录 + 右问答 双栏 */
+.meeting-detail__split {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+}
+
+.meeting-detail__split-aside {
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--color-border);
+}
+
 .meeting-detail__sub {
   margin-top: var(--space-4);
+}
+
+/* AI 助手悬浮入口 */
+.meeting-detail__ai-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.75rem;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.6rem 1.1rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font: inherit;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  border: none;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 24px rgba(59, 111, 212, 0.35);
+  cursor: pointer;
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.meeting-detail__ai-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(59, 111, 212, 0.45);
+}
+
+@media (max-width: 900px) {
+  .meeting-detail__split {
+    grid-template-columns: 1fr;
+  }
+
+  .meeting-detail__split-aside {
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-4);
+  }
 }
 </style>

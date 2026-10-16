@@ -10,7 +10,10 @@
       <p v-if="material.parse_error" class="material-item__error">{{ material.parse_error }}</p>
     </div>
 
-    <AppButton variant="ghost" @click="emit('delete', material.material_id)">删除</AppButton>
+    <div class="material-item__actions">
+      <AppButton variant="ghost" @click="emit('view', material.material_id)">查看详情</AppButton>
+      <AppButton variant="ghost" @click="emit('delete', material.material_id)">删除</AppButton>
+    </div>
   </li>
 </template>
 
@@ -24,7 +27,7 @@ import type { Material } from '@/types/material'
 import { materialStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ material: Material }>()
-const emit = defineEmits<{ delete: [materialId: string] }>()
+const emit = defineEmits<{ delete: [materialId: string]; view: [materialId: string] }>()
 
 const status = computed(() => materialStatusMeta[props.material.processing_status])
 </script>
@@ -35,21 +38,27 @@ const status = computed(() => materialStatusMeta[props.material.processing_statu
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.material-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .material-item__main {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
   min-width: 0;
 }
 
 .material-item__name {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-foreground);
   overflow-wrap: anywhere;
 }
@@ -65,5 +74,11 @@ const status = computed(() => materialStatusMeta[props.material.processing_statu
   margin: 0;
   color: var(--color-down);
   font-size: 0.8125rem;
+}
+
+.material-item__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
 }
 </style>

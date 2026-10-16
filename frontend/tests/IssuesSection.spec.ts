@@ -70,10 +70,10 @@ describe('IssuesSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '提取问题')?.trigger('click')
+    await button(wrapper, '提取未解决问题')?.trigger('click')
     await flushPromises()
 
-    expect(issuesApi.extractIssues).toHaveBeenCalledWith('mtg_1', { record_ids: [] })
+    expect(issuesApi.extractIssues).toHaveBeenCalledWith('mtg_1', { record_ids: [] }, expect.anything())
     expect(wrapper.text()).toContain('接口联调时间可能延期')
   })
 

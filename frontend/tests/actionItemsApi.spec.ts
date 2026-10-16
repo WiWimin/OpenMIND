@@ -61,7 +61,7 @@ describe('action items api', () => {
     ])
     expect(post).toHaveBeenCalledWith('/meetings/mtg_1/action-items/extract', {
       record_ids: ['rec_1'],
-    })
+    }, { signal: undefined })
   })
 
   it('lists action items with pagination params', async () => {
