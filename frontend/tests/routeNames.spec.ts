@@ -21,4 +21,9 @@ describe('route constants', () => {
     expect(ROUTE_NAMES.meetingDetail).toBe('meeting-detail')
     expect(ROUTE_PATHS.meetingDetail).toBe('/meetings/:meetingId')
   })
+
+  it('exposes the model settings route', () => {
+    expect(ROUTE_NAMES.settings).toBe('settings')
+    expect(ROUTE_PATHS.settings).toBe('/settings')
+  })
 })
