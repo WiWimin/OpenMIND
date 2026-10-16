@@ -1,12 +1,14 @@
 <template>
   <button class="meeting-card" type="button" @click="emit('select', meeting.meeting_id)">
-    <span class="meeting-card__head">
+    <span class="meeting-card__body">
       <span class="meeting-card__title">{{ meeting.title }}</span>
-      <StatusBadge :label="status.label" :tone="status.tone" />
+      <span v-if="meeting.topic" class="meeting-card__topic">{{ meeting.topic }}</span>
+      <span class="meeting-card__time">{{ time }}</span>
     </span>
-    <span v-if="meeting.topic" class="meeting-card__topic">{{ meeting.topic }}</span>
-    <span class="meeting-card__time">{{ time }}</span>
-    <span class="meeting-card__enter" aria-hidden="true">进入会议 →</span>
+    <span class="meeting-card__aside">
+      <StatusBadge :label="status.label" :tone="status.tone" />
+      <span class="meeting-card__enter" aria-hidden="true">进入会议 →</span>
+    </span>
   </button>
 </template>
 
@@ -29,8 +31,9 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 .meeting-card {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   width: 100%;
   padding: var(--space-4);
   overflow: hidden;
@@ -67,11 +70,18 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
   opacity: 1;
 }
 
-.meeting-card__head {
+.meeting-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.meeting-card__aside {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  flex-shrink: 0;
 }
 
 .meeting-card__title {
@@ -87,13 +97,11 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 }
 
 .meeting-card__time {
-  margin-top: var(--space-1);
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
 }
 
 .meeting-card__enter {
-  margin-top: var(--space-1);
   color: var(--color-primary-strong);
   font-size: 0.8125rem;
   font-weight: 600;
