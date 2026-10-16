@@ -50,6 +50,7 @@
           >
             确认
           </AppButton>
+          <AppButton variant="ghost" :loading="exporting" @click="exportDocx">导出 DOCX</AppButton>
         </div>
       </div>
     </div>
@@ -73,7 +74,15 @@ import { formatDateTime } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
 import { minutesStatusMeta } from '@/utils/statusLabels'
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{
+    meetingId: string
+    meetingTitle?: string
+  }>(),
+  {
+    meetingTitle: '',
+  },
+)
 
 const toast = useToast()
 
@@ -86,6 +95,7 @@ const draft = ref('')
 const generating = ref(false)
 const saving = ref(false)
 const confirming = ref(false)
+const exporting = ref(false)
 const actionError = ref<unknown>(null)
 
 function statusOf(minutes: Minutes) {
@@ -186,6 +196,25 @@ async function confirm(): Promise<void> {
     actionError.value = caught
   } finally {
     confirming.value = false
+  }
+}
+
+async function exportDocx(): Promise<void> {
+  if (!selected.value) {
+    return
+  }
+  exporting.value = true
+  actionError.value = null
+  try {
+    const { buildMinutesDocxBlob, downloadBlob } = await import('@/utils/minutesDocx')
+    const title = props.meetingTitle ? `${props.meetingTitle} · 会议纪要` : '会议纪要'
+    const blob = await buildMinutesDocxBlob(title, draft.value)
+    downloadBlob(blob, `${title}.docx`)
+    toast.success('纪要已导出为 DOCX')
+  } catch (caught) {
+    actionError.value = caught
+  } finally {
+    exporting.value = false
   }
 }
 </script>

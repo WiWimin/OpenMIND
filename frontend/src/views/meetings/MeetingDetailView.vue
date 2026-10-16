@@ -70,7 +70,11 @@
             description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。"
             @go-to-chat="openAssistant"
           />
-          <MinutesSection :key="minutesSectionKey" :meeting-id="meetingId" />
+          <MinutesSection
+            :key="minutesSectionKey"
+            :meeting-id="meetingId"
+            :meeting-title="store.current.title"
+          />
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
         </section>
 
