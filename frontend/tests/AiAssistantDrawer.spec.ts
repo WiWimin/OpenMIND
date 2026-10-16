@@ -19,6 +19,15 @@ vi.mock('@/api/minutes', () => ({
   confirmMinutes: vi.fn(),
 }))
 
+vi.mock('@/components/RichTextEditor.vue', () => ({
+  default: {
+    props: { id: String, modelValue: String, label: String },
+    emits: ['update:modelValue'],
+    template:
+      '<div><label :for="id">{{ label }}</label><textarea :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
+  },
+}))
+
 const minutes: Minutes = {
   minutes_id: 'min_1',
   meeting_id: 'mtg_1',

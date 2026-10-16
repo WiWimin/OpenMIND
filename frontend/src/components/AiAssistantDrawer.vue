@@ -78,7 +78,7 @@
     </aside>
 
     <AppModal :open="resultOpen" title="AI 生成的纪要草稿" @close="resultOpen = false">
-      <FormTextarea id="ai-drawer-result" v-model="resultDraft" label="纪要内容" :rows="12" />
+      <RichTextEditor id="ai-drawer-result" v-model="resultDraft" label="纪要内容" />
       <p class="ai-drawer__result-note">
         这是 AI 生成的候选草稿，可直接修改后保存；保存后仍可在「纪要」小节继续编辑或确认。
       </p>
@@ -100,6 +100,7 @@ import AppButton from '@/components/AppButton.vue'
 import AppModal from '@/components/AppModal.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
+import RichTextEditor from '@/components/RichTextEditor.vue'
 import SourceRef from '@/components/SourceRef.vue'
 import { useToast } from '@/composables/useToast'
 import type { ChatSource } from '@/types/chat'

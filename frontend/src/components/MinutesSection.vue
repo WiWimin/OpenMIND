@@ -38,7 +38,7 @@
           <span class="minutes-section__version">v{{ selected.version }}</span>
         </div>
 
-        <FormTextarea id="minutes-content" v-model="draft" label="纪要内容" :rows="8" />
+        <RichTextEditor id="minutes-content" v-model="draft" label="纪要内容" />
 
         <div class="minutes-section__actions">
           <AppButton :loading="saving" @click="save">保存</AppButton>
@@ -63,8 +63,8 @@ import * as minutesApi from '@/api/minutes'
 import AppButton from '@/components/AppButton.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
-import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import RichTextEditor from '@/components/RichTextEditor.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
