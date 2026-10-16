@@ -132,7 +132,7 @@ async function handleLogout(): Promise<void> {
     linear-gradient(135deg, #dceaf6 0%, #e7f1fa 30%, #eff5fb 55%, #e3edf8 80%, #dceaf5 100%);
 }
 
-/* 左侧侧栏 */
+/* 左侧侧栏：浅色毛玻璃 */
 .workspace__sidebar {
   position: sticky;
   top: 0;
@@ -143,11 +143,11 @@ async function handleLogout(): Promise<void> {
   width: 15rem;
   height: 100vh;
   padding: var(--space-4) var(--space-3) var(--space-3);
-  background:
-    radial-gradient(120% 60% at 0% 0%, rgba(59, 111, 212, 0.25), transparent 60%),
-    linear-gradient(180deg, #0f2744 0%, #0a1c33 100%);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.66);
+  border-right: 1px solid var(--color-border);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  color: var(--color-foreground);
 }
 
 .workspace__brand {
@@ -175,7 +175,7 @@ async function handleLogout(): Promise<void> {
   font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #ffffff;
+  color: var(--color-foreground);
 }
 
 .workspace__cta {
@@ -212,11 +212,12 @@ async function handleLogout(): Promise<void> {
 .workspace__group {
   margin: var(--space-3) 0 var(--space-1);
   padding: 0 var(--space-2);
-  color: rgba(148, 163, 184, 0.7);
+  color: var(--color-muted-foreground);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  opacity: 0.85;
 }
 
 .workspace__group:first-child {
@@ -228,7 +229,7 @@ async function handleLogout(): Promise<void> {
   align-items: center;
   gap: var(--space-2);
   padding: 0.6rem 0.75rem;
-  color: rgba(203, 213, 225, 0.86);
+  color: var(--color-muted-foreground);
   font-size: 0.9375rem;
   text-decoration: none;
   border-radius: var(--radius-md);
@@ -239,15 +240,15 @@ async function handleLogout(): Promise<void> {
 }
 
 .workspace__nav-link:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: rgba(59, 111, 212, 0.08);
+  color: var(--color-foreground);
   transform: translateX(2px);
 }
 
 .workspace__nav-link.router-link-active {
   color: #ffffff;
   font-weight: 600;
-  background: linear-gradient(135deg, rgba(59, 111, 212, 0.95), rgba(20, 184, 166, 0.85));
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   box-shadow: 0 10px 24px rgba(59, 111, 212, 0.3);
 }
 
@@ -259,7 +260,7 @@ async function handleLogout(): Promise<void> {
 .workspace__tagline {
   margin: 0;
   padding: 0 var(--space-2);
-  color: rgba(148, 163, 184, 0.65);
+  color: var(--color-muted-foreground);
   font-size: 0.75rem;
   letter-spacing: 0.04em;
 }
