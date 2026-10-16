@@ -8,7 +8,32 @@
         :rows="3"
         :error="formError"
       />
-      <AppButton type="submit" :loading="adding">保存记录</AppButton>
+      <div class="record-section__add-actions">
+        <AppButton type="submit" :loading="adding">保存记录</AppButton>
+        <AppButton variant="ghost" @click="toggleImport">
+          {{ importOpen ? '收起导入' : '导入转写文本' }}
+        </AppButton>
+      </div>
+    </form>
+
+    <form v-if="importOpen" class="record-section__import" @submit.prevent="importText">
+      <FormTextarea
+        id="record-import-content"
+        v-model="importContent"
+        label="粘贴录音转写稿或外部文本"
+        :rows="8"
+        :error="importError"
+      />
+      <FormSelect
+        id="record-import-type"
+        v-model="importType"
+        label="记录类型"
+        :options="importTypeOptions"
+      />
+      <div class="record-section__add-actions">
+        <AppButton type="submit" :loading="importing">导入</AppButton>
+        <AppButton variant="ghost" type="button" @click="toggleImport">取消</AppButton>
+      </div>
     </form>
 
     <ErrorMessage v-if="actionError" :error="actionError" />
@@ -100,6 +125,7 @@ import AppPagination from '@/components/AppPagination.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
+import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import RecordItem from '@/components/RecordItem.vue'
@@ -130,6 +156,17 @@ const organizedVisible = ref(false)
 const organizedDraft = ref('')
 const savingOrganized = ref(false)
 
+const importOpen = ref(false)
+const importContent = ref('')
+const importType = ref<string>('transcript')
+const importError = ref('')
+const importing = ref(false)
+
+const importTypeOptions: { label: string; value: string }[] = [
+  { label: '转写（录音转写稿）', value: 'transcript' },
+  { label: '导入（外部文本）', value: 'imported' },
+]
+
 function refresh(): Promise<void> {
   return load()
 }
@@ -156,6 +193,37 @@ async function add(): Promise<void> {
     actionError.value = caught
   } finally {
     adding.value = false
+  }
+}
+
+function toggleImport(): void {
+  importOpen.value = !importOpen.value
+  importContent.value = ''
+  importError.value = ''
+}
+
+async function importText(): Promise<void> {
+  const content = importContent.value.trim()
+  if (!content) {
+    importError.value = '导入内容不能为空'
+    return
+  }
+  importError.value = ''
+  importing.value = true
+  actionError.value = null
+  try {
+    await recordsApi.createRecord(props.meetingId, {
+      content,
+      record_type: importType.value === 'imported' ? 'imported' : 'transcript',
+    })
+    importOpen.value = false
+    importContent.value = ''
+    await load(1)
+    toast.success('文本已导入为记录')
+  } catch (caught) {
+    actionError.value = caught
+  } finally {
+    importing.value = false
   }
 }
 
@@ -256,6 +324,23 @@ async function saveOrganized(): Promise<void> {
   flex-direction: column;
   gap: var(--space-2);
   align-items: flex-start;
+}
+
+.record-section__add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.record-section__import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid rgba(59, 111, 212, 0.28);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .record-section__list {

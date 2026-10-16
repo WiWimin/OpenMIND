@@ -82,6 +82,55 @@ describe('RecordSection', () => {
     expect(recordsApi.listRecords).toHaveBeenCalledTimes(2)
   })
 
+  it('imports transcript text as a transcript record', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([]))
+    vi.mocked(recordsApi.createRecord).mockResolvedValue({ ...record, record_type: 'transcript' })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '导入转写文本')?.trigger('click')
+    await wrapper.get('#record-import-content').setValue('甲：先对齐一下进度。乙：测试通过了。')
+    await wrapper.get('form.record-section__import').trigger('submit')
+    await flushPromises()
+
+    expect(recordsApi.createRecord).toHaveBeenCalledWith('mtg_1', {
+      content: '甲：先对齐一下进度。乙：测试通过了。',
+      record_type: 'transcript',
+    })
+    expect(wrapper.find('form.record-section__import').exists()).toBe(false)
+  })
+
+  it('imports external text as an imported record', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([]))
+    vi.mocked(recordsApi.createRecord).mockResolvedValue({ ...record, record_type: 'imported' })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '导入转写文本')?.trigger('click')
+    await wrapper.get('#record-import-content').setValue('外部纪要草稿')
+    await wrapper.get('#record-import-type').setValue('imported')
+    await wrapper.get('form.record-section__import').trigger('submit')
+    await flushPromises()
+
+    expect(recordsApi.createRecord).toHaveBeenCalledWith('mtg_1', {
+      content: '外部纪要草稿',
+      record_type: 'imported',
+    })
+  })
+
+  it('rejects an empty import', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([]))
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '导入转写文本')?.trigger('click')
+    await wrapper.get('form.record-section__import').trigger('submit')
+    await flushPromises()
+
+    expect(recordsApi.createRecord).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('导入内容不能为空')
+  })
+
   it('updates a record', async () => {
     vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
     vi.mocked(recordsApi.updateRecord).mockResolvedValue({ ...record, content: '改' })
