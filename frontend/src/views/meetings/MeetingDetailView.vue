@@ -74,18 +74,22 @@
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
         </section>
 
-        <section v-else-if="activeTab === 'tasks'" class="meeting-detail__section">
-          <h2 class="meeting-detail__section-title">任务</h2>
-          <EmptyState title="任务" description="该区域将在后续模块（任务）中提供。" />
-        </section>
-
-        <section v-else class="meeting-detail__section">
+        <section v-else-if="activeTab === 'issues'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">问题</h2>
           <AiAssistantEntry
             description="问题由 AI 从纪要与记录中提取，可手动编辑补充。"
             @go-to-chat="openAssistant"
           />
           <IssuesSection :meeting-id="meetingId" />
+        </section>
+
+        <section v-else class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">会后收尾</h2>
+          <PostMeetingChecklist
+            :key="checklistKey"
+            :meeting-id="meetingId"
+            @go-to-tab="activeTab = $event"
+          />
         </section>
       </div>
     </template>
@@ -151,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
@@ -160,7 +164,6 @@ import AiAssistantDrawer from '@/components/AiAssistantDrawer.vue'
 import AiAssistantEntry from '@/components/AiAssistantEntry.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import IssuesSection from '@/components/IssuesSection.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -168,6 +171,7 @@ import MaterialSection from '@/components/MaterialSection.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MinutesSection from '@/components/MinutesSection.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PostMeetingChecklist from '@/components/PostMeetingChecklist.vue'
 import PreparationSection from '@/components/PreparationSection.vue'
 import RecordSection from '@/components/RecordSection.vue'
 import { useToast } from '@/composables/useToast'
@@ -189,8 +193,8 @@ const tabs: TabItem[] = [
   { value: 'preparation', label: '会前准备' },
   { value: 'records', label: '记录' },
   { value: 'minutes', label: '纪要' },
-  { value: 'tasks', label: '任务' },
   { value: 'issues', label: '问题' },
+  { value: 'checklist', label: '收尾' },
 ]
 const activeTab = ref('materials')
 
@@ -216,6 +220,13 @@ const actionError = ref<unknown>(null)
 
 const assistantOpen = ref(false)
 const minutesSectionKey = ref(0)
+const checklistKey = ref(0)
+
+watch(activeTab, (tab) => {
+  if (tab === 'checklist') {
+    checklistKey.value += 1
+  }
+})
 
 function openAssistant(): void {
   assistantOpen.value = true
