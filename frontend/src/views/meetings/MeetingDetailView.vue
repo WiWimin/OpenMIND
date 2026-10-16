@@ -47,7 +47,7 @@
           <h2 class="meeting-detail__section-title">会前准备</h2>
           <AiAssistantEntry
             description="会前准备由 AI 基于材料生成，可在问答中追问细节。"
-            @go-to-chat="activeTab = 'records'"
+            @go-to-chat="openAssistant"
           />
           <PreparationSection :meeting-id="meetingId" />
         </section>
@@ -68,9 +68,9 @@
           <h2 class="meeting-detail__section-title">纪要与行动项</h2>
           <AiAssistantEntry
             description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。"
-            @go-to-chat="activeTab = 'records'"
+            @go-to-chat="openAssistant"
           />
-          <MinutesSection :meeting-id="meetingId" />
+          <MinutesSection :key="minutesSectionKey" :meeting-id="meetingId" />
           <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
         </section>
 
@@ -83,7 +83,7 @@
           <h2 class="meeting-detail__section-title">问题</h2>
           <AiAssistantEntry
             description="问题由 AI 从纪要与记录中提取，可手动编辑补充。"
-            @go-to-chat="activeTab = 'records'"
+            @go-to-chat="openAssistant"
           />
           <IssuesSection :meeting-id="meetingId" />
         </section>
@@ -119,6 +119,34 @@
       @confirm="confirmDelete"
       @cancel="showDelete = false"
     />
+
+    <button
+      type="button"
+      class="meeting-detail__ai-fab"
+      aria-label="打开 AI 助手"
+      @click="openAssistant"
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+        <path
+          d="M12 3.5 13.6 8.4 18.5 10 13.6 11.6 12 16.5 10.4 11.6 5.5 10 10.4 8.4 12 3.5Z"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M18.5 15.5 19.3 17.7 21.5 18.5 19.3 19.3 18.5 21.5 17.7 19.3 15.5 18.5 17.7 17.7 18.5 15.5Z"
+          fill="currentColor"
+        />
+      </svg>
+      <span>AI 助手</span>
+    </button>
+
+    <AiAssistantDrawer
+      :open="assistantOpen"
+      :meeting-id="meetingId"
+      @close="assistantOpen = false"
+      @minutes-saved="onAssistantMinutesSaved"
+    />
   </section>
 </template>
 
@@ -128,6 +156,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppButton from '@/components/AppButton.vue'
 import ActionItemSection from '@/components/ActionItemSection.vue'
+import AiAssistantDrawer from '@/components/AiAssistantDrawer.vue'
 import AiAssistantEntry from '@/components/AiAssistantEntry.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -184,6 +213,18 @@ const archiving = ref(false)
 const showDelete = ref(false)
 const deleting = ref(false)
 const actionError = ref<unknown>(null)
+
+const assistantOpen = ref(false)
+const minutesSectionKey = ref(0)
+
+function openAssistant(): void {
+  assistantOpen.value = true
+}
+
+function onAssistantMinutesSaved(): void {
+  minutesSectionKey.value += 1
+  activeTab.value = 'minutes'
+}
 
 function reload(): void {
   void store.fetchMeeting(meetingId.value)
@@ -346,6 +387,35 @@ async function confirmDelete(): Promise<void> {
 
 .meeting-detail__sub {
   margin-top: var(--space-4);
+}
+
+/* AI 助手悬浮入口 */
+.meeting-detail__ai-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.75rem;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.6rem 1.1rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font: inherit;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  border: none;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 24px rgba(59, 111, 212, 0.35);
+  cursor: pointer;
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.meeting-detail__ai-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(59, 111, 212, 0.45);
 }
 
 @media (max-width: 900px) {
