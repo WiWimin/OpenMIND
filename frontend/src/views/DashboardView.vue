@@ -10,7 +10,7 @@
       </div>
 
       <div class="dashboard__hero-actions">
-        <button class="hero-btn hero-btn--ghost" type="button" @click="scrollToTasks">
+        <button class="hero-btn hero-btn--ghost" type="button" @click="goToTasks">
           我的任务
         </button>
         <button class="hero-btn hero-btn--primary" type="button" @click="openCreate">
@@ -145,14 +145,6 @@
       </template>
     </section>
 
-    <section id="section-tasks" class="dashboard__tasks">
-      <header class="dashboard__tasks-head">
-        <h2 class="dashboard__tasks-title">我的任务</h2>
-        <p class="dashboard__tasks-hint">跟进由已确认行动项转换而成的个人任务。</p>
-      </header>
-      <TaskSection />
-    </section>
-
     <MeetingFormDialog
       :open="showForm"
       :loading="saving"
@@ -176,11 +168,9 @@ import FormSelect from '@/components/FormSelect.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MeetingList from '@/components/MeetingList.vue'
-import TaskSection from '@/components/TaskSection.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useMeetingsStore, type MeetingStatusFilter } from '@/stores/meetings'
-import { useTasksStore, type TaskStatusFilter } from '@/stores/tasks'
 import type { CreateMeetingPayload } from '@/types/meeting'
 import type { SelectOption } from '@/types/ui'
 
@@ -209,35 +199,9 @@ const statusOptions: SelectOption[] = [
 ]
 
 const store = useMeetingsStore()
-const tasksStore = useTasksStore()
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-
-const TASK_STATUSES = ['todo', 'in_progress', 'completed', 'cancelled']
-
-function parseTaskStatus(raw: unknown): TaskStatusFilter | undefined {
-  if (typeof raw !== 'string' || !TASK_STATUSES.includes(raw)) {
-    return undefined
-  }
-  return raw as TaskStatusFilter
-}
-
-// 页面进入（含 /tasks 复用同一组件）时按 ?status 同步任务筛选
-function syncTasksFromRoute(): void {
-  if (route.name !== ROUTE_NAMES.tasks) {
-    return
-  }
-  const status = parseTaskStatus(route.query.status) ?? ''
-  if (status !== tasksStore.filters.status) {
-    void tasksStore.setStatusFilter(status)
-  }
-}
-
-// /tasks 首次进入：直接按 ?status 复位筛选，由 TaskSection 挂载后拉取
-if (route.name === ROUTE_NAMES.tasks) {
-  tasksStore.filters.status = parseTaskStatus(route.query.status) ?? ''
-}
 
 function scrollToTarget(target: string, attempts = 30): void {
   const node = document.querySelector(target)
@@ -251,10 +215,8 @@ function scrollToTarget(target: string, attempts = 30): void {
 }
 
 function scrollFromRoute(): void {
-  const target =
-    route.hash || (route.name === ROUTE_NAMES.tasks ? '#section-tasks' : '')
-  if (target) {
-    scrollToTarget(target)
+  if (route.hash) {
+    scrollToTarget(route.hash)
   }
 }
 
@@ -317,10 +279,8 @@ function openDetail(meetingId: string): void {
   void router.push({ name: ROUTE_NAMES.meetingDetail, params: { meetingId } })
 }
 
-function scrollToTasks(): void {
-  document
-    .getElementById('section-tasks')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+function goToTasks(): void {
+  void router.push({ name: ROUTE_NAMES.tasks })
 }
 
 async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
@@ -341,7 +301,6 @@ async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
 onMounted(() => {
   void loadStats()
   void store.fetchList()
-  syncTasksFromRoute()
   if (route.query.create === '1') {
     openCreate()
     void router.replace({ query: {} })
@@ -349,7 +308,7 @@ onMounted(() => {
   scrollFromRoute()
 })
 
-// /dashboard、/meetings、/tasks 复用同一组件实例，路由变化在这里联动
+// /dashboard 与 /meetings 复用同一组件实例，路由变化在这里联动
 watch(
   () => route.fullPath,
   () => {
@@ -357,7 +316,6 @@ watch(
       openCreate()
       void router.replace({ query: {} })
     }
-    syncTasksFromRoute()
     scrollFromRoute()
   },
 )
@@ -639,41 +597,6 @@ watch(
 .dashboard__more {
   align-self: center;
   margin-top: var(--space-2);
-}
-
-/* 任务区 */
-.dashboard__tasks {
-  scroll-margin-top: 5.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-}
-
-.dashboard__tasks-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.dashboard__tasks-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.dashboard__tasks-hint {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
 }
 
 @keyframes stat-rise {

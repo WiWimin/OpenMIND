@@ -111,7 +111,7 @@ describe('DashboardView', () => {
     routeState.query = {}
   })
 
-  it('renders the merged hero, stats, meeting list and task list', async () => {
+  it('renders the hero, stats and meeting list without the task section', async () => {
     mockMeetings([meeting], 5)
     mockTasks([task], 4)
 
@@ -128,9 +128,23 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('已安排 1 · 已归档 4')
     expect(wrapper.find('.meeting-card').exists()).toBe(true)
 
-    expect(wrapper.find('#section-tasks').exists()).toBe(true)
-    expect(wrapper.text()).toContain('整理周会议程')
-    expect(wrapper.find('#task-status-filter').exists()).toBe(true)
+    expect(wrapper.find('#section-tasks').exists()).toBe(false)
+    expect(wrapper.find('.task-section').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('整理周会议程')
+    expect(wrapper.find('#task-status-filter').exists()).toBe(false)
+  })
+
+  it('navigates to the tasks page from the hero button', async () => {
+    mockMeetings([])
+    mockTasks([])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const tasksButton = wrapper.findAll('button').find((button) => button.text() === '我的任务')
+    await tasksButton?.trigger('click')
+
+    expect(pushMock).toHaveBeenCalledWith({ name: 'tasks' })
   })
 
   it('shows the empty state when there are no meetings', async () => {

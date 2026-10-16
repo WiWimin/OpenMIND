@@ -67,7 +67,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: ROUTE_NAMES.tasks,
-        component: () => import('@/views/DashboardView.vue'),
+        component: () => import('@/views/TasksView.vue'),
       },
     ],
   },
