@@ -35,7 +35,7 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
   justify-content: space-between;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   overflow: hidden;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -73,7 +73,7 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 .meeting-card__body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
