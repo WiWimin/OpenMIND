@@ -1,6 +1,6 @@
 <template>
   <div class="workspace">
-    <header class="workspace__topbar">
+    <aside class="workspace__sidebar">
       <RouterLink class="workspace__brand" :to="{ name: ROUTE_NAMES.dashboard }">
         <span class="workspace__mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
@@ -15,9 +15,21 @@
         <span class="workspace__wordmark">OpenMIND</span>
       </RouterLink>
 
+      <RouterLink
+        class="workspace__cta"
+        :to="{ name: ROUTE_NAMES.dashboard, query: { create: '1' } }"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path d="M12 5.5v13M5.5 12h13" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span class="workspace__cta-label">新建会议</span>
+      </RouterLink>
+
       <nav class="workspace__nav" aria-label="主导航">
+        <p class="workspace__group">工作台</p>
+
         <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.dashboard }">
-          <svg class="workspace__icon" viewBox="0 0 24 24" width="16" height="16" fill="none">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
             <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" stroke="currentColor" stroke-width="1.6" />
             <rect x="13.5" y="3.5" width="7" height="4.5" rx="1.8" stroke="currentColor" stroke-width="1.6" />
             <rect x="3.5" y="13.5" width="7" height="7" rx="1.8" stroke="currentColor" stroke-width="1.6" />
@@ -26,8 +38,10 @@
           <span class="workspace__nav-label">仪表盘</span>
         </RouterLink>
 
+        <p class="workspace__group">我的</p>
+
         <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.tasks }">
-          <svg class="workspace__icon" viewBox="0 0 24 24" width="16" height="16" fill="none">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
             <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.6" />
             <path
               d="m8 12.2 2.4 2.3L16 9.3"
@@ -41,103 +55,97 @@
         </RouterLink>
       </nav>
 
-      <div class="workspace__actions">
-        <RouterLink
-          class="workspace__cta"
-          :to="{ name: ROUTE_NAMES.dashboard, query: { create: '1' } }"
-        >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
-            <path d="M12 5.5v13M5.5 12h13" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-          </svg>
-          <span class="workspace__cta-label">新建会议</span>
-        </RouterLink>
+      <p class="workspace__tagline">AI 会议个人助理</p>
+    </aside>
 
+    <div class="workspace__body">
+      <header class="workspace__header">
         <div class="workspace__account">
           <span class="workspace__avatar" aria-hidden="true">{{ initial }}</span>
           <span class="workspace__user">{{ auth.user?.name ?? '当前用户' }}</span>
           <AppButton variant="ghost" :loading="isLoggingOut" @click="handleLogout">退出</AppButton>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <main class="workspace__main">
-      <RouterView v-slot="{ Component }">
-        <Transition name="page" mode="out-in">
-          <component :is="Component" />
-        </Transition>
-      </RouterView>
-    </main>
+      <main class="workspace__main">
+        <RouterView v-slot="{ Component }">
+          <Transition name="page" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
+      </main>
 
-    <footer class="workspace__footer">
-      <div class="workspace__footer-cols">
-        <nav class="workspace__footer-col" aria-label="仪表盘">
-          <p class="workspace__footer-heading">仪表盘</p>
-          <a
-            class="workspace__footer-link"
-            :href="`${ROUTE_PATHS.dashboard}#section-overview`"
-            @click.prevent="goToSection('#section-overview')"
-          >
-            仪表盘
-          </a>
-          <a
-            class="workspace__footer-link"
-            :href="`${ROUTE_PATHS.dashboard}#section-meetings`"
-            @click.prevent="goToSection('#section-meetings')"
-          >
-            我的会议
-          </a>
-          <a
-            class="workspace__footer-link"
-            :href="`${ROUTE_PATHS.dashboard}#section-tasks`"
-            @click.prevent="goToSection('#section-tasks')"
-          >
-            我的任务
-          </a>
-        </nav>
+      <footer class="workspace__footer">
+        <div class="workspace__footer-cols">
+          <nav class="workspace__footer-col" aria-label="仪表盘">
+            <p class="workspace__footer-heading">仪表盘</p>
+            <a
+              class="workspace__footer-link"
+              :href="`${ROUTE_PATHS.dashboard}#section-overview`"
+              @click.prevent="goToSection('#section-overview')"
+            >
+              仪表盘
+            </a>
+            <a
+              class="workspace__footer-link"
+              :href="`${ROUTE_PATHS.dashboard}#section-meetings`"
+              @click.prevent="goToSection('#section-meetings')"
+            >
+              我的会议
+            </a>
+            <a
+              class="workspace__footer-link"
+              :href="`${ROUTE_PATHS.dashboard}#section-tasks`"
+              @click.prevent="goToSection('#section-tasks')"
+            >
+              我的任务
+            </a>
+          </nav>
 
-        <nav class="workspace__footer-col" aria-label="个人任务">
-          <p class="workspace__footer-heading">个人任务</p>
-          <a
-            class="workspace__footer-link"
-            :href="ROUTE_PATHS.tasks"
-            @click.prevent="goToTasks()"
-          >
-            我的任务
-          </a>
-          <a
-            class="workspace__footer-link"
-            :href="`${ROUTE_PATHS.tasks}?status=todo`"
-            @click.prevent="goToTasks('todo')"
-          >
-            待办任务
-          </a>
-          <a
-            class="workspace__footer-link"
-            :href="`${ROUTE_PATHS.tasks}?status=in_progress`"
-            @click.prevent="goToTasks('in_progress')"
-          >
-            进行中
-          </a>
-          <a
-            class="workspace__footer-link"
-            :href="`${ROUTE_PATHS.tasks}?status=completed`"
-            @click.prevent="goToTasks('completed')"
-          >
-            已完成
-          </a>
-        </nav>
-      </div>
+          <nav class="workspace__footer-col" aria-label="个人任务">
+            <p class="workspace__footer-heading">个人任务</p>
+            <a
+              class="workspace__footer-link"
+              :href="ROUTE_PATHS.tasks"
+              @click.prevent="goToTasks()"
+            >
+              我的任务
+            </a>
+            <a
+              class="workspace__footer-link"
+              :href="`${ROUTE_PATHS.tasks}?status=todo`"
+              @click.prevent="goToTasks('todo')"
+            >
+              待办任务
+            </a>
+            <a
+              class="workspace__footer-link"
+              :href="`${ROUTE_PATHS.tasks}?status=in_progress`"
+              @click.prevent="goToTasks('in_progress')"
+            >
+              进行中
+            </a>
+            <a
+              class="workspace__footer-link"
+              :href="`${ROUTE_PATHS.tasks}?status=completed`"
+              @click.prevent="goToTasks('completed')"
+            >
+              已完成
+            </a>
+          </nav>
+        </div>
 
-      <div class="workspace__footer-meta">
-        <p class="workspace__footer-links">
-          <a href="#" class="workspace__footer-legal">服务条款</a>
-          <a href="#" class="workspace__footer-legal">隐私政策</a>
-          <a href="#" class="workspace__footer-legal">安全与合规</a>
-          <a href="#" class="workspace__footer-legal">系统状况</a>
-        </p>
-        <p class="workspace__footer-note">OpenMIND · AI 会议个人助理</p>
-      </div>
-    </footer>
+        <div class="workspace__footer-meta">
+          <p class="workspace__footer-links">
+            <a href="#" class="workspace__footer-legal">服务条款</a>
+            <a href="#" class="workspace__footer-legal">隐私政策</a>
+            <a href="#" class="workspace__footer-legal">安全与合规</a>
+            <a href="#" class="workspace__footer-legal">系统状况</a>
+          </p>
+          <p class="workspace__footer-note">OpenMIND · AI 会议个人助理</p>
+        </div>
+      </footer>
+    </div>
 
     <ToastHost />
   </div>
@@ -193,7 +201,7 @@ async function handleLogout(): Promise<void> {
 .workspace {
   position: relative;
   display: flex;
-  flex-direction: column;
+  align-items: stretch;
   min-height: 100vh;
   background:
     /* 白纱：整体提亮 */
@@ -206,7 +214,7 @@ async function handleLogout(): Promise<void> {
       rgba(59, 111, 212, 0.018) 3px,
       rgba(59, 111, 212, 0.018) 4px
     ),
-    /* 浅蓝云纹 */
+    /* 浅蓝云纹（图1） */
     radial-gradient(58rem 42rem at 8% 18%, rgba(125, 180, 235, 0.45), transparent 62%),
     radial-gradient(46rem 34rem at 92% 88%, rgba(110, 190, 228, 0.38), transparent 58%),
     radial-gradient(40rem 28rem at 78% 8%, rgba(160, 205, 242, 0.34), transparent 52%),
@@ -215,109 +223,65 @@ async function handleLogout(): Promise<void> {
     linear-gradient(135deg, #dceaf6 0%, #e7f1fa 30%, #eff5fb 55%, #e3edf8 80%, #dceaf5 100%);
 }
 
-/* 顶部导航栏 */
-.workspace__topbar {
+/* 左侧侧栏 */
+.workspace__sidebar {
   position: sticky;
   top: 0;
-  z-index: 40;
   display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  padding: 0 var(--space-5);
-  height: 3.75rem;
-  background: rgba(255, 255, 255, 0.82);
-  border-bottom: 1px solid var(--color-border);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 0 0 15rem;
+  width: 15rem;
+  height: 100vh;
+  padding: var(--space-4) var(--space-3) var(--space-3);
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(59, 111, 212, 0.25), transparent 60%),
+    linear-gradient(180deg, #0f2744 0%, #0a1c33 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(226, 232, 240, 0.92);
 }
 
 .workspace__brand {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  padding: 0 var(--space-2);
   text-decoration: none;
-  flex-shrink: 0;
 }
 
 .workspace__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 2rem;
+  height: 2rem;
   color: #ffffff;
   background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  border-radius: 8px;
-  box-shadow: 0 6px 16px rgba(59, 111, 212, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.4);
 }
 
 .workspace__wordmark {
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--color-foreground);
-}
-
-/* 中部导航 */
-.workspace__nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: 1;
-}
-
-.workspace__nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0.45rem 0.85rem;
-  color: var(--color-muted-foreground);
-  font-size: 0.9rem;
-  font-weight: 500;
-  text-decoration: none;
-  border-radius: var(--radius-pill);
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.workspace__nav-link:hover {
-  background: rgba(59, 111, 212, 0.07);
-  color: var(--color-foreground);
-}
-
-.workspace__nav-link.router-link-active {
-  color: var(--color-primary-strong);
-  font-weight: 600;
-  background: rgba(59, 111, 212, 0.1);
-}
-
-.workspace__icon {
-  flex: 0 0 auto;
-  opacity: 0.85;
-}
-
-/* 右侧操作区 */
-.workspace__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-shrink: 0;
+  color: #ffffff;
 }
 
 .workspace__cta {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0.45rem 1.1rem;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.4rem;
   color: #ffffff;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   text-decoration: none;
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   border-radius: var(--radius-pill);
-  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.3);
+  box-shadow: 0 10px 24px rgba(59, 111, 212, 0.35);
   transition:
     transform var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -325,7 +289,93 @@ async function handleLogout(): Promise<void> {
 
 .workspace__cta:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 26px rgba(59, 111, 212, 0.42);
+  box-shadow: 0 14px 30px rgba(59, 111, 212, 0.5);
+}
+
+.workspace__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.workspace__group {
+  margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-2);
+  color: rgba(148, 163, 184, 0.7);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace__group:first-child {
+  margin-top: 0;
+}
+
+.workspace__nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.6rem 0.75rem;
+  color: rgba(203, 213, 225, 0.86);
+  font-size: 0.9375rem;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workspace__nav-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  transform: translateX(2px);
+}
+
+.workspace__nav-link.router-link-active {
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(59, 111, 212, 0.95), rgba(20, 184, 166, 0.85));
+  box-shadow: 0 10px 24px rgba(59, 111, 212, 0.3);
+}
+
+.workspace__icon {
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+.workspace__tagline {
+  margin: 0;
+  padding: 0 var(--space-2);
+  color: rgba(148, 163, 184, 0.65);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+/* 右侧主体 */
+.workspace__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace__header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid var(--color-border);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 
 .workspace__account {
@@ -338,10 +388,10 @@ async function handleLogout(): Promise<void> {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.85rem;
-  height: 1.85rem;
+  width: 2rem;
+  height: 2rem;
   color: #ffffff;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
   border-radius: 50%;
@@ -350,19 +400,18 @@ async function handleLogout(): Promise<void> {
 .workspace__user {
   color: var(--color-foreground);
   font-weight: 500;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 
-/* 主内容区：全宽纵向滚动 */
 .workspace__main {
   flex: 1;
   width: 100%;
-  max-width: 78rem;
+  max-width: 76rem;
   margin: 0 auto;
-  padding: var(--space-5) var(--space-5) var(--space-7);
+  padding: var(--space-5) var(--space-5) var(--space-6);
 }
 
-/* 页脚 */
+/* 页脚：Fathom 式栏目 */
 .workspace__footer {
   display: flex;
   flex-direction: column;
@@ -459,20 +508,37 @@ async function handleLogout(): Promise<void> {
   transform: translateY(-6px);
 }
 
-@media (max-width: 768px) {
-  .workspace__topbar {
-    padding: 0 var(--space-3);
-    gap: var(--space-3);
+@media (max-width: 900px) {
+  .workspace__sidebar {
+    flex-basis: 4.75rem;
+    width: 4.75rem;
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+    align-items: center;
   }
 
+  .workspace__brand {
+    padding: 0;
+  }
+
+  .workspace__wordmark,
   .workspace__nav-label,
+  .workspace__tagline,
   .workspace__cta-label,
-  .workspace__user {
+  .workspace__group {
     display: none;
+  }
+
+  .workspace__nav-link {
+    justify-content: center;
   }
 
   .workspace__main {
     padding: var(--space-4) var(--space-3) var(--space-5);
+  }
+
+  .workspace__footer {
+    padding: var(--space-4) var(--space-3);
   }
 }
 </style>
