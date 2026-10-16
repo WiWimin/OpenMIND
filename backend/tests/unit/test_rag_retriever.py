@@ -53,7 +53,7 @@ def _seed_user_meeting_material(
 def test_vector_retriever_scopes_by_user_and_score(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rag, "embed_query", lambda text: [1.0, 0.0])
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
     alice_id = _seed_user_meeting_material(
         db_session,
         name="alice",
@@ -93,7 +93,7 @@ def test_vector_retriever_scopes_by_user_and_score(
 def test_vector_retriever_current_meeting_scope(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rag, "embed_query", lambda text: [1.0, 0.0])
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
     alice_id = _seed_user_meeting_material(
         db_session,
         name="alice",
@@ -145,6 +145,6 @@ def test_vector_retriever_current_meeting_scope(
 def test_vector_retriever_no_chunks(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rag, "embed_query", lambda text: [1.0, 0.0])
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
     retriever = rag.VectorRetriever(db_session, "usr_none")
     assert retriever.retrieve("问题", user_id="usr_none") == []

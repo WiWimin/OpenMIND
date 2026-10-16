@@ -3,20 +3,24 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.ai.extraction import IssueCandidate, IssueExtractor
-from app.ai.llm import LLMClient
 from app.core.exceptions import AppError
 from app.models.issue import OpenIssue
 from app.repositories import issue_repository, record_repository
 from app.schemas.issue import IssueStatus, IssueUpdate
 from app.services import meeting_service
+from app.services.model_config_service import (
+    ModelConfig,
+    build_llm_client,
+    resolve_model_config,
+)
 from app.utils.ids import new_id
 
 _STATUS_OPEN = "open"
 _MAX_RECORDS = 100
 
 
-def extract_candidates(transcripts: list[str]) -> list[IssueCandidate]:
-    return IssueExtractor(LLMClient()).extract(transcripts)
+def extract_candidates(transcripts: list[str], config: ModelConfig) -> list[IssueCandidate]:
+    return IssueExtractor(build_llm_client(config)).extract(transcripts)
 
 
 def _not_found() -> AppError:
@@ -38,7 +42,8 @@ def extract_issues(
 ) -> list[OpenIssue]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
     transcripts = _gather_transcripts(db, meeting_id, record_ids)
-    candidates = extract_candidates(transcripts)
+    config = resolve_model_config(db, user_id)
+    candidates = extract_candidates(transcripts, config)
     issues: list[OpenIssue] = []
     for candidate in candidates:
         issues.append(

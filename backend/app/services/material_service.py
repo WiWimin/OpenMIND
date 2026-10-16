@@ -4,12 +4,12 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.ai.parsers import SUPPORTED_EXTENSIONS
+from app.ai.parsers import SUPPORTED_EXTENSIONS, parse_bytes
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.material import MeetingMaterial
 from app.repositories import chunk_repository, material_repository
-from app.services import meeting_service
+from app.services import indexing_service, meeting_service
 from app.utils import storage
 from app.utils.ids import new_id
 
@@ -26,6 +26,23 @@ def _infer_material_type(file_name: str, material_type: str | None) -> str:
             http_status=415,
         )
     return candidate
+
+
+def _process_material(
+    db: Session, material: MeetingMaterial, content: bytes, file_name: str
+) -> None:
+    material.processing_status = "processing"
+    try:
+        parsed = parse_bytes(content, file_name)
+        material.content = parsed.content
+        indexing_service.index_material(db, material)
+        material.processing_status = "processed"
+    except AppError as exc:
+        material.processing_status = "failed"
+        material.parse_error = exc.message
+    finally:
+        db.commit()
+        db.refresh(material)
 
 
 def upload_material(
@@ -54,7 +71,7 @@ def upload_material(
     storage_key = f"materials/{material_id}.{normalized_type}"
     storage.save_bytes(settings.storage_dir, relative_key=storage_key, data=content)
     try:
-        return material_repository.create(
+        material = material_repository.create(
             db,
             material_id=material_id,
             meeting_id=meeting_id,
@@ -67,6 +84,8 @@ def upload_material(
     except Exception:
         storage.delete_object(settings.storage_dir, storage_key)
         raise
+    _process_material(db, material, content, file_name)
+    return material
 
 
 def list_materials(

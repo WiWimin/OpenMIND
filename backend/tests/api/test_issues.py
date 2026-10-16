@@ -46,7 +46,7 @@ def fake_extract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         issue_service,
         "extract_candidates",
-        lambda transcripts: [
+        lambda transcripts, config=None: [
             IssueCandidate(
                 description="接口联调时间可能延期",
                 follow_up="确认依赖接口完成时间",

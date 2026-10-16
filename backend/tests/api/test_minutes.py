@@ -42,7 +42,7 @@ def _generate(client: TestClient, headers: dict[str, str], meeting_id: str, **ex
 @pytest.fixture()
 def fake_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        minutes_service, "generate_text", lambda meeting, transcripts: "会议纪要正文"
+        minutes_service, "generate_text", lambda meeting, transcripts, config=None: "会议纪要正文"
     )
 
 
@@ -82,7 +82,7 @@ def test_generate_cross_user_forbidden(client: TestClient, fake_minutes: None) -
 def test_generate_ai_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.core.exceptions import AppError
 
-    def boom(meeting, transcripts):
+    def boom(meeting, transcripts, config=None):
         raise AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
 
     monkeypatch.setattr(minutes_service, "generate_text", boom)
@@ -159,12 +159,14 @@ def test_generate_include_action_items(
     from app.ai.extraction import ActionItemCandidate
 
     monkeypatch.setattr(
-        minutes_service, "generate_text", lambda meeting, transcripts: "会议纪要正文"
+        minutes_service, "generate_text", lambda meeting, transcripts, config=None: "会议纪要正文"
     )
     monkeypatch.setattr(
         action_item_service,
         "extract_candidates",
-        lambda transcripts: [ActionItemCandidate(content="完成接口联调", assignee="张三")],
+        lambda transcripts, config=None: [
+            ActionItemCandidate(content="完成接口联调", assignee="张三")
+        ],
     )
     headers = _auth(client)
     meeting = _meeting(client, headers)

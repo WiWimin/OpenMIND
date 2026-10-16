@@ -125,7 +125,7 @@ def test_chat_cross_user_forbidden(client: TestClient) -> None:
 
 def test_organize_records(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        ai_chat_service, "_organize_text", lambda transcripts, style: "整理后的内容"
+        ai_chat_service, "_organize_text", lambda transcripts, style, config=None: "整理后的内容"
     )
     headers = _auth(client)
     meeting = _meeting(client, headers)
@@ -144,7 +144,7 @@ def test_organize_records(client: TestClient, monkeypatch: pytest.MonkeyPatch) -
 
 def test_organize_no_matching_records(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        ai_chat_service, "_organize_text", lambda transcripts, style: "不应被调用"
+        ai_chat_service, "_organize_text", lambda transcripts, style, config=None: "不应被调用"
     )
     headers = _auth(client)
     meeting = _meeting(client, headers)

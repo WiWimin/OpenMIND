@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.ai.llm import LLMClient
 from app.ai.preparation import PreparationDraft, PreparationService
 from app.core.exceptions import AppError
 from app.models.meeting import Meeting
@@ -10,6 +9,11 @@ from app.models.preparation import Preparation
 from app.repositories import material_repository, preparation_repository
 from app.schemas.preparation import PreparationUpdate
 from app.services import meeting_service
+from app.services.model_config_service import (
+    ModelConfig,
+    build_llm_client,
+    resolve_model_config,
+)
 from app.utils.ids import new_id
 
 _STATUS_DRAFT = "draft"
@@ -17,14 +21,14 @@ _STATUS_CONFIRMED = "confirmed"
 
 
 def generate_draft(
-    meeting: Meeting, snippets: list[str], user_goal: str | None
+    meeting: Meeting, snippets: list[str], user_goal: str | None, config: ModelConfig
 ) -> PreparationDraft:
     topic_parts = [meeting.title]
     if meeting.topic:
         topic_parts.append(meeting.topic)
     if user_goal:
         topic_parts.append(f"关注点：{user_goal}")
-    service = PreparationService(LLMClient())
+    service = PreparationService(build_llm_client(config))
     return service.generate(" / ".join(topic_parts), snippets)
 
 
@@ -37,7 +41,8 @@ def generate_preparation(
 ) -> Preparation:
     meeting = meeting_service.get_owned_meeting(db, meeting_id, user_id)
     snippets = material_repository.list_contents(db, meeting_id)
-    draft = generate_draft(meeting, snippets, user_goal)
+    config = resolve_model_config(db, user_id)
+    draft = generate_draft(meeting, snippets, user_goal, config)
     return preparation_repository.create(
         db,
         preparation_id=new_id("prep"),

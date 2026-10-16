@@ -3,21 +3,26 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.ai.chat import ChatAnswer, ChatService
-from app.ai.llm import LLMClient
 from app.ai.prompts import build_organize
 from app.ai.rag import VectorRetriever
 from app.core.exceptions import AppError
 from app.repositories import record_repository
 from app.services import meeting_service
+from app.services.model_config_service import (
+    ModelConfig,
+    build_llm_client,
+    resolve_model_config,
+)
 
 
 def _chat_service(db: Session, user_id: str) -> ChatService:
-    return ChatService(LLMClient(), VectorRetriever(db, user_id))
+    config = resolve_model_config(db, user_id)
+    return ChatService(build_llm_client(config), VectorRetriever(db, user_id))
 
 
-def _organize_text(transcripts: list[str], style: str) -> str:
+def _organize_text(transcripts: list[str], style: str, config: ModelConfig) -> str:
     messages = build_organize({"record_transcripts": transcripts, "style": style})
-    return LLMClient().chat(messages).text
+    return build_llm_client(config).chat(messages).text
 
 
 def chat(
@@ -51,5 +56,6 @@ def organize(
     if not records:
         raise AppError("VALIDATION_ERROR", "未找到可整理的会议记录", http_status=422)
     transcripts = [record.content for record in records]
-    organized = _organize_text(transcripts, style)
+    config = resolve_model_config(db, user_id)
+    organized = _organize_text(transcripts, style, config)
     return organized, [record.record_id for record in records]

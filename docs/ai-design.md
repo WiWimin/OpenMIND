@@ -14,7 +14,7 @@
 2. **原始数据不被覆盖**：解析文本、记录、材料原文件分别存储。
 3. **权限先行**：检索必须先按当前用户限定范围，禁止全库相似度检索后再过滤。
 4. **可追溯**：生成结果须能追溯到来源记录/分块（`source_record_ids`、`sources`、`source_record_id`）。
-5. **密钥服务端化**：LLM/Embedding 密钥仅来自环境变量，绝不下发前端。
+5. **密钥服务端化**：LLM/Embedding 密钥来自「用户自带配置」（`/me/settings/model`，Fernet 加密存库，永不明文返回前端）或「服务端环境变量」，绝不下发明文。
 
 ## 二、能力层结构
 
@@ -60,7 +60,7 @@ class LLMClient:
     def chat_json(self, messages, *, schema: type[BaseModel], **kw) -> BaseModel: ...
 ```
 
-- 配置来源：`settings.llm_api_base`、`settings.llm_api_key`、`settings.llm_model`（`config.py`）。
+- 配置来源：`ModelConfig`（`services/model_config_service.py`），按用户解析；优先级为**用户配置 > 服务端全局**（`settings.llm_*`）。用户未配置时回退全局，全局默认为空则不兜底。
 - MVP 使用**同步**调用；调用发生在请求线程内，超时转化为统一错误（见 §十）。
 
 ### 3.2 超时与重试
@@ -83,6 +83,14 @@ class LLMClient:
 
 - 每次调用记录：模型名、`usage`、`latency_ms`、成功/失败（日志或后续 `ai_call_logs`）。
 
+### 3.5 模型配置来源（用户自带 BYOK）
+
+- 每个用户可通过 `PUT /api/v1/me/settings/model` 自备 LLM / Embedding 配置（`api_base` + `api_key` + `model`）。
+- 密钥 `Fernet` 加密存库（`user_model_configs`），密钥由服务端 `SECRET_KEY` 派生；`GET` 仅返回脱敏值，绝不回显明文。
+- 保存时 probe 实测校验：Embedding 必须返回 **1024** 维向量；LLM 需能正常生成；失败返回 `MODEL_CONFIG_INVALID`（400）。
+- 解析优先级：用户配置 > 服务端全局（`settings.llm_*`/`embedding_*`）；全局留空即不兜底。
+- Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），用户自备模型也必须为 1024 维。
+
 ## 四、Embedding 与文本切分（`ai/embeddings/`）
 
 ### 4.1 Embedding 客户端
@@ -92,7 +100,7 @@ class EmbeddingClient:
     def embed(self, texts: list[str], *, model: str | None = None) -> list[list[float]]: ...
 ```
 
-- 模型：`settings.embedding_model`（阿里百炼 `text-embedding-v3`）；维度：`settings.embedding_dim = 1024`。
+- 模型：`settings.embedding_model`（阿里百炼 `text-embedding-v3`）；维度：`settings.embedding_dim = 1024`。用户可自备，但维度必须为 1024（§3.5）。
 - 批量：每批 ≤ 16 条；单批超时 30s；失败重试 2 次（退避 1s/3s）。
 - 维度校验：返回向量长度必须等于 `settings.embedding_dim`，否则报 `INTERNAL_ERROR` 并记录。
 

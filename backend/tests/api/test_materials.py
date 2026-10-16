@@ -63,7 +63,7 @@ def test_upload_material(client: TestClient, media_root) -> None:
     assert data["file_name"] == "项目方案.txt"
     assert data["type"] == "txt"
     assert data["source"] == "会前材料"
-    assert data["processing_status"] == "uploaded"
+    assert data["processing_status"] == "processed"
     assert data["parse_error"] is None
     assert "storage_key" not in data
     assert (media_root / "materials" / f"{data['material_id']}.txt").exists()

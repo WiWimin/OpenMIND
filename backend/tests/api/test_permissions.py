@@ -26,18 +26,22 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         preparation_service,
         "generate_draft",
-        lambda meeting, snippets, user_goal: PreparationDraft(summary="摘要", checklist=[]),
+        lambda meeting, snippets, user_goal, config=None: PreparationDraft(
+            summary="摘要", checklist=[]
+        ),
     )
-    monkeypatch.setattr(minutes_service, "generate_text", lambda meeting, records: "纪要")
+    monkeypatch.setattr(
+        minutes_service, "generate_text", lambda meeting, records, config=None: "纪要"
+    )
     monkeypatch.setattr(
         action_item_service,
         "extract_candidates",
-        lambda records: [ActionItemCandidate(content="行动项")],
+        lambda records, config=None: [ActionItemCandidate(content="行动项")],
     )
     monkeypatch.setattr(
         issue_service,
         "extract_candidates",
-        lambda records: [IssueCandidate(description="问题")],
+        lambda records, config=None: [IssueCandidate(description="问题")],
     )
 
 

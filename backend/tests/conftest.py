@@ -13,6 +13,17 @@ from app.db.session import get_db
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def _fake_indexing_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import indexing_service
+
+    monkeypatch.setattr(
+        indexing_service,
+        "embed_texts",
+        lambda texts, client: [[0.0] * 1024 for _ in texts],
+    )
+
+
 @pytest.fixture()
 def db_engine() -> Iterator[Engine]:
     """每个用例一个独立的 SQLite 内存库，CI 无需 PostgreSQL。"""

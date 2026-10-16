@@ -9,6 +9,7 @@ from app.ai.indexing import split_text
 from app.models.chunk import DocumentChunk
 from app.models.material import MeetingMaterial
 from app.repositories import chunk_repository
+from app.services.model_config_service import build_embedding_client, resolve_model_config
 from app.utils.ids import new_id
 
 logger = logging.getLogger(__name__)
@@ -17,11 +18,13 @@ CHUNK_SIZE = 800
 CHUNK_OVERLAP = 120
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    return EmbeddingClient().embed(texts)
+def embed_texts(texts: list[str], client: EmbeddingClient) -> list[list[float]]:
+    return client.embed(texts)
 
 
 def index_material(db: Session, material: MeetingMaterial) -> list[DocumentChunk]:
+    config = resolve_model_config(db, material.user_id)
+    client = build_embedding_client(config)
     chunk_repository.delete_by_material(db, material.material_id)
     texts = split_text(
         material.content or "", chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP
@@ -29,7 +32,7 @@ def index_material(db: Session, material: MeetingMaterial) -> list[DocumentChunk
     if not texts:
         db.commit()
         return []
-    vectors = embed_texts(texts)
+    vectors = embed_texts(texts, client)
     rows: list[DocumentChunk] = []
     for index, (text, vector) in enumerate(zip(texts, vectors, strict=True)):
         chunk = DocumentChunk(

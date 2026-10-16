@@ -3,11 +3,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai.chat import ChatAnswer
 from app.ai.extraction import ActionItemCandidate
 from app.ai.preparation import PreparationDraft
 from app.core.config import get_settings
 from app.services import (
     action_item_service,
+    ai_chat_service,
     material_service,
     meeting_service,
     minutes_service,
@@ -36,17 +38,27 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         preparation_service,
         "generate_draft",
-        lambda meeting, snippets, user_goal: PreparationDraft(
+        lambda meeting, snippets, user_goal, config=None: PreparationDraft(
             summary="会前摘要", checklist=["确认里程碑", "排查风险"]
         ),
     )
     monkeypatch.setattr(
-        minutes_service, "generate_text", lambda meeting, transcripts: "会议纪要正文"
+        minutes_service, "generate_text", lambda meeting, transcripts, config=None: "会议纪要正文"
     )
     monkeypatch.setattr(
         action_item_service,
         "extract_candidates",
-        lambda transcripts: [ActionItemCandidate(content="完成接口联调", assignee="张三")],
+        lambda transcripts, config=None: [
+            ActionItemCandidate(content="完成接口联调", assignee="张三")
+        ],
+    )
+
+    class _InsufficientChat:
+        def answer(self, question, *, user_id, scope, current_meeting_id):
+            return ChatAnswer(answer="无法确认", sources=[], insufficient_evidence=True)
+
+    monkeypatch.setattr(
+        ai_chat_service, "_chat_service", lambda db, user_id: _InsufficientChat()
     )
 
 
@@ -77,7 +89,7 @@ def test_mvp_closed_loop(
         headers=headers,
     )
     assert upload.status_code == 201
-    assert upload.json()["data"]["processing_status"] == "uploaded"
+    assert upload.json()["data"]["processing_status"] == "processed"
 
     # 3) 会前准备
     prep = client.post(f"/api/v1/meetings/{meeting_id}/prepare", json={}, headers=headers)
@@ -95,7 +107,7 @@ def test_mvp_closed_loop(
     assert record.status_code == 201
     record_id = record.json()["data"]["record_id"]
 
-    # 5) 问答（无检索分块 → 证据不足，不伪造来源）
+    # 5) 问答（AI 已 mock，无真实检索 → 证据不足，不伪造来源）
     chat = client.post(
         f"/api/v1/meetings/{meeting_id}/chat",
         json={"question": "上次会议决定了什么？"},

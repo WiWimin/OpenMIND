@@ -27,7 +27,7 @@ def _seed_material(db: Session, *, content: str) -> object:
     return material
 
 
-def _fake_vectors(texts: list[str]) -> list[list[float]]:
+def _fake_vectors(texts: list[str], client: object) -> list[list[float]]:
     return [[float(index), 1.0] for index, _ in enumerate(texts)]
 
 
@@ -63,7 +63,7 @@ def test_index_material_replaces_existing(
 def test_index_material_empty_content(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(indexing_service, "embed_texts", lambda texts: [])
+    monkeypatch.setattr(indexing_service, "embed_texts", lambda texts, client: [])
     material = _seed_material(db_session, content="")
 
     rows = indexing_service.index_material(db_session, material)

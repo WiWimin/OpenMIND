@@ -6,10 +6,14 @@ from math import sqrt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.embeddings import EmbeddingClient
 from app.models.chunk import DocumentChunk
 from app.models.material import MeetingMaterial
 from app.models.meeting import Meeting
+from app.services.model_config_service import (
+    ModelConfig,
+    build_embedding_client,
+    resolve_model_config,
+)
 
 
 @dataclass(frozen=True)
@@ -21,8 +25,8 @@ class RetrievedChunk:
     score: float
 
 
-def embed_query(text: str) -> list[float]:
-    vectors = EmbeddingClient().embed([text])
+def embed_query(text: str, config: ModelConfig) -> list[float]:
+    vectors = build_embedding_client(config).embed([text])
     return [float(value) for value in vectors[0]] if vectors else []
 
 
@@ -51,6 +55,7 @@ class VectorRetriever:
     def __init__(self, db: Session, user_id: str) -> None:
         self._db = db
         self._user_id = user_id
+        self._config = resolve_model_config(db, user_id)
 
     def retrieve(
         self,
@@ -74,7 +79,7 @@ class VectorRetriever:
         if not rows:
             return []
 
-        query_vector = embed_query(query)
+        query_vector = embed_query(query, self._config)
         if not query_vector:
             return []
 

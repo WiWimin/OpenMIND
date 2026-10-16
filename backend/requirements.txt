@@ -7,6 +7,9 @@ python-multipart>=0.0.9
 pydantic>=2.8
 pydantic-settings>=2.4
 
+# Crypto (user-provided model keys encrypted at rest)
+cryptography>=42.0
+
 # Auth (JWT + password hashing)
 PyJWT>=2.9
 passlib[bcrypt]>=1.7.4
