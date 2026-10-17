@@ -72,6 +72,18 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: ROUTE_PATHS.modelSettings,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.modelSettings,
+        component: () => import('@/views/settings/ModelSettingsView.vue'),
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: { name: ROUTE_NAMES.root },
   },

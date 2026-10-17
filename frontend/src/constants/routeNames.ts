@@ -8,6 +8,7 @@ export const ROUTE_NAMES = {
   meetings: 'meetings',
   meetingDetail: 'meeting-detail',
   tasks: 'tasks',
+  modelSettings: 'model-settings',
 } as const
 
 export const ROUTE_PATHS = {
@@ -18,4 +19,5 @@ export const ROUTE_PATHS = {
   meetings: '/meetings',
   meetingDetail: '/meetings/:meetingId',
   tasks: '/tasks',
+  modelSettings: '/settings/model',
 } as const

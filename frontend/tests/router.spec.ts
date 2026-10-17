@@ -45,6 +45,16 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('tasks')
   })
 
+  it('protects the model settings route', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/settings/model')
+
+    expect(router.currentRoute.value.name).toBe('model-settings')
+  })
+
   it('redirects authenticated users away from guest-only routes', async () => {
     setToken('token-abc')
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)

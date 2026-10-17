@@ -10,6 +10,7 @@ const ERROR_CODE_FALLBACKS: Record<string, string> = {
   RATE_LIMITED: '操作过于频繁，请稍后再试',
   MODEL_TIMEOUT: '模型响应超时，请稍后重试',
   MODEL_OUTPUT_INVALID: '模型返回异常，请重试',
+  MODEL_CONFIG_INVALID: '模型配置校验失败，请检查地址、密钥与模型名称',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试',
   NETWORK_ERROR: '网络连接失败，请检查网络后重试',
 }
