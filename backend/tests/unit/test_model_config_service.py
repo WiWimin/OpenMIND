@@ -4,7 +4,7 @@ from app.core.config import get_settings
 from app.core.crypto import encrypt
 from app.models.user import User
 from app.repositories import model_config_repository
-from app.services.model_config_service import resolve_model_config
+from app.services.model_config_service import _provider_source, resolve_model_config
 
 
 def _make_user(db: Session, user_id: str, name: str) -> User:
@@ -42,6 +42,13 @@ def test_resolve_prefers_user_config(db_session: Session) -> None:
     assert config.llm_model == "user-model"
     settings = get_settings()
     assert config.embedding_api_base == settings.embedding_api_base
+
+
+def test_provider_source_priority() -> None:
+    assert _provider_source("https://llm.example.com", "", "", "") == "user"
+    assert _provider_source(None, "https://g/v1", "k", "m") == "global"
+    assert _provider_source(None, "", "", "") == "none"
+    assert _provider_source(None, "https://g/v1", "", "m") == "none"
 
 
 def test_resolve_partial_user_config_keeps_global_embedding(db_session: Session) -> None:

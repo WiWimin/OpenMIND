@@ -89,6 +89,20 @@ def mask_key(key: str) -> str:
     return f"{key[:3]}...{key[-4:]}"
 
 
+def _provider_source(
+    user_value: str | None,
+    effective_base: str,
+    effective_key: str,
+    effective_model: str,
+) -> str:
+    """判定某提供方的生效来源：user（用户自备）> global（服务端全局）> none。"""
+    if user_value:
+        return "user"
+    if effective_base and effective_key and effective_model:
+        return "global"
+    return "none"
+
+
 def _probe_message(exc: AppError) -> str:
     if exc.error_code == "MODEL_TIMEOUT":
         return "服务超时"
@@ -172,14 +186,27 @@ def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> U
 
 
 def get_model_config_read(db: Session, user_id: str) -> ModelConfigRead:
+    row = model_config_repository.get_by_user(db, user_id)
     config = resolve_model_config(db, user_id)
     return ModelConfigRead(
         llm_api_base=config.llm_api_base,
         llm_model=config.llm_model,
         llm_api_key_masked=mask_key(config.llm_api_key),
+        llm_source=_provider_source(
+            row.llm_api_base if row else None,
+            config.llm_api_base,
+            config.llm_api_key,
+            config.llm_model,
+        ),
         embedding_api_base=config.embedding_api_base,
         embedding_model=config.embedding_model,
         embedding_api_key_masked=mask_key(config.embedding_api_key),
+        embedding_source=_provider_source(
+            row.embedding_api_base if row else None,
+            config.embedding_api_base,
+            config.embedding_api_key,
+            config.embedding_model,
+        ),
         embedding_dim=config.embedding_dim,
     )
 
