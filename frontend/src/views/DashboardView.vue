@@ -339,10 +339,19 @@ watch(
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-5);
-  color: #e2e8f0;
-  background: linear-gradient(135deg, #0f2744 0%, #12304f 55%, #0e2a47 100%);
+  color: var(--color-foreground);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.97) 0%,
+      rgba(240, 246, 254, 0.97) 55%,
+      rgba(238, 248, 247, 0.97) 100%
+    );
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .dashboard__hero-body {
@@ -352,7 +361,7 @@ watch(
 
 .dashboard__eyebrow {
   margin: 0 0 var(--space-2);
-  color: rgba(148, 197, 255, 0.95);
+  color: var(--color-primary-strong);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -363,7 +372,7 @@ watch(
   margin: 0;
   font-size: 1.75rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--color-foreground);
 }
 
 .dashboard__meta {
@@ -371,7 +380,7 @@ watch(
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-2) 0 0;
-  color: rgba(203, 213, 225, 0.85);
+  color: var(--color-muted-foreground);
   font-size: 0.875rem;
 }
 
@@ -398,17 +407,19 @@ watch(
   transition:
     transform var(--transition-fast),
     box-shadow var(--transition-fast),
-    background var(--transition-fast);
+    background var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .hero-btn--ghost {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--color-foreground);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--color-border-strong);
 }
 
 .hero-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: #ffffff;
+  border-color: rgba(59, 111, 212, 0.42);
   transform: translateY(-1px);
 }
 
@@ -416,12 +427,12 @@ watch(
   color: #ffffff;
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   border: none;
-  box-shadow: 0 10px 24px rgba(59, 111, 212, 0.45);
+  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.28);
 }
 
 .hero-btn--primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 30px rgba(59, 111, 212, 0.55);
+  box-shadow: 0 12px 26px rgba(59, 111, 212, 0.36);
 }
 
 .dashboard__hero-glow {
@@ -431,7 +442,7 @@ watch(
   width: 22rem;
   height: 22rem;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(20, 184, 166, 0.5), transparent 70%);
+  background: radial-gradient(closest-side, rgba(20, 184, 166, 0.16), transparent 70%);
   pointer-events: none;
 }
 
@@ -439,8 +450,8 @@ watch(
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    linear-gradient(rgba(59, 111, 212, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 111, 212, 0.07) 1px, transparent 1px);
   background-size: 36px 36px;
   mask-image: radial-gradient(120% 100% at 100% 0%, #000 10%, transparent 75%);
   pointer-events: none;
