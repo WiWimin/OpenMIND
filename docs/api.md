@@ -226,6 +226,38 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
 - 未配置任何模型时，AI 相关接口返回 `MODEL_CONFIG_INVALID`。
 
+### 2.6 记忆中心个人画像（M11，提案）
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/me/memory` | 读取当前用户的个人画像与引导状态 |
+| PUT | `/api/v1/me/memory` | 保存/替换个人画像，并标记首次引导完成 |
+| POST | `/api/v1/me/memory/skip` | 跳过首次引导并标记完成，不改动已有画像 |
+
+画像对象：
+
+```json
+{
+  "avatar_data_url": "data:image/jpeg;base64,...",
+  "occupation": "产品经理",
+  "position": "高级产品经理",
+  "daily_tasks": "负责需求分析、项目推进、会议协调、文档输出与跨部门沟通。",
+  "writing_style": "concise_formal",
+  "document_template": "formal_minutes_tasks",
+  "onboarding_completed": true,
+  "updated_at": "2026-10-18T09:00:00+08:00"
+}
+```
+
+- 所有画像字段均可为空（`null`）；用户未设置时返回 `null`。
+- `avatar_data_url`：客户端裁剪为 256×256 JPEG 的 data URL；为空时前端显示默认头像。
+- `writing_style`：`concise_formal` / `detailed` / `concise_casual` / `action_oriented`。
+- `document_template`：`formal_minutes_tasks` / `concise_minutes` / `detailed_record` / `custom`。
+- `GET`：用户从未保存过时返回全空对象、`onboarding_completed = false`、`updated_at = null`。
+- `PUT`：按用户 upsert 全量画像，忽略请求中的 `onboarding_completed` / `updated_at`，成功后置 `onboarding_completed = true`，返回完整对象。
+- `POST /skip`：幂等；仅将 `onboarding_completed` 置为 `true`，不改动已有画像字段。
+- 画像按用户隔离，只用于该用户的 AI 全局上下文，不返回给其他用户。
+
 ## 三、会议管理（M02，A）
 
 | 方法 | 路径 | 用途 |

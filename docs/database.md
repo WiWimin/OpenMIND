@@ -202,9 +202,30 @@
 - 未生成 embedding 的分块可为空；检索不得把空向量当有效向量。
 - 删除/重新解析材料时清理旧分块。
 
+### 3.11 `user_memory_profiles` 用户个人画像
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | VARCHAR(40) | PK, FK→users | 所属用户，一人一行 |
+| `avatar_data_url` | TEXT | ? | 256×256 JPEG data URL；为空时显示默认头像 |
+| `occupation` | VARCHAR(100) | ? | 职业 |
+| `position` | VARCHAR(100) | ? | 岗位 |
+| `daily_tasks` | TEXT | ? | 日常主要工作任务 |
+| `writing_style` | VARCHAR(30) | ? | `concise_formal` / `detailed` / `concise_casual` / `action_oriented` |
+| `document_template` | VARCHAR(40) | ? | `formal_minutes_tasks` / `concise_minutes` / `detailed_record` / `custom` |
+| `onboarding_completed` | BOOLEAN | NN, default `false` | 是否已完成首次引导（保存或跳过） |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 主键为 `user_id`，不额外生成业务 ID；用户不存在时由外键约束保证一致性。
+- 画像字段全部可空；`onboarding_completed` 由后端维护，客户端不可直接写入。
+- 画像仅用于当前用户的 AI 全局上下文，不参与跨用户检索。
+- 头像当前以 data URL 存储（MVP）；后续可替换为独立文件上传与 URL 字段。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
+- User — UserMemoryProfile：一对一
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多
 - Meeting — MeetingRecord：一对多
