@@ -11,8 +11,8 @@
 - **契约引用**：接口以 `docs/api.md` 为准，数据以 `docs/database.md` 为准。本文**只引用其章节号，不复制字段定义**；若与契约冲突，以契约为准并同步修正本文。
   - `api.md` 章节：`一 统一约定` / `二 用户认证` / `三 会议管理` / `四 会议资料与会议记录` / `五 AI 应用` / `六 行动项与个人任务` / `七 未解决问题` / `八 接口联调顺序`。
   - `database.md` 章节：`一 数据设计原则` / `二 主键与通用字段约定` / `三 核心数据实体` / `四 数据关系(E-R)` / `五 共享状态与枚举` / `六 索引与约束建议` / `七 删除与数据一致性策略` / `八 数据库与迁移协作规范` / `九 基础设施`。
-  - `design-baseline.md`：文档职责与决策日志（D-01…D-18）；`ai-design.md`：AI 调用/解析/RAG/重试/幂等链路。
-- **状态标注**：全文用 `[已实现]`（M00 已验收部分）、`[规划]`（本文计划、代码尚未实现）、`[待确认]`（仓库契约未明确，联调前须团队定）区分事实与计划，避免把「计划」误读为「现状」。
+  - `design-baseline.md`：文档职责与决策日志（D-01…D-20）；`ai-design.md`：AI 调用/解析/RAG/重试/幂等链路。
+- **状态标注**：全文用 `[已实现]`（代码已落地并有测试覆盖）、`[规划]`（本文计划、代码尚未实现）、`[待确认]`（仓库契约未明确，联调前须团队定）区分事实与计划，避免把「计划」误读为「现状」。
 - **任务编号**：`Mxx-NN` 两级编号为本文件约定。仓库现有编号仅到 `M00-01…M00-09`（见 `module-task-plan.md`），M01 及以后无子任务编号，本文补齐。
 - **负责人**：A 系统与业务后端；B AI 后端；C 前端与体验。分工依据 `module-task-plan.md` 与 `CODEOWNERS`。
 - **未明字段/参数**：仓库契约未枚举的字段或参数，一律标 `[待确认]` 并以最终 OpenAPI 为准，本文不凭空定义。
@@ -72,7 +72,7 @@
 └───────────────────────────────────────────────────────────────┘
 ```
 
-> 分层职责详见 `architecture.md`。当前 `[已实现]` 的仅 M00 骨架（健康检查、配置、异常、迁移、CI）；其余业务目录均为 `[规划]` 空骨架。
+> 分层职责详见 `architecture.md`。M00–M09 的业务目录均已落地并有测试覆盖；本文件状态标记与当前实现保持一致。
 
 ### 1.2 分层边界与职责
 
@@ -123,22 +123,21 @@
 
 ### 1.5 目录结构与模块映射
 
-> `[已实现]`=M00 已落地；`[规划]`=目录/文件为空骨架，待实现。
+> `[已实现]`=代码已落地并有测试覆盖；`[规划]`=尚未实现。
 
 | 模块 | 后端归属 | 前端归属 |
 | --- | --- | --- |
-| M01 认证 | `api/v1/auth.py` `[规划]`、`services/auth_service.py` `[规划]` | `views/auth/` `[规划]`、`api/auth.ts` `[规划]`、`stores/` `[规划]` |
-| M02 会议 | `api/v1/meetings.py` `[规划]`、`services/meeting_service.py` `[规划]` | `views/meetings/` `[规划]`、`api/meetings.ts` `[规划]` |
-| M03 资料 | `api/v1/materials.py` `[规划]`、`services/material_service.py` `[规划]`、`ai/parsers/` `[规划]` | 会议详情材料区、`api/materials.ts` `[规划]` |
-| M04 AI/RAG | `ai/llm/`、`ai/embeddings/`、`ai/rag/`、`ai/chat/`、`ai/prompts/` `[规划]` | 无独立页面，服务于 M05/M06/M07 |
-| M05 会前准备 | `api/v1/preparations.py` `[规划]`、`ai/preparation/` `[规划]` | `views/preparation/` `[规划]`、`api/preparations.ts` `[规划]` |
-| M06 记录+问答 | `api/v1/records.py`、`api/v1/ai_chat.py`、`ai/chat/` `[规划]` | `views/workspace/` `[规划]`、`api/records.ts` `[规划]` |
-| M07 纪要+行动项 | `api/v1/minutes.py`、`api/v1/action_items.py`、`ai/minutes/`、`ai/extraction/` `[规划]` | `views/minutes/` `[规划]`、`api/minutes.ts` `[规划]` |
-| M08 任务 | `api/v1/tasks.py` `[规划]`、`services/task_service.py` `[规划]` | `views/tasks/` `[规划]`、`api/tasks.ts` `[规划]` |
-| M09 问题 | `api/v1/issues.py` `[规划]`、`services/issue_service.py` `[规划]`、`ai/extraction/` `[规划]` | `views/issues/` `[规划]`、`api/issues.ts` `[规划]` |
+| M01 认证 | `api/v1/auth.py` `[已实现]`、`services/auth_service.py` `[已实现]` | `views/auth/` `[已实现]`、`api/auth.ts` `[已实现]`、`stores/auth.ts` `[已实现]` |
+| M02 会议 | `api/v1/meetings.py` `[已实现]`、`services/meeting_service.py` `[已实现]` | `DashboardView.vue`、`views/meetings/` `[已实现]`、`api/meetings.ts` `[已实现]` |
+| M03 资料 | `api/v1/materials.py` `[已实现]`、`services/material_service.py` `[已实现]`、`ai/parsers/` `[已实现]` | `components/MaterialSection.vue`、`api/materials.ts` `[已实现]` |
+| M04 AI/RAG | `ai/llm/`、`ai/embeddings/`、`ai/rag/`、`ai/chat/`、`ai/prompts/` `[已实现]`；BYOK 设置与生效来源 | `views/settings/ModelSettingsView.vue`、`api/settings.ts` `[已实现]` |
+| M05 会前准备 | `api/v1/preparations.py` `[已实现]`、`ai/preparation/` `[已实现]` | `components/PreparationSection.vue`、`api/preparations.ts` `[已实现]` |
+| M06 记录+问答 | `api/v1/records.py`、`api/v1/ai_chat.py`、`ai/chat/` `[已实现]` | `components/{RecordSection,ChatPanel,AiAssistantDrawer}.vue`、`api/records.ts` `[已实现]` |
+| M07 纪要+行动项 | `api/v1/minutes.py`、`api/v1/action_items.py`、`ai/minutes/`、`ai/extraction/` `[已实现]` | `components/{MinutesSection,ActionItemSection}.vue`、`api/minutes.ts` `[已实现]` |
+| M08 任务 | `api/v1/tasks.py` `[已实现]`、`services/task_service.py` `[已实现]` | `views/TasksView.vue`、`components/TaskSection.vue`、`api/tasks.ts` `[已实现]` |
+| M09 问题 | `api/v1/issues.py` `[已实现]`、`services/issue_service.py` `[已实现]`、`ai/extraction/` `[已实现]` | `components/IssuesSection.vue`、`api/issues.ts` `[已实现]` |
 
-- `[已实现]`：`api/v1/health.py`、`core/config.py`、`core/exceptions.py`、`db/session.py`、`db/base.py`、`alembic/`、前端 `api/client.ts`、`api/health.ts`、`router/index.ts`、`types/`。
-- `frontend/src/stores/`、`layouts/` 当前仅 `.gitkeep`；各 `views/*/` 亦仅 `.gitkeep`，`[规划]` 待填充。
+- `[已实现]`：`api/v1/*`、`core/*`、`db/*`、`alembic/`、`models/`、`schemas/`、`repositories/`、`services/`、`ai/*`；前端 `api/client.ts`、`router/index.ts`、`stores/`、`components/`、`views/`、`types/`。
 - 前端 axios 实例与错误规范化见 `frontend/src/api/client.ts`（`[已实现]`）。
 
 ### 1.6 三人协作边界
@@ -393,9 +392,9 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 | 层 | 实现 | 说明 |
 | --- | --- | --- |
 | 前端 API | `api/meetings.ts` 的 `listMeetings(params)` | 参数默认仅分页（`api.md 一.4`）；`status/keyword/time` 筛选在实现对应逻辑后开放（`api.md 三.1`） |
-| 前端状态 | `stores/meetings` 的 `items/pagination/filters/loading/error` | `[规划]` |
-| 后端 service | `services/meeting_service.py` 列表按 `user_id` 过滤 + 分页 | `[规划]` |
-| 后端 repository | 按 `user_id` 过滤的查询与持久化 | `[规划]` |
+| 前端状态 | `stores/meetings` 的 `items/pagination/filters/loading/error` | `[已实现]` |
+| 后端 service | `services/meeting_service.py` 列表按 `user_id` 过滤 + 分页 | `[已实现]` |
+| 后端 repository | 按 `user_id` 过滤的查询与持久化 | `[已实现]` |
 
 **测试标准**（M02-08 / M02-12）：
 - 分页边界：`page` 从 1 开始；`page_size` 默认 20、最大 100（`api.md 一.4`）。
