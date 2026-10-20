@@ -100,9 +100,58 @@ def test_chat_401_fails_without_retry() -> None:
     with pytest.raises(AppError) as exc_info:
         _client(handler).chat([{"role": "user", "content": "x"}])
 
-    assert exc_info.value.error_code == "INTERNAL_ERROR"
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
     assert exc_info.value.retryable is False
     assert len(calls) == 1
+
+
+def test_chat_403_fails_without_retry_as_config_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+    assert exc_info.value.retryable is False
+
+
+def test_chat_402_raises_model_quota_exceeded() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"message": "Insufficient balance"}}
+        return httpx.Response(402, json=body, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_QUOTA_EXCEEDED"
+    assert exc_info.value.retryable is False
+
+
+def test_chat_400_quota_body_raises_model_quota_exceeded() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {
+            "error": {
+                "message": "Free quota exhausted",
+                "type": "AllocationQuota.FreeTierOnly",
+            }
+        }
+        return httpx.Response(400, json=body, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_QUOTA_EXCEEDED"
+
+
+def test_chat_400_plain_raises_model_config_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"message": "bad request"}}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
 
 
 def test_chat_invalid_json_raises_model_output_invalid() -> None:
@@ -145,9 +194,9 @@ def test_chat_json_invalid_schema_raises() -> None:
     assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"
 
 
-def test_chat_unconfigured_raises_internal_error() -> None:
+def test_chat_unconfigured_raises_model_config_required() -> None:
     client = LLMClient(api_base="", api_key="", model="m")
     with pytest.raises(AppError) as exc_info:
         client.chat([{"role": "user", "content": "x"}])
 
-    assert exc_info.value.error_code == "INTERNAL_ERROR"
+    assert exc_info.value.error_code == "MODEL_CONFIG_REQUIRED"

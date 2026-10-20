@@ -11,6 +11,8 @@ const ERROR_CODE_FALLBACKS: Record<string, string> = {
   MODEL_TIMEOUT: '模型响应超时，请稍后重试',
   MODEL_OUTPUT_INVALID: '模型返回异常，请重试',
   MODEL_CONFIG_INVALID: '模型配置校验失败，请检查 API 地址、密钥与模型名',
+  MODEL_CONFIG_REQUIRED: '尚未配置模型，请先前往「模型设置」填写你自己的 API 密钥',
+  MODEL_QUOTA_EXCEEDED: '模型额度不足，请检查账户余额或更换密钥',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试',
   NETWORK_ERROR: '网络连接失败，请检查网络后重试',
 }
