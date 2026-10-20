@@ -108,9 +108,72 @@ def test_embed_empty_input_returns_empty() -> None:
     assert _client(handler).embed([]) == []
 
 
-def test_embed_unconfigured_raises_internal_error() -> None:
+def test_embed_unconfigured_raises_model_config_required() -> None:
     client = EmbeddingClient(api_base="", api_key="", model="m")
     with pytest.raises(AppError) as exc_info:
         client.embed(["x"])
 
+    assert exc_info.value.error_code == "MODEL_CONFIG_REQUIRED"
+
+
+def test_embed_401_raises_model_config_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).embed(["x"])
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+
+
+def test_embed_402_raises_model_quota_exceeded() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"message": "Insufficient balance"}}
+        return httpx.Response(402, json=body, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).embed(["x"])
+
+    assert exc_info.value.error_code == "MODEL_QUOTA_EXCEEDED"
+
+
+def test_embed_400_quota_body_raises_model_quota_exceeded() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {
+            "error": {
+                "message": "Free quota exhausted",
+                "type": "AllocationQuota.FreeTierOnly",
+            }
+        }
+        return httpx.Response(400, json=body, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).embed(["x"])
+
+    assert exc_info.value.error_code == "MODEL_QUOTA_EXCEEDED"
+
+
+def test_embed_403_raises_model_config_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).embed(["x"])
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+    assert exc_info.value.retryable is False
+
+
+def test_embed_5xx_retries_then_internal_error() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(500, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).embed(["x"])
+
     assert exc_info.value.error_code == "INTERNAL_ERROR"
+    assert exc_info.value.retryable is True
+    assert len(calls) == 3
