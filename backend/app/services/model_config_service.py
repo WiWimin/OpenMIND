@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingClient
@@ -9,6 +10,7 @@ from app.ai.llm import LLMClient
 from app.core.config import get_settings
 from app.core.crypto import decrypt, encrypt
 from app.core.exceptions import AppError
+from app.core.url_validation import validate_api_base
 from app.models.model_config import UserModelConfig
 from app.repositories import model_config_repository
 from app.schemas.model_config import ModelConfigRead, ModelConfigWrite
@@ -30,7 +32,14 @@ class ModelConfig:
 def _decrypt_or_empty(token: str | None) -> str:
     if not token:
         return ""
-    return decrypt(token)
+    try:
+        return decrypt(token)
+    except InvalidToken:
+        raise AppError(
+            "MODEL_CONFIG_INVALID",
+            "模型密钥无法解密，请重新保存模型配置",
+            http_status=400,
+        ) from None
 
 
 def resolve_model_config(db: Session, user_id: str) -> ModelConfig:
@@ -147,6 +156,10 @@ def _probe_llm(api_base: str, api_key: str, model: str) -> None:
 
 
 def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> UserModelConfig:
+    settings = get_settings()
+    llm_api_base = payload.llm_api_base
+    embedding_api_base = payload.embedding_api_base
+
     if payload.embedding_api_base or payload.embedding_api_key or payload.embedding_model:
         if not (
             payload.embedding_api_base and payload.embedding_api_key and payload.embedding_model
@@ -156,8 +169,13 @@ def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> U
                 "Embedding 需同时提供 api_base、api_key、model",
                 http_status=400,
             )
+        embedding_api_base = validate_api_base(
+            payload.embedding_api_base,
+            field="Embedding API Base",
+            allow_private=settings.allow_private_model_endpoints,
+        )
         _probe_embedding_dim(
-            payload.embedding_api_base, payload.embedding_api_key, payload.embedding_model
+            embedding_api_base, payload.embedding_api_key, payload.embedding_model
         )
     if payload.llm_api_base or payload.llm_api_key or payload.llm_model:
         if not (payload.llm_api_base and payload.llm_api_key and payload.llm_model):
@@ -166,15 +184,20 @@ def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> U
                 "LLM 需同时提供 api_base、api_key、model",
                 http_status=400,
             )
-        _probe_llm(payload.llm_api_base, payload.llm_api_key, payload.llm_model)
+        llm_api_base = validate_api_base(
+            payload.llm_api_base,
+            field="LLM API Base",
+            allow_private=settings.allow_private_model_endpoints,
+        )
+        _probe_llm(llm_api_base, payload.llm_api_key, payload.llm_model)
 
     return model_config_repository.upsert(
         db,
         user_id=user_id,
-        llm_api_base=payload.llm_api_base,
+        llm_api_base=llm_api_base,
         llm_api_key_enc=encrypt(payload.llm_api_key) if payload.llm_api_key else None,
         llm_model=payload.llm_model,
-        embedding_api_base=payload.embedding_api_base,
+        embedding_api_base=embedding_api_base,
         embedding_api_key_enc=(
             encrypt(payload.embedding_api_key) if payload.embedding_api_key else None
         ),
@@ -188,25 +211,31 @@ def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> U
 def get_model_config_read(db: Session, user_id: str) -> ModelConfigRead:
     row = model_config_repository.get_by_user(db, user_id)
     config = resolve_model_config(db, user_id)
+    llm_source = _provider_source(
+        row.llm_api_base if row else None,
+        config.llm_api_base,
+        config.llm_api_key,
+        config.llm_model,
+    )
+    embedding_source = _provider_source(
+        row.embedding_api_base if row else None,
+        config.embedding_api_base,
+        config.embedding_api_key,
+        config.embedding_model,
+    )
     return ModelConfigRead(
         llm_api_base=config.llm_api_base,
         llm_model=config.llm_model,
-        llm_api_key_masked=mask_key(config.llm_api_key),
-        llm_source=_provider_source(
-            row.llm_api_base if row else None,
-            config.llm_api_base,
-            config.llm_api_key,
-            config.llm_model,
+        llm_api_key_masked=(
+            mask_key(config.llm_api_key) if llm_source == "user" else ""
         ),
+        llm_source=llm_source,
         embedding_api_base=config.embedding_api_base,
         embedding_model=config.embedding_model,
-        embedding_api_key_masked=mask_key(config.embedding_api_key),
-        embedding_source=_provider_source(
-            row.embedding_api_base if row else None,
-            config.embedding_api_base,
-            config.embedding_api_key,
-            config.embedding_model,
+        embedding_api_key_masked=(
+            mask_key(config.embedding_api_key) if embedding_source == "user" else ""
         ),
+        embedding_source=embedding_source,
         embedding_dim=config.embedding_dim,
     )
 

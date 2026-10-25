@@ -221,9 +221,13 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 规则：
 - 密钥 `Fernet` 加密存库，永不明文返回；`_masked` 仅展示前后缀。
+- `_masked` 仅在来源为 `user` 时返回值；`global` / `none` 返回空字符串，避免向普通用户泄露服务端全局密钥片段。
 - 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成；失败返回 `400 MODEL_CONFIG_INVALID`。
+- 保存前校验 `api_base`：默认只允许 HTTPS 公网地址，拒绝本机/私有/保留地址、URL 内嵌凭证和 query/fragment；自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS=true`。
 - 生效优先级：用户配置 > 服务端全局（`docker/.env`）；全局留空即不兜底。
 - `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
+- 轮换 `SECRET_KEY` 时设置 `SECRET_KEY_PREVIOUS` 为旧值以解密既有密文；新写入使用当前 `SECRET_KEY`。确认全部配置已重新保存后可移除旧值。
+- 无法解密既有密文时返回 `400 MODEL_CONFIG_INVALID`；可调用 `DELETE /me/settings/model` 清除后重新配置。
 - 未配置任何模型时，AI 相关接口返回 `MODEL_CONFIG_INVALID`。
 
 ## 三、会议管理（M02，A）

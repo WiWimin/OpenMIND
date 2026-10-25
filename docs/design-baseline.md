@@ -64,6 +64,7 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-18 | 错误详情 | 可选 `details` 用于字段校验错误与 `FILE_PARSE_FAILED.reason` | `api.md 一.2/1.3` |
 | D-19 | 登录落点与外壳 | 认证后默认落点 `/meetings`；全局外壳（顶栏/导航）归 M02；根路径按登录态重定向到登录页或 `/meetings` | `module-development-spec.md M02`、`frontend/src/router` |
 | D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 LLM/Embedding 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.10` |
+| D-21 | 模型配置安全 | 非开发环境拒绝弱 `SECRET_KEY`；轮换使用 `SECRET_KEY_PREVIOUS`；`api_base` 默认仅允许 HTTPS 公网地址；全局密钥不返回脱敏片段 | `api.md 二.5`、`ai-design.md 三.5`、`docker/.env.example` |
 
 ## 四、待确认事项
 
@@ -82,3 +83,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 补充 M05 确认与登录落点 | 新增 `api.md 5.6` 确认准备稿（Issue #28）；新增 D-19 登录落点与全局外壳 |
 | 2026-10 | 建立协作与分支规则 | 新增 `collaboration-rules.md`：三流分工、先合 `develop`、定期同步、`develop → main` 推进 |
 | 2026-10 | 模型密钥用户自带 | 新增 D-20：`/me/settings/model` BYOK + Fernet 加密存库 + 用户>全局优先级 |
+| 2026-10 | 模型配置安全加固 | 新增 D-21：弱 `SECRET_KEY` 拒绝、密钥轮换、`api_base` SSRF 校验、全局密钥不脱敏回显 |
