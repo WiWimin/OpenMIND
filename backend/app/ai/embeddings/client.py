@@ -46,7 +46,11 @@ class EmbeddingClient:
         return vectors
 
     def _embed_batch(self, texts: list[str], *, model: str | None) -> list[list[float]]:
-        payload = {"model": model or self.model, "input": list(texts)}
+        payload = {
+            "model": model or self.model,
+            "input": list(texts),
+            "dimensions": self.dim,
+        }
         last_error: AppError | None = None
         for attempt in range(_MAX_ATTEMPTS):
             if attempt:
