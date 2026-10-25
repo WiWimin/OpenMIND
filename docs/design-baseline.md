@@ -83,4 +83,5 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 补充 M05 确认与登录落点 | 新增 `api.md 5.6` 确认准备稿（Issue #28）；新增 D-19 登录落点与全局外壳 |
 | 2026-10 | 建立协作与分支规则 | 新增 `collaboration-rules.md`：三流分工、先合 `develop`、定期同步、`develop → main` 推进 |
 | 2026-10 | 模型密钥用户自带 | 新增 D-20：`/me/settings/model` BYOK + Fernet 加密存库 + 用户>全局优先级 |
+| 2026-10 | BYOK 生效来源与前端设置页 | `api.md 2.5` 响应新增 `llm_source`/`embedding_source`；前端新增模型设置页（用户配置 > 服务端默认） |
 | 2026-10 | 模型配置安全加固 | 新增 D-21：弱 `SECRET_KEY` 拒绝、密钥轮换、`api_base` SSRF 校验、全局密钥不脱敏回显 |
