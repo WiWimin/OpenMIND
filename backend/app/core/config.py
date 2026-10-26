@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     embedding_dim: int = 1024
 
+    allow_global_fallback: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
