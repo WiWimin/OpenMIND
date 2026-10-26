@@ -61,7 +61,11 @@ def chat(
         user_id=user_id,
         scope=context_scope,
         current_meeting_id=meeting_id,
-        records=_recent_record_context(db, meeting_id),
+        records=(
+            []
+            if context_scope == "knowledge_base"
+            else _recent_record_context(db, meeting_id)
+        ),
     )
 
 

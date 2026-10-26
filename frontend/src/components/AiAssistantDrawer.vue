@@ -133,7 +133,14 @@ const saving = ref(false)
 const saveError = ref<unknown>(null)
 
 function sourceReference(source: ChatSource): string {
-  return source.material_id || source.record_id || source.meeting_id
+  return (
+    source.document_name ||
+    source.document_id ||
+    source.material_id ||
+    source.record_id ||
+    source.meeting_id ||
+    ''
+  )
 }
 
 function onKeydown(event: KeyboardEvent): void {

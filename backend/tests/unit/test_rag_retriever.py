@@ -3,7 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.ai.rag import retriever as rag
 from app.models.chunk import DocumentChunk
-from app.repositories import material_repository, meeting_repository, user_repository
+from app.models.knowledge_chunk import KnowledgeChunk
+from app.repositories import (
+    knowledge_repository,
+    material_repository,
+    meeting_repository,
+    user_repository,
+)
 
 
 def _seed_user_meeting_material(
@@ -148,3 +154,61 @@ def test_vector_retriever_no_chunks(
     monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
     retriever = rag.VectorRetriever(db_session, "usr_none")
     assert retriever.retrieve("问题", user_id="usr_none") == []
+
+
+def test_vector_retriever_knowledge_base_scope(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
+    alice = user_repository.create(
+        db_session, user_id="usr_alice", name="alice", password_hash="x"
+    )
+    bob = user_repository.create(
+        db_session, user_id="usr_bob", name="bob", password_hash="x"
+    )
+    alice_doc = knowledge_repository.create(
+        db_session,
+        document_id="kdoc_a",
+        user_id=alice.user_id,
+        file_name="alpha.txt",
+        document_type="txt",
+        storage_key="knowledge/kdoc_a.txt",
+    )
+    bob_doc = knowledge_repository.create(
+        db_session,
+        document_id="kdoc_b",
+        user_id=bob.user_id,
+        file_name="bob.txt",
+        document_type="txt",
+        storage_key="knowledge/kdoc_b.txt",
+    )
+    db_session.add_all(
+        [
+            KnowledgeChunk(
+                chunk_id="kchk_a",
+                document_id=alice_doc.document_id,
+                content="知识库相关内容",
+                chunk_index=0,
+                embedding=[1.0, 0.0],
+            ),
+            KnowledgeChunk(
+                chunk_id="kchk_b",
+                document_id=bob_doc.document_id,
+                content="他人知识库内容",
+                chunk_index=0,
+                embedding=[1.0, 0.0],
+            ),
+        ]
+    )
+    db_session.commit()
+
+    retriever = rag.VectorRetriever(db_session, alice.user_id)
+    results = retriever.retrieve(
+        "问题", user_id=alice.user_id, scope="knowledge_base"
+    )
+
+    assert [item.document_id for item in results] == ["kdoc_a"]
+    assert results[0].document_name == "alpha.txt"
+    assert results[0].meeting_id is None
+    assert results[0].material_id is None
+    assert results[0].excerpt == "知识库相关内容"

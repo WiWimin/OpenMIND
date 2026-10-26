@@ -120,8 +120,8 @@ class EmbeddingClient:
 
 ### 5.1 数据与权限
 
-- 载体：`document_chunks.embedding vector(1024)`（`database.md 三.10`）。
-- **权限范围**：检索必须经 `document_chunks → meeting_materials → meetings` 关联，限定 `meetings.user_id = current_user.user_id`；禁止先全库检索再过滤。
+- 载体：会议材料使用 `document_chunks.embedding vector(1024)`；个人知识库使用 `knowledge_chunks.embedding vector(1024)`。
+- **权限范围**：会议检索必须经 `document_chunks → meeting_materials → meetings` 关联，限定 `meetings.user_id = current_user.user_id`；知识库检索必须经 `knowledge_chunks → knowledge_documents` 限定 `knowledge_documents.user_id = current_user.user_id`；禁止先全库检索再过滤。
 - 只检索 `embedding IS NOT NULL` 的分块。
 - 会议记录当前**不写入** `document_chunks`；问答额外使用当前会议最近记录作为受限上下文（按条数与字符上限截断）。这不是完整历史记录检索，完整记录检索需后续独立设计。
 
@@ -129,9 +129,11 @@ class EmbeddingClient:
 
 ```python
 class RetrievedChunk:
-    chunk_id: str
-    material_id: str
-    meeting_id: str
+    meeting_id: str | None
+    material_id: str | None
+    record_id: str | None
+    document_id: str | None
+    document_name: str | None
     excerpt: str
     score: float
 
@@ -141,21 +143,21 @@ class Retriever:
         query: str,
         *,
         user_id: str,
-        scope: str = "current_meeting",   # current_meeting | current_and_history
+        scope: str = "current_meeting",   # current_meeting | current_and_history | knowledge_base
         current_meeting_id: str | None = None,
         top_k: int = 5,
         min_score: float = 0.3,
     ) -> list[RetrievedChunk]: ...
 ```
 
-- `scope=current_meeting`：仅当前会议材料；`current_and_history`：该用户全部会议材料。
+- `scope=current_meeting`：仅当前会议材料；`current_and_history`：该用户全部会议材料；`knowledge_base`：仅当前用户个人知识库，不读取会议材料或会议记录。
 - 排序：当前实现为在应用层（`VectorRetriever`）按余弦**相似度**计算并排序，取前 `top_k`，低于 `min_score` 丢弃；pgvector `<=>` 余弦距离与 HNSW 索引待数据量增大后作为优化落地（`database.md 六`）。
 - 无结果或全部低于阈值 → 返回空列表，由上层置 `insufficient_evidence=true`。
 
 ### 5.3 来源返回
 
-- `api.md 五.7` 的 `sources[]` 可来自材料分块或当前会议记录：材料来源有 `material_id`，记录来源有 `record_id` 且 `material_id=null`。
-- 不得伪造引用；材料 `excerpt` 取自命中分块原文，记录 `excerpt` 取自当前会议记录原文。
+- `api.md 五.7` 的 `sources[]` 可来自会议材料分块、当前会议记录或个人知识库分块：材料来源有 `material_id`，记录来源有 `record_id` 且 `material_id=null`，知识库来源有 `document_id`/`document_name` 且 `meeting_id`/`material_id=null`。
+- 不得伪造引用；`excerpt` 必须取自命中分块或记录原文。
 
 ### 5.4 个人知识库检索
 
@@ -163,7 +165,7 @@ class Retriever:
 - 导入：PDF / DOCX / TXT → 解析 → 分块（800 字符、120 重叠）→ Embedding → 写入分块。
 - 检索：查询向量与当前用户全部分块计算余弦相似度，取前 `top_k`，低于 `min_score` 丢弃。
 - 返回 `document_id`、文件名、命中片段和分数；不伪造来源。
-- 当前知识库检索是独立接口，不自动混入会议问答；接入问答时必须显式选择范围，避免无关内容污染回答。
+- 知识库检索默认不混入会议问答；问答中必须显式选择 `context_scope=knowledge_base`，此时不读取会议材料或会议记录，避免无关内容污染回答。
 - 删除文档同步删除分块和向量，删除后不得再被检索。
 
 ## 六、文件解析链路（M03，`ai/parsers/`）
@@ -229,8 +231,9 @@ failed → processing   （重试）
 
 ### 8.2 会中问答 `POST /meetings/{id}/chat`
 - 流程：按 `scope` 检索材料分块 + 当前会议最近记录（有限条数/长度）→ 组装 Prompt → LLM 生成 → 返回 `{answer, sources[], insufficient_evidence}`。
-- 默认 `current_meeting`；`current_and_history` 只扩展材料检索范围，记录始终限当前会议。
-- 材料与记录都为空 → `insufficient_evidence=true` 且回答明确说明无法确认；来源分别带 `material_id` 或 `record_id`。
+- 默认 `current_meeting`；`current_and_history` 只扩展会议材料检索范围，记录始终限当前会议。
+- `knowledge_base` 仅检索当前用户个人知识库，不读取会议材料或会议记录；来源带 `document_id`/`document_name`。
+- 材料、记录与知识库都为空 → `insufficient_evidence=true` 且回答明确说明无法确认。
 - 不落库（问答历史非 MVP）。
 
 ### 8.3 整理记录 `POST /meetings/{id}/organize`

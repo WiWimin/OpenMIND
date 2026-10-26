@@ -33,7 +33,7 @@
       {{
         readonly
           ? '会议已归档，不能继续发起问答。'
-          : '默认检索当前会议材料与最近记录；选择历史范围时仅扩展历史材料，记录仍限当前会议。'
+          : '默认检索当前会议材料与最近记录；历史范围只扩展历史材料；个人知识库范围仅检索知识库。'
       }}
     </p>
 
@@ -82,6 +82,7 @@ const scope = ref<ChatContextScope>('current_meeting')
 const scopeOptions = [
   { value: 'current_meeting', label: '当前会议' },
   { value: 'current_and_history', label: '当前及历史' },
+  { value: 'knowledge_base', label: '个人知识库' },
 ]
 const question = ref('')
 const formError = ref('')
@@ -90,7 +91,14 @@ const error = ref<unknown>(null)
 const turns = ref<ChatTurn[]>([])
 
 function sourceReference(source: ChatSource): string {
-  return source.material_id || source.record_id || source.meeting_id
+  return (
+    source.document_name ||
+    source.document_id ||
+    source.material_id ||
+    source.record_id ||
+    source.meeting_id ||
+    ''
+  )
 }
 
 async function ask(): Promise<void> {

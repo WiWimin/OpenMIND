@@ -62,6 +62,46 @@ describe('ChatPanel', () => {
     })
   })
 
+  it('sends the knowledge base scope', async () => {
+    vi.mocked(chatApi.askMeeting).mockResolvedValue(result)
+    const wrapper = mount(ChatPanel, { props: { meetingId: 'mtg_1' } })
+
+    await wrapper.get('#chat-scope').setValue('knowledge_base')
+    await wrapper.get('#chat-question').setValue('知识库问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(chatApi.askMeeting).toHaveBeenCalledWith('mtg_1', {
+      question: '知识库问题',
+      context_scope: 'knowledge_base',
+      include_sources: true,
+    })
+  })
+
+  it('references a knowledge base document', async () => {
+    vi.mocked(chatApi.askMeeting).mockResolvedValue({
+      ...result,
+      sources: [
+        {
+          meeting_id: null,
+          material_id: null,
+          record_id: null,
+          document_id: 'kdoc_1',
+          document_name: 'notes.txt',
+          excerpt: '知识库片段',
+        },
+      ],
+    })
+    const wrapper = mount(ChatPanel, { props: { meetingId: 'mtg_1' } })
+
+    await wrapper.get('#chat-question').setValue('知识库问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('notes.txt')
+    expect(wrapper.text()).toContain('知识库片段')
+  })
+
   it('warns when evidence is insufficient', async () => {
     vi.mocked(chatApi.askMeeting).mockResolvedValue({ ...result, insufficient_evidence: true })
     const wrapper = mount(ChatPanel, { props: { meetingId: 'mtg_1' } })

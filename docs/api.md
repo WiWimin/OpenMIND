@@ -517,7 +517,10 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 { "question": "上次会议决定了什么？", "context_scope": "current_meeting", "include_sources": true }
 ```
 
-`context_scope`：`current_meeting`（默认）/ `current_and_history`。它只控制材料检索范围，不授予权限；会议记录始终只取当前会议最近记录（有限条数/长度），不是完整历史记录检索。
+`context_scope`：`current_meeting`（默认）/ `current_and_history` / `knowledge_base`。它只控制检索范围，不授予权限：
+- `current_meeting`：当前会议材料；
+- `current_and_history`：当前用户全部会议材料，但会议记录仍只取当前会议最近记录（有限条数/长度）；
+- `knowledge_base`：仅当前用户个人知识库，不读取会议材料或会议记录。
 
 响应 `200`：
 
@@ -527,15 +530,16 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "data": {
     "answer": "根据已有会议材料，上次会议决定……",
     "sources": [
-      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "excerpt": "相关原文片段" },
-      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "excerpt": "当前会议记录片段" }
+      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "document_id": null, "document_name": null, "excerpt": "相关原文片段" },
+      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "document_id": null, "document_name": null, "excerpt": "当前会议记录片段" },
+      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": "kdoc_xxx", "document_name": "项目手册.pdf", "excerpt": "知识库原文片段" }
     ],
     "insufficient_evidence": false
   }
 }
 ```
 
-- `sources` 可为空数组，不得伪造引用；来源可以是材料分块（`material_id` 有值）或当前会议记录（`record_id` 有值，`material_id` 为 `null`）。
+- `sources` 可为空数组，不得伪造引用；来源可以是会议材料分块（`material_id` 有值）、当前会议记录（`record_id` 有值，`material_id` 为 `null`）或个人知识库分块（`document_id` 有值，`meeting_id`/`material_id` 为 `null`）。
 - 证据不足时 `insufficient_evidence = true`。
 
 ### 5.8 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
