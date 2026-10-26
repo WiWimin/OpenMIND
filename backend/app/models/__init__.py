@@ -12,6 +12,7 @@ from app.models.preparation import Preparation
 from app.models.record import MeetingRecord
 from app.models.task import PersonalTask
 from app.models.user import User
+from app.models.user_memory import UserMemory
 
 __all__ = [
     "ActionItem",
@@ -27,5 +28,6 @@ __all__ = [
     "PersonalTask",
     "Preparation",
     "User",
+    "UserMemory",
     "UserModelConfig",
 ]

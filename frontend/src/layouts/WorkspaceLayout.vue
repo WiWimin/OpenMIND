@@ -66,6 +66,18 @@
           <span class="workspace__nav-label">知识库</span>
         </RouterLink>
 
+        <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.memory }">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.6" />
+            <path
+              d="M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6"
+              stroke="currentColor"
+              stroke-width="1.6"
+            />
+          </svg>
+          <span class="workspace__nav-label">记忆中心</span>
+        </RouterLink>
+
         <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.settings }">
           <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
             <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />

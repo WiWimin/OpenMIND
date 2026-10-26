@@ -95,7 +95,8 @@ import { formatDateTime } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
 import { minutesStatusMeta, minutesTemplateMeta } from '@/utils/statusLabels'
 
-const TEMPLATE_OPTIONS: { value: MinutesTemplate; label: string }[] = [
+const TEMPLATE_OPTIONS: { value: MinutesTemplate | ''; label: string }[] = [
+  { value: '', label: '使用默认模板' },
   { value: 'standard', label: '标准纪要' },
   { value: 'concise', label: '简洁记录' },
   { value: 'task_list', label: '任务清单' },
@@ -123,7 +124,7 @@ const selected = ref<Minutes | null>(null)
 const draft = ref('')
 const generating = ref(false)
 const includeMaterials = ref(true)
-const template = ref<MinutesTemplate>('standard')
+const template = ref<MinutesTemplate | ''>('')
 const saving = ref(false)
 const confirming = ref(false)
 const exporting = ref(false)
@@ -175,7 +176,7 @@ async function generate(): Promise<void> {
         record_ids: [],
         include_action_items: true,
         include_materials: includeMaterials.value,
-        template: template.value,
+        template: template.value || undefined,
       },
       controller.signal,
     )

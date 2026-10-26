@@ -168,6 +168,17 @@ class Retriever:
 - 知识库检索默认不混入会议问答；问答中必须显式选择 `context_scope=knowledge_base`，此时不读取会议材料或会议记录，避免无关内容污染回答。
 - 删除文档同步删除分块和向量，删除后不得再被检索。
 
+### 5.5 用户记忆使用
+
+- 来源：`user_memories`，由用户显式维护，当前不从会议内容自动提取。
+- 按用途筛选：
+  - 会前准备：角色、工作场景、表达偏好；
+  - 纪要生成：表达偏好；未显式指定模板时使用 `preferred_minutes_template`；
+  - 会议问答：表达偏好；
+  - 行动项/问题提取：不使用记忆。
+- 记忆只作为软偏好注入 Prompt，必须明确不得覆盖材料事实、来源、权限和业务规则。
+- 用户可查看、修改、删除；删除后不再进入后续 AI 调用。
+
 ## 六、文件解析链路（M03，`ai/parsers/`）
 
 ### 6.1 处理状态机（`meeting_materials.processing_status`）
@@ -240,8 +251,9 @@ failed → processing   （重试）
 - 输入：显式 `record_ids`。输出 `{ organized_content, source_record_ids[] }`。不落库。
 
 ### 8.4 纪要生成 `POST /meetings/{id}/minutes/generate`
-- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）、`template`（默认 `standard`）。
-- 模板：`standard` 标准纪要、`concise` 简洁记录、`task_list` 任务清单；模板只改变输出组织方式，不降低来源与事实验证要求。
+- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）、`template`（可空）。
+- 模板：`standard` 标准纪要、`concise` 简洁记录、`task_list` 任务清单；`template` 为空时使用记忆中心默认模板，未设置则 `standard`；模板只改变输出组织方式，不降低来源与事实验证要求。
+- 记忆：仅注入表达偏好；模板偏好只作为默认值，显式请求模板优先。
 - 上下文：显式记录（为空时当前会议最近 100 条）+ 当前会议资料（最多 10 份、合计约 12000 字符）+ 实际参与记录上的标记（`highlight` / `decision` / `question`）。
 - 资料只作背景，Prompt 明确禁止把资料中没有的信息写成会议事实；标记用于强调重点、决议和待确认问题。
 - 任务清单模板中未提及负责人或截止时间时写“未指定”，不得编造。

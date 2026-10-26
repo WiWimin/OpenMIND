@@ -9,7 +9,7 @@ from app.models.minutes import MeetingMinutes
 from app.models.record import MeetingRecord
 from app.repositories import material_repository, minutes_repository, record_repository
 from app.schemas.minutes import MinutesGenerateRequest, MinutesUpdate
-from app.services import meeting_service
+from app.services import meeting_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -33,6 +33,7 @@ def generate_text(
     material_snippets: list[str] | None = None,
     marked_records: list[dict[str, str]] | None = None,
     template: str = "standard",
+    memory_context: str = "",
 ) -> str:
     topic_parts = [meeting.title]
     if meeting.topic:
@@ -43,6 +44,7 @@ def generate_text(
         material_snippets or [],
         marked_records or [],
         template=template,
+        memory_context=memory_context,
     )
 
 
@@ -104,13 +106,20 @@ def generate_minutes(
         db, meeting_id, enabled=payload.include_materials
     )
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.minutes)
+    template = (
+        payload.template.value
+        if payload.template
+        else memory_service.preferred_minutes_template(db, user_id) or "standard"
+    )
+    memory_context = memory_service.memory_context_for(db, user_id, "minutes")
     content = generate_text(
         meeting,
         transcripts,
         config,
         material_snippets=material_snippets,
         marked_records=marked_records,
-        template=payload.template.value,
+        template=template,
+        memory_context=memory_context,
     )
     minutes = minutes_repository.create(
         db,
@@ -119,7 +128,7 @@ def generate_minutes(
         content=content,
         source_record_ids=record_ids,
         source_material_ids=material_ids,
-        template=payload.template.value,
+        template=template,
         status=_STATUS_DRAFT,
     )
     if payload.include_action_items:

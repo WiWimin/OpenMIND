@@ -310,7 +310,48 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 文件大小上限沿用 `MAX_UPLOAD_MB`；仅支持 PDF / DOCX / TXT。
 - 解析失败返回 `201`，对象 `processing_status=failed` 并带 `parse_error`；不支持的类型返回 `415 FILE_TYPE_NOT_SUPPORTED`。
 - 删除文档同步删除分块与向量索引，删除后不得再被检索。
-- 知识库检索当前作为独立接口，不自动混入会议问答；后续接入时需显式选择范围。
+- 知识库检索默认不混入会议问答；问答中选择 `context_scope=knowledge_base` 时仅检索知识库。
+
+### 2.7 记忆中心
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/me/memory` | 读取当前用户的记忆/画像 |
+| PUT | `/api/v1/me/memory` | 保存或替换记忆 |
+| DELETE | `/api/v1/me/memory` | 清除记忆 |
+
+请求：
+
+```json
+{
+  "role": "产品经理",
+  "work_scenarios": "B2B SaaS 产品规划",
+  "communication_style": "结论先行、简洁",
+  "preferred_minutes_template": "concise"
+}
+```
+
+响应：
+
+```json
+{
+  "status": "success",
+  "data": {
+    "role": "产品经理",
+    "work_scenarios": "B2B SaaS 产品规划",
+    "communication_style": "结论先行、简洁",
+    "preferred_minutes_template": "concise",
+    "updated_at": "2026-10-01T09:00:00+08:00"
+  }
+}
+```
+
+规则：
+- 记忆由用户显式维护；当前不自动从会议内容提取偏好。
+- `preferred_minutes_template` 可空；生成纪要未显式传 `template` 时使用该偏好，否则回退 `standard`。
+- 记忆只用于调整准备重点、纪要表达和问答表达；不得覆盖材料事实、来源、权限或业务规则。
+- 按用途筛选：会前准备使用角色/场景/表达偏好；纪要使用表达偏好与模板偏好；问答使用表达偏好；行动项/问题提取不使用记忆。
+- 所有读取和写入严格限定当前用户。
 
 ## 三、会议管理（M02，A）
 
@@ -589,7 +630,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```
 
 - `include_materials` 默认 `true`；为 `true` 时融合当前会议资料（最多 10 份、合计约 12000 字符）和记录标记。
-- `template` 默认 `standard`：
+- `template` 省略时优先使用记忆中心的 `preferred_minutes_template`，未设置则 `standard`：
   - `standard`：标准纪要；
   - `concise`：简洁记录，仅保留关键结论、决议和待办；
   - `task_list`：任务清单，列出负责人和截止时间，未提及则写“未指定”。

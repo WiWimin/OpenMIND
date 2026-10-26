@@ -27,6 +27,11 @@ describe('route constants', () => {
     expect(ROUTE_PATHS.knowledge).toBe('/knowledge')
   })
 
+  it('exposes the memory center route', () => {
+    expect(ROUTE_NAMES.memory).toBe('memory')
+    expect(ROUTE_PATHS.memory).toBe('/memory')
+  })
+
   it('exposes the model settings route', () => {
     expect(ROUTE_NAMES.settings).toBe('settings')
     expect(ROUTE_PATHS.settings).toBe('/settings')

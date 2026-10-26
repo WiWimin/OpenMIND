@@ -84,6 +84,18 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: ROUTE_PATHS.memory,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.memory,
+        component: () => import('@/views/MemoryView.vue'),
+      },
+    ],
+  },
+  {
     path: ROUTE_PATHS.settings,
     component: () => import('@/layouts/WorkspaceLayout.vue'),
     meta: { requiresAuth: true },

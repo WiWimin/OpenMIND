@@ -21,7 +21,7 @@ class MinutesGenerateRequest(BaseModel):
     record_ids: list[str] = Field(default_factory=list)
     include_action_items: bool = False
     include_materials: bool = True
-    template: MinutesTemplate = MinutesTemplate.standard
+    template: MinutesTemplate | None = None
 
 
 class MinutesUpdate(BaseModel):

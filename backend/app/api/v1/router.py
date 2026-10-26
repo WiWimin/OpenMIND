@@ -9,6 +9,7 @@ from app.api.v1 import (
     knowledge,
     materials,
     meetings,
+    memory,
     minutes,
     preparations,
     records,
@@ -29,4 +30,5 @@ api_router.include_router(action_items.router)
 api_router.include_router(tasks.router)
 api_router.include_router(issues.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(memory.router)
 api_router.include_router(settings.router)

@@ -26,7 +26,7 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         preparation_service,
         "generate_draft",
-        lambda meeting, snippets, user_goal, config=None: PreparationDraft(
+        lambda meeting, snippets, user_goal, config=None, **kwargs: PreparationDraft(
             summary="摘要", checklist=[]
         ),
     )

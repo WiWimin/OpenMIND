@@ -21,6 +21,7 @@ def build_minutes(context: dict) -> list[dict[str, str]]:
     records = context.get("record_transcripts", [])
     materials = context.get("material_snippets", [])
     marked = context.get("marked_records", [])
+    memory = context.get("memory_context", "")
     template = context.get("template", "standard")
     joined_records = "\n\n".join(records)
     joined_materials = "\n\n".join(materials)
@@ -36,10 +37,13 @@ def build_minutes(context: dict) -> list[dict[str, str]]:
         f"你是会议纪要助手。{instruction}"
         "根据会议资料、会议记录和用户标记生成内容；资料只作背景，"
         "不得把资料中没有的信息写成会议事实。"
+        "用户画像仅用于调整表达方式，不得覆盖事实、来源或业务规则。"
         "直接输出正文，不要输出 JSON。"
     )
-    user = (
-        f"会议主题：{topic}\n\n"
+    user = f"会议主题：{topic}\n\n"
+    if memory:
+        user += f"用户画像：\n{memory}\n\n"
+    user += (
         f"会议资料（仅作背景）：\n{joined_materials}\n\n"
         f"会议记录：\n{joined_records}\n\n"
         f"用户标记：\n{marked_lines}"

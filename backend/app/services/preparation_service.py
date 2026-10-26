@@ -8,7 +8,7 @@ from app.models.meeting import Meeting
 from app.models.preparation import Preparation
 from app.repositories import material_repository, preparation_repository
 from app.schemas.preparation import PreparationUpdate
-from app.services import meeting_service
+from app.services import meeting_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -22,7 +22,12 @@ _STATUS_CONFIRMED = "confirmed"
 
 
 def generate_draft(
-    meeting: Meeting, snippets: list[str], user_goal: str | None, config: ModelConfig
+    meeting: Meeting,
+    snippets: list[str],
+    user_goal: str | None,
+    config: ModelConfig,
+    *,
+    memory_context: str = "",
 ) -> PreparationDraft:
     topic_parts = [meeting.title]
     if meeting.topic:
@@ -30,7 +35,9 @@ def generate_draft(
     if user_goal:
         topic_parts.append(f"关注点：{user_goal}")
     service = PreparationService(build_llm_client(config))
-    return service.generate(" / ".join(topic_parts), snippets)
+    return service.generate(
+        " / ".join(topic_parts), snippets, memory_context=memory_context
+    )
 
 
 def _not_found() -> AppError:
@@ -71,7 +78,10 @@ def generate_preparation(
         else material_repository.list_contents(db, meeting_id)
     )
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.preparation)
-    draft = generate_draft(meeting, snippets, user_goal, config)
+    memory_context = memory_service.memory_context_for(db, user_id, "preparation")
+    draft = generate_draft(
+        meeting, snippets, user_goal, config, memory_context=memory_context
+    )
     return preparation_repository.create(
         db,
         preparation_id=new_id("prep"),
