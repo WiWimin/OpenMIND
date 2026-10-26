@@ -50,7 +50,7 @@ describe('WorkspaceLayout', () => {
     expect(wrapper.text()).toContain('Alice')
   })
 
-  it('exposes the model settings navigation entry', () => {
+  it('exposes the knowledge base and model settings navigation entries', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const wrapper = mount(WorkspaceLayout, {
@@ -59,6 +59,7 @@ describe('WorkspaceLayout', () => {
         stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } },
       },
     })
+    expect(wrapper.text()).toContain('知识库')
     expect(wrapper.text()).toContain('模型设置')
   })
 

@@ -92,3 +92,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 纪要融合与记录标记 | 记录新增 `marker_type`；纪要生成融合当前会议资料与实际参与记录的标记，记录 `source_material_ids`；迁移 `0013` |
 | 2026-10 | 纪要模板 | 新增 `standard` / `concise` / `task_list` 模板并记录 `meeting_minutes.template`；重新生成不覆盖已确认纪要；迁移 `0014` |
 | 2026-10 | 按用途模型路由 | `user_model_configs.llm_purpose_models` 覆盖准备/问答/纪要/提取模型名；共享 LLM 地址与密钥；迁移 `0015` |
+| 2026-10 | 个人知识库核心 | 独立 `knowledge_documents` / `knowledge_chunks`；上传、解析、索引、检索、删除；迁移 `0016` |

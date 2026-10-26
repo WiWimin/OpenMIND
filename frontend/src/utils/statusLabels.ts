@@ -1,5 +1,6 @@
 import type { ActionItemStatus } from '@/types/actionItem'
 import type { IssueStatus } from '@/types/issue'
+import type { KnowledgeStatus } from '@/types/knowledge'
 import type { MaterialProcessingStatus } from '@/types/material'
 import type { MeetingStatus } from '@/types/meeting'
 import type { MinutesStatus, MinutesTemplate } from '@/types/minutes'
@@ -22,6 +23,13 @@ export const materialStatusMeta: Record<MaterialProcessingStatus, StatusMeta> = 
   uploaded: { label: '已上传', tone: 'neutral' },
   processing: { label: '解析中', tone: 'info' },
   processed: { label: '已解析', tone: 'success' },
+  failed: { label: '解析失败', tone: 'danger' },
+}
+
+export const knowledgeStatusMeta: Record<KnowledgeStatus, StatusMeta> = {
+  uploaded: { label: '已上传', tone: 'neutral' },
+  processing: { label: '解析中', tone: 'info' },
+  processed: { label: '已索引', tone: 'success' },
   failed: { label: '解析失败', tone: 'danger' },
 }
 

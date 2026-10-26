@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import sqrt
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.rag.similarity import cosine
 from app.models.chunk import DocumentChunk
 from app.models.material import MeetingMaterial
 from app.models.meeting import Meeting
@@ -28,21 +28,6 @@ class RetrievedChunk:
 def embed_query(text: str, config: ModelConfig) -> list[float]:
     vectors = build_embedding_client(config).embed([text])
     return [float(value) for value in vectors[0]] if vectors else []
-
-
-def _cosine(left: list[float], right: list[float]) -> float:
-    if not left or not right or len(left) != len(right):
-        return 0.0
-    dot = 0.0
-    norm_left = 0.0
-    norm_right = 0.0
-    for a, b in zip(left, right, strict=True):
-        dot += a * b
-        norm_left += a * a
-        norm_right += b * b
-    if norm_left == 0.0 or norm_right == 0.0:
-        return 0.0
-    return dot / (sqrt(norm_left) * sqrt(norm_right))
 
 
 class VectorRetriever:
@@ -85,7 +70,7 @@ class VectorRetriever:
 
         scored: list[RetrievedChunk] = []
         for chunk, meeting_id in rows:
-            score = _cosine(query_vector, [float(value) for value in chunk.embedding])
+            score = cosine(query_vector, [float(value) for value in chunk.embedding])
             if score >= min_score:
                 scored.append(
                     RetrievedChunk(
