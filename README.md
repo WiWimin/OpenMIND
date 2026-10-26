@@ -240,7 +240,7 @@ main（阶段验收通过后）
 4. `git commit` 提交（Conventional Commits）。
 5. 发起 **Pull Request**，**base 必须是 `develop`**（不得合入其他特性分支），按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
 6. 至少一名成员 Code Review 通过、CI 全绿后，用 merge commit 合并到 `develop`；合并后删除工作分支。
-7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本（`main` 目前停留在 M00，需补做一次）。
+7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本；本轮验收通过后执行 `develop → main` 发布。
 8. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
 
 > CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）仅做检查，不包含任何自动部署流程。
@@ -252,13 +252,13 @@ main（阶段验收通过后）
 **前端基础工程**
 - Vue 3 + TypeScript + Vite 骨架，Pinia 与 Vue Router 已接入。
 - 登录态路由守卫、统一 axios 错误归一化（`ApiError`）与页面外壳（`WorkspaceLayout`）。
-- Vitest 测试 309 个用例、`typecheck`、`lint`、`build` 均通过。
+- Vitest 测试 361 个用例，Playwright 浏览器 E2E 覆盖核心闭环，`typecheck`、`lint`、`build` 均通过。
 
 **后端基础工程**
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
 - 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 193 个用例、`ruff check` 均通过。
+- pytest 287 个用例、`ruff check` 均通过。
 
 **数据与基础设施**
 - PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline`、`0002_enable_pgvector` 已可在容器内执行并通过校验。
@@ -279,10 +279,15 @@ main（阶段验收通过后）
 - 会议管理（创建 / 列表 / 详情 / 编辑 / 删除 / 归档）。
 - 资料上传与解析（PDF / DOCX / TXT）、RAG 权限内向量检索、模型密钥用户自带（BYOK）。
 - 会前准备、会中记录与问答、纪要、行动项、个人任务、未解决问题。
-- 端到端测试与权限/异常专项（M10）。
+- 纪要模板与富文本编辑、DOCX 导出、记录重点/决议/疑问标记。
+- 按用途模型路由、用户记忆中心、个人知识库、本地会议工作区。
+- 音频导入与转写（ASR 服务可配置，需在 `docker/.env` 填入真实 Key 后启用）。
+- 后端 API 测试、前端组件测试与 Playwright 浏览器 E2E。
 
-**明确尚未实现（非 MVP 范围）**
-- 音频转写、PDF 扫描件 OCR、MIME 嗅探、并发编辑乐观锁（见 `docs/design-baseline.md §四`）。
+**明确尚未实现 / 待验证（非 MVP 范围）**
+- 真实 ASR 转写需配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL` 后补验；实时流式 ASR 未纳入。
+- 本地目录授权与真实读写需按人工验收清单执行。
+- PDF 扫描件 OCR、MIME 嗅探、并发编辑乐观锁（见 `docs/design-baseline.md §四`）。
 
 ## 15. 后续开发规划
 
@@ -319,6 +324,7 @@ main（阶段验收通过后）
 | 前端类型检查 | `cd frontend && npm run typecheck` |
 | 前端 lint | `cd frontend && npm run lint` |
 | 前端测试 | `cd frontend && npm run test` |
+| 浏览器 E2E | `cd frontend && npm run test:e2e`（需先启动服务并配置模型） |
 | 前端构建 | `cd frontend && npm run build` |
 | 一键测试 | `scripts/test.ps1`（Windows）/ `scripts/test.sh` |
 

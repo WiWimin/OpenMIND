@@ -6,7 +6,7 @@
 
 OpenMIND 是「AI 会议个人助理」，MVP 闭环为：创建会议 → 导入资料 → 会前准备 → 会中记录与问答 → 生成纪要 → 提取行动项 → 个人任务跟进。
 
-当前 MVP 闭环（M00–M10）已实现：用户认证、会议管理、资料上传与解析、RAG 检索、会前准备、会中记录与问答、纪要与行动项、个人任务、未解决问题；模型密钥支持用户自带（BYOK，见 `docs/ai-design.md`）。
+当前 MVP 闭环（M00–M10）已实现：用户认证、会议管理、资料上传与解析、RAG 检索、会前准备、会中记录与问答、纪要与行动项、个人任务、未解决问题；并扩展了纪要模板、按用途模型路由、个人知识库、记忆中心、本地会议工作区和音频转写。模型密钥支持用户自带（BYOK，见 `docs/ai-design.md`）；音频转写需配置 ASR 服务。
 
 ## 架构分层与边界
 
@@ -69,6 +69,7 @@ npm run typecheck
 npm run lint
 npm run test
 npm run build
+npm run test:e2e   # 需先启动 docker 服务并配置模型/ASR 环境
 ```
 
 全套依赖：
@@ -77,7 +78,7 @@ npm run build
 docker compose -f docker/compose.dev.yml up --build   # 需先启动 Docker Desktop
 ```
 
-提交前必须通过：后端 `ruff check .` + `pytest`；前端 `npm run typecheck` + `npm run lint` + `npm run test`。
+提交前必须通过：后端 `ruff check .` + `pytest`；前端 `npm run typecheck` + `npm run lint` + `npm run test`。浏览器 E2E（`npm run test:e2e`）在具备模型/ASR 配置时执行，验收报告需区分真实服务、Mock 与未执行项。
 
 ## 分支与协作
 
