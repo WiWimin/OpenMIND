@@ -27,6 +27,9 @@ class MeetingMinutes(Base):
     source_record_ids: Mapped[list[str]] = mapped_column(
         _source_ids_type, nullable=False, default=list
     )
+    source_material_ids: Mapped[list[str]] = mapped_column(
+        _source_ids_type, nullable=False, default=list
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
     )

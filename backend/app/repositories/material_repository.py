@@ -95,7 +95,11 @@ def list_content_rows(
 
 
 def list_all_by_meeting(db: Session, meeting_id: str) -> list[MeetingMaterial]:
-    statement = select(MeetingMaterial).where(MeetingMaterial.meeting_id == meeting_id)
+    statement = (
+        select(MeetingMaterial)
+        .where(MeetingMaterial.meeting_id == meeting_id)
+        .order_by(MeetingMaterial.created_at.asc())
+    )
     return list(db.execute(statement).scalars().all())
 
 

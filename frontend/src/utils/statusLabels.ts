@@ -4,6 +4,7 @@ import type { MaterialProcessingStatus } from '@/types/material'
 import type { MeetingStatus } from '@/types/meeting'
 import type { MinutesStatus } from '@/types/minutes'
 import type { PreparationStatus } from '@/types/preparation'
+import type { RecordMarkerType } from '@/types/record'
 import type { TaskStatus } from '@/types/task'
 import type { StatusTone } from '@/types/ui'
 
@@ -34,6 +35,12 @@ export const preparationStatusMeta: Record<PreparationStatus, StatusMeta> = {
 export const minutesStatusMeta: Record<MinutesStatus, StatusMeta> = {
   draft: { label: '草稿', tone: 'neutral' },
   confirmed: { label: '已确认', tone: 'success' },
+}
+
+export const recordMarkerMeta: Record<RecordMarkerType, StatusMeta> = {
+  highlight: { label: '重点', tone: 'warning' },
+  decision: { label: '决议', tone: 'success' },
+  question: { label: '疑问', tone: 'info' },
 }
 
 export const actionItemStatusMeta: Record<ActionItemStatus, StatusMeta> = {

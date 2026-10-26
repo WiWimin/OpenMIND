@@ -20,6 +20,7 @@ class MeetingRecord(Base):
     record_type: Mapped[str] = mapped_column(
         String(20), nullable=False, default="manual", server_default="manual"
     )
+    marker_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_material_id: Mapped[str | None] = mapped_column(
         String(40), ForeignKey("meeting_materials.material_id"), nullable=True
     )

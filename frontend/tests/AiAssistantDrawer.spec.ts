@@ -35,6 +35,7 @@ const minutes: Minutes = {
   status: 'draft',
   version: 1,
   source_record_ids: [],
+  source_material_ids: [],
   created_at: '2026-10-01T09:00:00+08:00',
   updated_at: '2026-10-01T09:00:00+08:00',
 }

@@ -24,6 +24,7 @@ const record: MeetingRecord = {
   meeting_id: 'mtg_1',
   content: '讨论记录正文',
   record_type: 'manual',
+  marker_type: null,
   source_material_id: null,
   created_at: '2026-10-01T09:15:00+08:00',
   updated_at: '2026-10-01T09:15:00+08:00',
@@ -143,6 +144,23 @@ describe('RecordSection', () => {
     await flushPromises()
 
     expect(recordsApi.updateRecord).toHaveBeenCalledWith('rec_1', { content: '改' })
+  })
+
+  it('updates a record marker', async () => {
+    vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
+    vi.mocked(recordsApi.updateRecord).mockResolvedValue({
+      ...record,
+      marker_type: 'decision',
+    })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await button(wrapper, '决议')?.trigger('click')
+    await flushPromises()
+
+    expect(recordsApi.updateRecord).toHaveBeenCalledWith('rec_1', {
+      marker_type: 'decision',
+    })
   })
 
   it('deletes a record after confirmation', async () => {

@@ -8,6 +8,7 @@ export interface Minutes {
   status: MinutesStatus
   version: number
   source_record_ids: string[]
+  source_material_ids: string[]
   created_at: string
   updated_at: string
 }
@@ -15,6 +16,7 @@ export interface Minutes {
 export interface GenerateMinutesPayload {
   record_ids: string[]
   include_action_items?: boolean
+  include_materials?: boolean
 }
 
 export interface UpdateMinutesPayload {

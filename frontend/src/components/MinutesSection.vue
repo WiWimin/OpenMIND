@@ -2,6 +2,10 @@
   <div class="minutes-section">
     <div v-if="!readonly" class="minutes-section__toolbar">
       <AppButton :loading="generating" @click="generate">生成会议纪要</AppButton>
+      <label class="minutes-section__materials">
+        <input v-model="includeMaterials" type="checkbox" />
+        <span>参考会议资料</span>
+      </label>
       <AppButton v-if="generating" variant="ghost" @click="cancelGenerate">取消生成</AppButton>
     </div>
 
@@ -100,6 +104,7 @@ const { items, loading, error, load } = useAsyncList<Minutes>({
 const selected = ref<Minutes | null>(null)
 const draft = ref('')
 const generating = ref(false)
+const includeMaterials = ref(true)
 const saving = ref(false)
 const confirming = ref(false)
 const exporting = ref(false)
@@ -146,6 +151,7 @@ async function generate(): Promise<void> {
       {
         record_ids: [],
         include_action_items: true,
+        include_materials: includeMaterials.value,
       },
       controller.signal,
     )
@@ -235,7 +241,22 @@ async function exportDocx(): Promise<void> {
 
 .minutes-section__toolbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
+}
+
+.minutes-section__materials {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.minutes-section__materials input {
+  accent-color: var(--color-primary);
 }
 
 .minutes-section__state {

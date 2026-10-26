@@ -2,6 +2,7 @@
   <div class="record-item">
     <div class="record-item__meta">
       <AppTag :label="typeLabel" />
+      <StatusBadge v-if="markerMeta" :label="markerMeta.label" :tone="markerMeta.tone" />
       <span class="record-item__time">{{ time }}</span>
     </div>
 
@@ -15,6 +16,28 @@
 
     <template v-else>
       <p class="record-item__content">{{ record.content }}</p>
+      <div
+        v-if="!readonly"
+        class="record-item__marker-controls"
+        role="group"
+        aria-label="记录标记"
+      >
+        <span class="record-item__marker-caption">标记：</span>
+        <button
+          v-for="option in MARKER_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="record-item__marker-button"
+          :class="{
+            'record-item__marker-button--active': record.marker_type === option.value,
+          }"
+          :aria-pressed="record.marker_type === option.value"
+          :title="record.marker_type === option.value ? `取消${option.label}标记` : `设为${option.label}`"
+          @click="toggleMarker(option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
       <div v-if="!readonly" class="record-item__actions">
         <AppButton variant="ghost" @click="startEdit">编辑</AppButton>
         <AppButton variant="ghost" @click="emit('delete')">删除</AppButton>
@@ -29,14 +52,22 @@ import { computed, ref } from 'vue'
 import AppButton from '@/components/AppButton.vue'
 import AppTag from '@/components/AppTag.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
-import type { MeetingRecord, RecordType } from '@/types/record'
+import StatusBadge from '@/components/StatusBadge.vue'
+import type { MeetingRecord, RecordMarkerType, RecordType } from '@/types/record'
 import { formatDateTime } from '@/utils/datetime'
+import { recordMarkerMeta } from '@/utils/statusLabels'
 
 const TYPE_LABELS: Record<RecordType, string> = {
   manual: '手动记录',
   transcript: '转写',
   imported: '导入',
 }
+
+const MARKER_OPTIONS: { value: RecordMarkerType; label: string }[] = [
+  { value: 'highlight', label: '重点' },
+  { value: 'decision', label: '决议' },
+  { value: 'question', label: '疑问' },
+]
 
 const props = withDefaults(
   defineProps<{
@@ -50,7 +81,11 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ save: [content: string]; delete: [] }>()
+const emit = defineEmits<{
+  save: [content: string]
+  delete: []
+  marker: [marker: RecordMarkerType | null]
+}>()
 
 const editing = ref(false)
 const draft = ref('')
@@ -58,6 +93,13 @@ const error = ref('')
 
 const typeLabel = computed(() => TYPE_LABELS[props.record.record_type])
 const time = computed(() => formatDateTime(props.record.created_at))
+const markerMeta = computed(() =>
+  props.record.marker_type ? recordMarkerMeta[props.record.marker_type] : null,
+)
+
+function toggleMarker(marker: RecordMarkerType): void {
+  emit('marker', props.record.marker_type === marker ? null : marker)
+}
 
 function startEdit(): void {
   draft.value = props.record.content
@@ -114,6 +156,44 @@ function save(): void {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.record-item__marker-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.record-item__marker-caption {
+  color: var(--color-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.record-item__marker-button {
+  padding: 0.15rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-muted-foreground);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.record-item__marker-button:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-foreground);
+}
+
+.record-item__marker-button--active {
+  background: rgba(59, 111, 212, 0.1);
+  border-color: rgba(59, 111, 212, 0.35);
+  color: var(--color-primary-strong);
 }
 
 .record-item__actions {

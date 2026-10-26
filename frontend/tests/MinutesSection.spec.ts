@@ -36,6 +36,7 @@ const minutes: Minutes = {
   status: 'draft',
   version: 1,
   source_record_ids: ['rec_1'],
+  source_material_ids: [],
   created_at: '2026-10-01T10:00:00+08:00',
   updated_at: '2026-10-01T10:00:00+08:00',
 }
@@ -97,12 +98,40 @@ describe('MinutesSection', () => {
     await button(wrapper, '生成会议纪要')?.trigger('click')
     await flushPromises()
 
-    expect(minutesApi.generateMinutes).toHaveBeenCalledWith('mtg_1', {
-      record_ids: [],
-      include_action_items: true,
-    }, expect.anything())
+    expect(minutesApi.generateMinutes).toHaveBeenCalledWith(
+      'mtg_1',
+      {
+        record_ids: [],
+        include_action_items: true,
+        include_materials: true,
+      },
+      expect.anything(),
+    )
     expect(minutesApi.listMinutes).toHaveBeenCalledTimes(2)
     expect(wrapper.find('#minutes-content').exists()).toBe(true)
+  })
+
+  it('can generate without materials', async () => {
+    vi.mocked(minutesApi.listMinutes)
+      .mockResolvedValueOnce(listOf([]))
+      .mockResolvedValue(listOf([minutes]))
+    vi.mocked(minutesApi.generateMinutes).mockResolvedValue(minutes)
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('.minutes-section__materials input').setValue(false)
+    await button(wrapper, '生成会议纪要')?.trigger('click')
+    await flushPromises()
+
+    expect(minutesApi.generateMinutes).toHaveBeenCalledWith(
+      'mtg_1',
+      {
+        record_ids: [],
+        include_action_items: true,
+        include_materials: false,
+      },
+      expect.anything(),
+    )
   })
 
   it('confirms a minutes draft', async () => {
