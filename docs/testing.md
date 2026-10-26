@@ -51,6 +51,7 @@ npm run test:e2e:headed   # 观察真实交互
 - 真实 ASR 配置完成后设置 `E2E_EXPECT_ASR=1`，音频用例会断言转写成功并确认保存为记录；未配置时断言明确的失败原因。
 - AI 生成、音频转写、解析/向量化上传的前端超时上限为 240s（`frontend/src/api/timeouts.ts`），避免慢模型被全局 30s 超时误判为失败。
 - 本地目录授权依赖系统原生目录选择框，无法由 Playwright 驱动；按 `docs/test-reports/local-workspace-manual-acceptance.md` 人工验收。
+- E2E 会在开发库中创建唯一后缀的临时账号、会议与资料，不删除账号；仅限本地/开发环境运行，禁止指向生产库。
 
 ## 约定
 
