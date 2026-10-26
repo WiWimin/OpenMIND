@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   actionItemStatusMeta,
+  audioStatusMeta,
   issueStatusMeta,
   knowledgeStatusMeta,
   materialStatusMeta,
@@ -18,6 +19,11 @@ describe('status labels', () => {
   it('maps material processing statuses', () => {
     expect(materialStatusMeta.processed).toEqual({ label: '已解析', tone: 'success' })
     expect(materialStatusMeta.failed.tone).toBe('danger')
+  })
+
+  it('maps audio statuses', () => {
+    expect(audioStatusMeta.transcribed).toEqual({ label: '已转写', tone: 'success' })
+    expect(audioStatusMeta.failed.tone).toBe('danger')
   })
 
   it('maps knowledge base statuses', () => {

@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_model: str = ""
     embedding_dim: int = 1024
+    asr_api_base: str = ""
+    asr_api_key: str = ""
+    asr_model: str = ""
     allow_global_fallback: bool = False
     allow_private_model_endpoints: bool = False
 

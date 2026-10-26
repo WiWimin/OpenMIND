@@ -135,7 +135,7 @@ describe('MeetingDetailView', () => {
 
     expect(wrapper.text()).toContain('项目周会')
     expect(wrapper.text()).toContain('进度与风险')
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(7)
   })
 
   it('renders the material section on the materials tab', async () => {

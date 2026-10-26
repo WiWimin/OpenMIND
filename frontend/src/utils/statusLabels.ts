@@ -1,4 +1,5 @@
 import type { ActionItemStatus } from '@/types/actionItem'
+import type { AudioStatus } from '@/types/audio'
 import type { IssueStatus } from '@/types/issue'
 import type { KnowledgeStatus } from '@/types/knowledge'
 import type { MaterialProcessingStatus } from '@/types/material'
@@ -31,6 +32,14 @@ export const knowledgeStatusMeta: Record<KnowledgeStatus, StatusMeta> = {
   processing: { label: '解析中', tone: 'info' },
   processed: { label: '已索引', tone: 'success' },
   failed: { label: '解析失败', tone: 'danger' },
+}
+
+export const audioStatusMeta: Record<AudioStatus, StatusMeta> = {
+  uploaded: { label: '已上传', tone: 'neutral' },
+  processing: { label: '转写中', tone: 'info' },
+  transcribed: { label: '已转写', tone: 'success' },
+  failed: { label: '转写失败', tone: 'danger' },
+  confirmed: { label: '已保存', tone: 'success' },
 }
 
 export const preparationStatusMeta: Record<PreparationStatus, StatusMeta> = {

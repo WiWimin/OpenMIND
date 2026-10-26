@@ -96,3 +96,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 知识库接入问答 | 新增 `context_scope=knowledge_base`，仅检索知识库；来源新增 `document_id`/`document_name` |
 | 2026-10 | 记忆中心 | 用户显式维护角色/场景/表达偏好/默认纪要模板；按用途注入准备/纪要/问答 Prompt；迁移 `0017` |
 | 2026-10 | 本地会议工作区 | 浏览器授权目录后导入资料、导出最新纪要 DOCX；无后端路径访问，无数据库迁移 |
+| 2026-10 | 音频导入与转写 | 音频上传、同步 ASR、转写修订、确认生成记录；迁移 `0018`；实时 ASR 暂不做 |

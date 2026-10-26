@@ -353,6 +353,45 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 按用途筛选：会前准备使用角色/场景/表达偏好；纪要使用表达偏好与模板偏好；问答使用表达偏好；行动项/问题提取不使用记忆。
 - 所有读取和写入严格限定当前用户。
 
+### 2.8 音频转写
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| POST | `/api/v1/meetings/{meeting_id}/audio` | 上传 MP3 / WAV / M4A / WEBM，转写为文本 |
+| GET | `/api/v1/meetings/{meeting_id}/audio` | 音频列表 |
+| GET | `/api/v1/audio/{audio_id}` | 音频详情 |
+| PATCH | `/api/v1/audio/{audio_id}` | 修改转写文本 |
+| POST | `/api/v1/audio/{audio_id}/retry` | 重新转写 |
+| POST | `/api/v1/audio/{audio_id}/confirm` | 确认转写并创建会议记录 |
+| DELETE | `/api/v1/audio/{audio_id}` | 删除未确认音频 |
+
+音频对象：
+
+```json
+{
+  "audio_id": "aud_xxx",
+  "meeting_id": "mtg_xxx",
+  "file_name": "meeting.mp3",
+  "type": "mp3",
+  "status": "transcribed",
+  "transcript": "转写文本……",
+  "error": null,
+  "record_id": null,
+  "created_at": "2026-10-01T09:00:00+08:00",
+  "updated_at": "2026-10-01T09:00:00+08:00"
+}
+```
+
+`status`：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`。
+
+规则：
+- 上传使用 `multipart/form-data`，字段 `file`；大小上限沿用 `MAX_UPLOAD_MB`。
+- 转写同步调用 OpenAI 兼容的 `/audio/transcriptions`，服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`；未配置返回 `400 MODEL_CONFIG_REQUIRED`。
+- 转写成功后用户可修订文本；只有 `transcribed` 且文本非空才能确认。
+- 确认创建一条 `record_type=transcript` 的会议记录，确认幂等；已确认音频不能重新转写或删除。
+- 失败可重试；失败原因返回 `error`，不覆盖已有成功文本。
+- 所有音频、转写和记录严格限定当前用户；实时流式转写不在当前范围。
+
 ## 三、会议管理（M02，A）
 
 | 方法 | 路径 | 用途 |

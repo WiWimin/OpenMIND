@@ -13,6 +13,10 @@ def save_bytes(storage_dir: str, *, relative_key: str, data: bytes) -> None:
     path.write_bytes(data)
 
 
+def read_bytes(storage_dir: str, relative_key: str) -> bytes:
+    return _resolve(storage_dir, relative_key).read_bytes()
+
+
 def delete_object(storage_dir: str, relative_key: str) -> None:
     try:
         _resolve(storage_dir, relative_key).unlink()
