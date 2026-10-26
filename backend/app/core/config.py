@@ -1,6 +1,21 @@
+from __future__ import annotations
+
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_WEAK_SECRET_KEYS = {
+    "",
+    "change-me",
+    "changeme",
+    "secret",
+    "your-secret",
+    "your-secret-key",
+    "dev-secret",
+    "test-secret",
+}
+_LOCAL_APP_ENVS = {"development", "dev", "test"}
 
 
 class Settings(BaseSettings):
@@ -15,6 +30,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_v1_prefix: str = "/api/v1"
     secret_key: str = "change-me"
+    secret_key_previous: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
 
@@ -37,8 +53,18 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_model: str = ""
     embedding_dim: int = 1024
-
     allow_global_fallback: bool = False
+    allow_private_model_endpoints: bool = False
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self) -> Settings:
+        normalized = self.secret_key.strip().lower()
+        weak = normalized in _WEAK_SECRET_KEYS or len(self.secret_key) < 32
+        if weak and self.app_env.strip().lower() not in _LOCAL_APP_ENVS:
+            raise ValueError(
+                "SECRET_KEY 必须设置为至少 32 字符的随机值，且不能使用默认占位值"
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

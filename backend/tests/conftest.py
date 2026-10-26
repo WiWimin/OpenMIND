@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 
 import pytest
@@ -6,6 +7,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+
+os.environ.setdefault("SECRET_KEY", "test-secret-key-" + "a" * 32)
 
 import app.models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.db.base import Base

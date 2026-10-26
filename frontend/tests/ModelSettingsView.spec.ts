@@ -133,4 +133,26 @@ describe('ModelSettingsView', () => {
 
     expect(settingsApi.clearModelConfig).toHaveBeenCalledTimes(1)
   })
+
+  it('offers a reset action when existing encrypted config cannot be read', async () => {
+    vi.mocked(settingsApi.getModelConfig)
+      .mockRejectedValueOnce({
+        status: 'error',
+        error_code: 'MODEL_CONFIG_INVALID',
+        message: '模型密钥无法解密，请重新保存模型配置',
+        retryable: false,
+      })
+      .mockResolvedValueOnce(configEmpty)
+    vi.mocked(settingsApi.clearModelConfig).mockResolvedValue({ deleted: true })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('模型密钥无法解密')
+    await buttonByText(wrapper, '恢复服务端默认').trigger('click')
+    await buttonByText(wrapper, '恢复默认').trigger('click')
+    await flushPromises()
+
+    expect(settingsApi.clearModelConfig).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('模型密钥无法解密')
+  })
 })

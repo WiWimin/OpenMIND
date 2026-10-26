@@ -5,7 +5,13 @@
       description="自备大模型与向量模型的 API 配置（BYOK）。用户配置优先，未设置时回退服务端默认。"
     />
 
-    <ErrorMessage v-if="loadError" :error="loadError" retryable @retry="loadConfig" />
+    <template v-if="loadError">
+      <ErrorMessage :error="loadError" retryable @retry="loadConfig" />
+      <AppButton variant="ghost" :loading="store.saving" @click="resetDialogOpen = true">
+        恢复服务端默认
+      </AppButton>
+      <ErrorMessage v-if="formError" :error="formError" />
+    </template>
     <LoadingSpinner v-else-if="store.loading && !store.config" />
 
     <template v-else>
@@ -267,6 +273,7 @@ async function confirmReset(): Promise<void> {
   formError.value = null
   try {
     await store.clear()
+    loadError.value = null
     resetForms()
     toast.success('已恢复服务端默认配置')
   } catch (err) {

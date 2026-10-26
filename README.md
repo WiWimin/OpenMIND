@@ -110,13 +110,14 @@ cp docker/.env.example docker/.env          # Windows: copy docker\.env.example 
 | `POSTGRES_*` | 数据库连接信息 | `openmind` / `change-me` / `openmind` |
 | `DATABASE_URL` | SQLAlchemy 连接串（宿主机视角） | `postgresql+psycopg://…@localhost:5432/openmind` |
 | `STORAGE_DIR` / `MAX_UPLOAD_MB` | 文件存储目录与上传大小上限 | `./storage` / `20` |
-| `LLM_*` / `EMBEDDING_*` | 大模型与向量模型配置（服务端全局默认，可被用户 BYOK 覆盖） | `https://api.example.com/v1` 等 |
+| `LLM_*` / `EMBEDDING_*` | 服务端全局模型配置；默认仅供显式开启回退时使用 | `https://api.example.com/v1` 等 |
+| `ALLOW_GLOBAL_FALLBACK` | 是否允许未配置 BYOK 的用户回退到服务端全局配置；默认 `false` | `false` |
 | `CORS_ORIGINS` | 允许的前端来源 | `http://localhost:5173` |
 | `VITE_API_BASE_URL` | 前端 axios `baseURL` | `http://localhost:8000/api/v1` |
 | `VITE_APP_ENV` | 预留的构建期环境标识（当前前端未消费） | `development` |
 | `VITE_DEV_PROXY_TARGET` | 开发期 Vite 代理目标（示例中默认注释；容器内由 Compose 注入 `http://backend:8000`） | `http://localhost:8000` |
 
-> **安全约束**：LLM / Embedding 密钥只存在于服务端环境变量，不得硬编码，也不能下发前端；`docker/.env` 永不入库。
+> **安全约束**：LLM / Embedding 密钥只能存在于服务端环境变量或用户 BYOK 的加密存储中；任何接口不得返回明文，`docker/.env` 永不入库。非开发环境必须配置至少 32 字符的随机 `SECRET_KEY`。默认要求用户配置 BYOK；只有显式设置 `ALLOW_GLOBAL_FALLBACK=true` 时才允许未配置用户使用服务端全局 Key。
 
 ## 7. Docker 启动方式
 

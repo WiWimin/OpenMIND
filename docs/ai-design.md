@@ -86,9 +86,12 @@ class LLMClient:
 ### 3.5 模型配置来源（用户自带 BYOK）
 
 - 每个用户可通过 `PUT /api/v1/me/settings/model` 自备 LLM / Embedding 配置（`api_base` + `api_key` + `model`）。
-- 密钥 `Fernet` 加密存库（`user_model_configs`），密钥由服务端 `SECRET_KEY` 派生；`GET` 仅返回脱敏值，绝不回显明文。
+- 密钥 `Fernet` 加密存库（`user_model_configs`），密钥由服务端 `SECRET_KEY` 派生；`GET` 仅返回脱敏值，绝不回显明文。来源为 `global`/`none` 时 `_masked` 为空，不向用户泄露全局密钥片段。
 - 保存时 probe 实测校验：Embedding 必须返回 **1024** 维向量；LLM 需能正常生成；失败返回 `MODEL_CONFIG_INVALID`（400）。
-- 解析优先级：用户配置 > 服务端全局（`settings.llm_*`/`embedding_*`）；全局留空即不兜底。
+- `api_base` 默认只允许 HTTPS 公网地址；拒绝本机、私有/保留 IP、URL 内嵌凭证及 query/fragment。自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS`，该开关会扩大 SSRF 面，仅限可信部署。应用层校验不能完全消除 DNS rebinding，部署侧仍应限制出站访问。
+- `SECRET_KEY` 在非开发环境必须为至少 32 字符的随机值；轮换时通过 `SECRET_KEY_PREVIOUS` 保留旧密钥解密既有密文，新加密始终使用当前 `SECRET_KEY`。解密失败返回 `MODEL_CONFIG_INVALID`，用户可清除并重新保存配置。
+- 默认要求用户配置 BYOK；`ALLOW_GLOBAL_FALLBACK=false` 时未配置用户返回 `MODEL_CONFIG_REQUIRED`（400），不会静默使用服务端全局 Key。仅显式开启 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局”回退。
+- 模型额度不足返回 `MODEL_QUOTA_EXCEEDED`（402）；密钥无效返回 `MODEL_CONFIG_INVALID`（400）。
 - Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），用户自备模型也必须为 1024 维。
 
 ## 四、Embedding 与文本切分（`ai/embeddings/`）

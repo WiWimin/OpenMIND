@@ -45,6 +45,18 @@ def test_embed_returns_vectors() -> None:
     assert all(len(v) == DIM for v in vectors)
 
 
+def test_embed_requests_configured_dimensions() -> None:
+    payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json_body(request))
+        return _ok_response(request, count=1)
+
+    _client(handler).embed(["x"])
+
+    assert payloads[0]["dimensions"] == DIM
+
+
 def test_embed_batches_large_input() -> None:
     batches: list[int] = []
 

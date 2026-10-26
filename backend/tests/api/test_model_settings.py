@@ -3,8 +3,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import url_validation
+from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.model_config import UserModelConfig
+from app.models.user import User
 from app.services import model_config_service
 
 REGISTER = "/api/v1/auth/register"
@@ -12,6 +15,15 @@ PASSWORD = "secret123"
 
 LLM_KEY = "sk-llm-secret-key"
 EMB_KEY = "sk-emb-secret-key"
+
+
+@pytest.fixture(autouse=True)
+def _public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        url_validation,
+        "_resolve_host",
+        lambda host, port: {"93.184.216.34"},
+    )
 
 
 @pytest.fixture()
@@ -78,6 +90,71 @@ def test_config_isolated_per_user(client: TestClient, fake_probes: None) -> None
     assert bob_read["llm_model"] != "custom-model"
     assert bob_read["llm_source"] == "none"
     assert bob_read["llm_api_key_masked"] == ""
+
+
+def test_global_keys_are_not_masked_or_returned(
+    client: TestClient, fake_probes: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = get_settings()
+    monkeypatch.setattr(
+        model_config_service,
+        "get_settings",
+        lambda: base.model_copy(
+            update={
+                "llm_api_base": "https://example.com/v1",
+                "llm_api_key": "sk-global-secret",
+                "llm_model": "global-model",
+                "embedding_api_base": "https://example.com/v1",
+                "embedding_api_key": "sk-global-embedding",
+                "embedding_model": "global-embedding",
+                "allow_global_fallback": True,
+            }
+        ),
+    )
+    alice = _auth(client, "alice")
+    bob = _auth(client, "bob")
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=alice)
+
+    bob_read = client.get("/api/v1/me/settings/model", headers=bob).json()["data"]
+    assert bob_read["llm_source"] == "global"
+    assert bob_read["llm_api_key_masked"] == ""
+    assert bob_read["embedding_source"] == "global"
+    assert bob_read["embedding_api_key_masked"] == ""
+
+
+def test_private_api_base_rejected(client: TestClient, fake_probes: None) -> None:
+    headers = _auth(client)
+    payload = _payload()
+    payload["llm_api_base"] = "https://127.0.0.1:8000/v1"
+
+    response = client.put("/api/v1/me/settings/model", json=payload, headers=headers)
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "MODEL_CONFIG_INVALID"
+
+
+def test_undecryptable_key_returns_model_config_invalid(
+    client: TestClient, db_session: Session
+) -> None:
+    headers = _auth(client)
+    user = db_session.execute(select(User)).scalars().one()
+    db_session.add(
+        UserModelConfig(
+            user_id=user.user_id,
+            llm_api_base="https://example.com/v1",
+            llm_api_key_enc="not-a-valid-fernet-token",
+            llm_model="custom-model",
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/api/v1/me/settings/model", headers=headers)
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "MODEL_CONFIG_INVALID"
+
+    deleted = client.delete("/api/v1/me/settings/model", headers=headers)
+    assert deleted.status_code == 200
+    assert client.get("/api/v1/me/settings/model", headers=headers).status_code == 200
 
 
 def test_embedding_dim_mismatch_rejected(
