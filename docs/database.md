@@ -256,10 +256,27 @@
 - 删除文档时同步删除分块与向量索引。
 - 知识库与会议资料使用独立表，检索范围不得自动混用。
 
+### 3.14 `user_memories` 用户记忆
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | VARCHAR(40) | PK, FK→users | 每个用户最多一行 |
+| `role` | VARCHAR(100) | ? | 职业/角色 |
+| `work_scenarios` | TEXT | ? | 工作场景 |
+| `communication_style` | TEXT | ? | 表达偏好 |
+| `preferred_minutes_template` | VARCHAR(20) | ? | `standard` / `concise` / `task_list` |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 记忆由用户显式维护；不允许自动写入未确认的偏好。
+- 删除记忆只删除该用户画像，不影响会议、纪要或任务数据。
+- 用途筛选在服务层完成，不把全部记忆无条件注入所有 AI 任务。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
 - User — UserModelConfig：一对一（`user_model_configs.user_id` 主键）
+- User — UserMemory：一对一（`user_memories.user_id` 主键）
 - User — KnowledgeDocument：一对多
 - KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多

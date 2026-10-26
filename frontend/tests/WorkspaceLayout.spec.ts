@@ -50,7 +50,7 @@ describe('WorkspaceLayout', () => {
     expect(wrapper.text()).toContain('Alice')
   })
 
-  it('exposes the knowledge base and model settings navigation entries', () => {
+  it('exposes the knowledge base, memory and model settings navigation entries', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const wrapper = mount(WorkspaceLayout, {
@@ -60,6 +60,7 @@ describe('WorkspaceLayout', () => {
       },
     })
     expect(wrapper.text()).toContain('知识库')
+    expect(wrapper.text()).toContain('记忆中心')
     expect(wrapper.text()).toContain('模型设置')
   })
 

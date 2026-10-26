@@ -105,7 +105,6 @@ describe('MinutesSection', () => {
         record_ids: [],
         include_action_items: true,
         include_materials: true,
-        template: 'standard',
       },
       expect.anything(),
     )
@@ -131,7 +130,6 @@ describe('MinutesSection', () => {
         record_ids: [],
         include_action_items: true,
         include_materials: false,
-        template: 'standard',
       },
       expect.anything(),
     )

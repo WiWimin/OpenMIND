@@ -7,7 +7,7 @@ from app.ai.prompts import build_organize
 from app.ai.rag import VectorRetriever
 from app.core.exceptions import AppError
 from app.repositories import record_repository
-from app.services import meeting_service
+from app.services import meeting_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -66,6 +66,7 @@ def chat(
             if context_scope == "knowledge_base"
             else _recent_record_context(db, meeting_id)
         ),
+        memory_context=memory_service.memory_context_for(db, user_id, "chat"),
     )
 
 

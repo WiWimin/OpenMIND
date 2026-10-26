@@ -38,7 +38,7 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         preparation_service,
         "generate_draft",
-        lambda meeting, snippets, user_goal, config=None: PreparationDraft(
+        lambda meeting, snippets, user_goal, config=None, **kwargs: PreparationDraft(
             summary="会前摘要", checklist=["确认里程碑", "排查风险"]
         ),
     )
@@ -56,7 +56,7 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     class _InsufficientChat:
-        def answer(self, question, *, user_id, scope, current_meeting_id, records=None):
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None, **kwargs):
             return ChatAnswer(answer="无法确认", sources=[], insufficient_evidence=True)
 
     monkeypatch.setattr(

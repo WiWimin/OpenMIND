@@ -94,3 +94,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 按用途模型路由 | `user_model_configs.llm_purpose_models` 覆盖准备/问答/纪要/提取模型名；共享 LLM 地址与密钥；迁移 `0015` |
 | 2026-10 | 个人知识库核心 | 独立 `knowledge_documents` / `knowledge_chunks`；上传、解析、索引、检索、删除；迁移 `0016` |
 | 2026-10 | 知识库接入问答 | 新增 `context_scope=knowledge_base`，仅检索知识库；来源新增 `document_id`/`document_name` |
+| 2026-10 | 记忆中心 | 用户显式维护角色/场景/表达偏好/默认纪要模板；按用途注入准备/纪要/问答 Prompt；迁移 `0017` |

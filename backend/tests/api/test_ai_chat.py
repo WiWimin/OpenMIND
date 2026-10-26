@@ -65,7 +65,7 @@ def test_chat_meeting_not_found(client: TestClient) -> None:
 
 def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeChat:
-        def answer(self, question, *, user_id, scope, current_meeting_id, records=None):
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None, **kwargs):
             return ChatAnswer(
                 answer="根据材料，结论是……",
                 sources=[Source("mtg_old", "mat_old", None, "相关原文片段")],
@@ -99,7 +99,7 @@ def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
 
 def test_chat_include_sources_false(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeChat:
-        def answer(self, question, *, user_id, scope, current_meeting_id, records=None):
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None, **kwargs):
             return ChatAnswer(
                 answer="答案",
                 sources=[Source("mtg_old", "mat_old", None, "片段")],

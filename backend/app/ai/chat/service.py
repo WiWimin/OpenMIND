@@ -57,6 +57,7 @@ class ChatService:
         scope: str = "current_meeting",
         current_meeting_id: str | None = None,
         records: list[RecordContext] | None = None,
+        memory_context: str = "",
     ) -> ChatAnswer:
         chunks = self.retriever.retrieve(
             question,
@@ -75,7 +76,13 @@ class ChatService:
         contexts.extend(
             f"[记录 {record.record_id}] {record.content}" for record in record_context
         )
-        messages = build_chat({"question": question, "contexts": contexts})
+        messages = build_chat(
+            {
+                "question": question,
+                "contexts": contexts,
+                "memory_context": memory_context,
+            }
+        )
         answer = self.llm.chat(messages).text
         sources = [
             Source(

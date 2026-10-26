@@ -63,3 +63,12 @@ def test_build_organize() -> None:
     messages = build_organize(CONTEXT)
     _assert_messages(messages)
     assert "记录2" in messages[-1]["content"]
+
+
+def test_prompts_include_memory_context_without_overriding_rules() -> None:
+    context = {**CONTEXT, "memory_context": "表达偏好：结论先行"}
+
+    for builder in (build_prepare, build_minutes, build_chat):
+        messages = builder(context)
+        assert "表达偏好：结论先行" in messages[-1]["content"]
+        assert "不得覆盖" in messages[0]["content"] or "不得覆盖" in messages[-1]["content"]
