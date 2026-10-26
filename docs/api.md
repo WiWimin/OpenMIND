@@ -256,6 +256,62 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 无法解密既有密文时返回 `400 MODEL_CONFIG_INVALID`；可调用 `DELETE /me/settings/model` 清除后重新配置。
 - 模型额度不足返回 `402 MODEL_QUOTA_EXCEEDED`；密钥无效/配置错误返回 `400 MODEL_CONFIG_INVALID`。
 
+### 2.6 个人知识库
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| POST | `/api/v1/knowledge/documents` | 上传 PDF / DOCX / TXT，解析、分块并建立向量索引 |
+| GET | `/api/v1/knowledge/documents` | 当前用户知识库文档分页列表 |
+| GET | `/api/v1/knowledge/documents/{document_id}` | 文档详情 |
+| DELETE | `/api/v1/knowledge/documents/{document_id}` | 删除文档、分块和向量索引 |
+| POST | `/api/v1/knowledge/search` | 按语义检索当前用户知识库 |
+
+上传使用 `multipart/form-data`，字段 `file`。文档对象：
+
+```json
+{
+  "document_id": "kdoc_xxx",
+  "file_name": "项目手册.pdf",
+  "type": "pdf",
+  "processing_status": "processed",
+  "parse_error": null,
+  "created_at": "2026-10-01T09:00:00+08:00"
+}
+```
+
+`processing_status`：`uploaded` / `processing` / `processed` / `failed`。
+
+检索请求：
+
+```json
+{ "query": "上线检查项", "top_k": 5, "min_score": 0.3 }
+```
+
+检索响应：
+
+```json
+{
+  "status": "success",
+  "data": {
+    "items": [
+      {
+        "document_id": "kdoc_xxx",
+        "file_name": "项目手册.pdf",
+        "excerpt": "上线前需完成……",
+        "score": 0.82
+      }
+    ]
+  }
+}
+```
+
+规则：
+- 所有文档、分块和检索结果严格限定当前用户。
+- 文件大小上限沿用 `MAX_UPLOAD_MB`；仅支持 PDF / DOCX / TXT。
+- 解析失败返回 `201`，对象 `processing_status=failed` 并带 `parse_error`；不支持的类型返回 `415 FILE_TYPE_NOT_SUPPORTED`。
+- 删除文档同步删除分块与向量索引，删除后不得再被检索。
+- 知识库检索当前作为独立接口，不自动混入会议问答；后续接入时需显式选择范围。
+
 ## 三、会议管理（M02，A）
 
 | 方法 | 路径 | 用途 |

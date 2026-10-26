@@ -226,10 +226,42 @@
 - 用途模型名最长 100 字符，空值不得保存。
 - 删除用户模型配置时同时清除用途覆盖。
 
+### 3.12 `knowledge_documents` 个人知识库文档
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `document_id` | VARCHAR(40) | PK | `kdoc_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户 |
+| `file_name` | VARCHAR(255) | NN | 原始文件名 |
+| `type` | VARCHAR(30) | NN | `pdf` / `docx` / `txt` |
+| `storage_key` | TEXT | NN | 本地存储相对路径 |
+| `content` | TEXT | ? | 解析文本 |
+| `processing_status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
+| `parse_error` | TEXT | ? | 解析/索引失败原因 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+### 3.13 `knowledge_chunks` 知识库分块
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `chunk_id` | VARCHAR(40) | PK | `kchk_` 前缀 |
+| `document_id` | VARCHAR(40) | FK→knowledge_documents, NN, IDX | 来源文档 |
+| `content` | TEXT | NN | 分块文本 |
+| `chunk_index` | INTEGER | NN | 从 0 开始 |
+| `embedding` | `vector(1024)` | ? | 维度固定 1024 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 唯一约束：`UNIQUE(document_id, chunk_index)`。
+- 删除文档时同步删除分块与向量索引。
+- 知识库与会议资料使用独立表，检索范围不得自动混用。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
 - User — UserModelConfig：一对一（`user_model_configs.user_id` 主键）
+- User — KnowledgeDocument：一对多
+- KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多
 - Meeting — MeetingRecord：一对多

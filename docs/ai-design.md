@@ -157,6 +157,15 @@ class Retriever:
 - `api.md 五.7` 的 `sources[]` 可来自材料分块或当前会议记录：材料来源有 `material_id`，记录来源有 `record_id` 且 `material_id=null`。
 - 不得伪造引用；材料 `excerpt` 取自命中分块原文，记录 `excerpt` 取自当前会议记录原文。
 
+### 5.4 个人知识库检索
+
+- 载体：`knowledge_chunks.embedding vector(1024)`，按 `knowledge_documents.user_id` 限定当前用户。
+- 导入：PDF / DOCX / TXT → 解析 → 分块（800 字符、120 重叠）→ Embedding → 写入分块。
+- 检索：查询向量与当前用户全部分块计算余弦相似度，取前 `top_k`，低于 `min_score` 丢弃。
+- 返回 `document_id`、文件名、命中片段和分数；不伪造来源。
+- 当前知识库检索是独立接口，不自动混入会议问答；接入问答时必须显式选择范围，避免无关内容污染回答。
+- 删除文档同步删除分块和向量，删除后不得再被检索。
+
 ## 六、文件解析链路（M03，`ai/parsers/`）
 
 ### 6.1 处理状态机（`meeting_materials.processing_status`）

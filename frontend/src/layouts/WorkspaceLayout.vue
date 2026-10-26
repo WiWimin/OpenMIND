@@ -54,6 +54,18 @@
           <span class="workspace__nav-label">个人任务</span>
         </RouterLink>
 
+        <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.knowledge }">
+          <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
+            <path
+              d="M5 4.5h9.5A3.5 3.5 0 0 1 18 8v11.5H8.5A3.5 3.5 0 0 1 5 16V4.5Z"
+              stroke="currentColor"
+              stroke-width="1.6"
+            />
+            <path d="M5 16a3 3 0 0 1 3-3h10" stroke="currentColor" stroke-width="1.6" />
+          </svg>
+          <span class="workspace__nav-label">知识库</span>
+        </RouterLink>
+
         <RouterLink class="workspace__nav-link" :to="{ name: ROUTE_NAMES.settings }">
           <svg class="workspace__icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
             <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />

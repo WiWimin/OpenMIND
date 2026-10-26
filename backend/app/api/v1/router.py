@@ -6,6 +6,7 @@ from app.api.v1 import (
     auth,
     health,
     issues,
+    knowledge,
     materials,
     meetings,
     minutes,
@@ -27,4 +28,5 @@ api_router.include_router(minutes.router)
 api_router.include_router(action_items.router)
 api_router.include_router(tasks.router)
 api_router.include_router(issues.router)
+api_router.include_router(knowledge.router)
 api_router.include_router(settings.router)
