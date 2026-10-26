@@ -90,6 +90,8 @@ def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
             "meeting_id": "mtg_old",
             "material_id": "mat_old",
             "record_id": None,
+            "document_id": None,
+            "document_name": None,
             "excerpt": "相关原文片段",
         }
     ]

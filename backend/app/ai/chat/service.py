@@ -16,10 +16,12 @@ class RecordContext:
 
 @dataclass(frozen=True)
 class Source:
-    meeting_id: str
+    meeting_id: str | None
     material_id: str | None
     record_id: str | None
     excerpt: str
+    document_id: str | None = None
+    document_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,7 +64,7 @@ class ChatService:
             scope=scope,
             current_meeting_id=current_meeting_id,
         )
-        record_context = records or []
+        record_context = [] if scope == "knowledge_base" else (records or [])
         if not chunks and not record_context:
             return ChatAnswer(
                 answer="根据现有材料无法确认该问题的答案。",
@@ -81,6 +83,8 @@ class ChatService:
                 material_id=chunk.material_id,
                 record_id=chunk.record_id,
                 excerpt=chunk.excerpt,
+                document_id=getattr(chunk, "document_id", None),
+                document_name=getattr(chunk, "document_name", None),
             )
             for chunk in chunks
         ]

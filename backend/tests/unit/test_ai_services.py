@@ -125,6 +125,26 @@ def test_chat_with_sources() -> None:
     assert answer.sources[0].meeting_id == "meet-1"
 
 
+def test_chat_maps_knowledge_source() -> None:
+    chunks = [
+        SimpleNamespace(
+            meeting_id=None,
+            material_id=None,
+            record_id=None,
+            document_id="kdoc_1",
+            document_name="notes.txt",
+            excerpt="知识库片段",
+        )
+    ]
+    service = ChatService(FakeLLM(text="根据知识库回答"), FakeRetriever(chunks))
+    answer = service.answer("问题", user_id="u1", scope="knowledge_base")
+
+    assert answer.insufficient_evidence is False
+    assert answer.sources[0].document_id == "kdoc_1"
+    assert answer.sources[0].document_name == "notes.txt"
+    assert answer.sources[0].meeting_id is None
+
+
 def test_chat_insufficient_evidence() -> None:
     service = ChatService(FakeLLM(), FakeRetriever([]))
     answer = service.answer("可以吗？", user_id="u1")

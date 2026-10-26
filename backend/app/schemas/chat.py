@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ChatContextScope(StrEnum):
     current_meeting = "current_meeting"
     current_and_history = "current_and_history"
+    knowledge_base = "knowledge_base"
 
 
 class ChatRequest(BaseModel):
@@ -17,9 +18,11 @@ class ChatRequest(BaseModel):
 
 
 class ChatSource(BaseModel):
-    meeting_id: str
+    meeting_id: str | None
     material_id: str | None
     record_id: str | None
+    document_id: str | None = None
+    document_name: str | None = None
     excerpt: str
 
 

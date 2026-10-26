@@ -1,10 +1,12 @@
 // 与后端 schemas/chat.py 对齐
-export type ChatContextScope = 'current_meeting' | 'current_and_history'
+export type ChatContextScope = 'current_meeting' | 'current_and_history' | 'knowledge_base'
 
 export interface ChatSource {
-  meeting_id: string
+  meeting_id: string | null
   material_id: string | null
   record_id: string | null
+  document_id?: string | null
+  document_name?: string | null
   excerpt: string
 }
 

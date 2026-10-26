@@ -6,7 +6,7 @@ def build_chat(context: dict) -> list[dict[str, str]]:
     contexts = context.get("contexts", [])
     joined = "\n\n".join(contexts)
     system = (
-        "你是会议助理，基于提供的会议材料回答用户问题。"
+        "你是个人会议助理，基于提供的会议资料或个人知识库片段回答用户问题。"
         "若材料不足以回答，请明确说明无法确认，不要编造。"
         "只依据材料作答，不要输出材料之外的补充内容。直接输出回答，不要输出 JSON。"
     )
