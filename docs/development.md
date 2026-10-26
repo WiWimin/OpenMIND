@@ -21,6 +21,7 @@ cp docker/.env.example docker/.env          # Windows: copy docker\.env.example 
 - 非开发环境必须使用至少 32 字符的随机 `SECRET_KEY`；默认 `change-me` 会被拒绝启动。
 - 默认要求用户配置 BYOK（`ALLOW_GLOBAL_FALLBACK=false`）；仅开发/管理员联调时可显式开启全局 Key 回退。
 - 自建本地模型（HTTP/私有地址）需显式设置 `ALLOW_PRIVATE_MODEL_ENDPOINTS=true`；默认只允许 HTTPS 公网地址。
+- 音频转写需要服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`（OpenAI 兼容 `/audio/transcriptions`）。未配置时音频接口返回 `MODEL_CONFIG_REQUIRED`，前端显示明确错误。
 
 ### 轮换 SECRET_KEY
 

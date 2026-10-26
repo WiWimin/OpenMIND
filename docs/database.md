@@ -272,6 +272,28 @@
 - 删除记忆只删除该用户画像，不影响会议、纪要或任务数据。
 - 用途筛选在服务层完成，不把全部记忆无条件注入所有 AI 任务。
 
+### 3.15 `meeting_audio` 会议音频
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `audio_id` | VARCHAR(40) | PK | `aud_` 前缀 |
+| `meeting_id` | VARCHAR(40) | FK→meetings, NN, IDX | 所属会议 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户 |
+| `file_name` | VARCHAR(255) | NN | 原始文件名 |
+| `type` | VARCHAR(20) | NN | `mp3` / `wav` / `m4a` / `webm` |
+| `storage_key` | TEXT | NN | 本地存储相对路径 |
+| `transcript` | TEXT | ? | 可编辑转写文本 |
+| `status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
+| `error` | TEXT | ? | 转写失败原因 |
+| `record_id` | VARCHAR(40) | FK→meeting_records, ? | 确认后生成的记录 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 状态：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`。
+- 确认后创建 `record_type=transcript` 的会议记录，并写入 `record_id`。
+- 已确认音频不能重新转写或删除。
+- 删除未确认音频时同步删除文件。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
@@ -281,7 +303,9 @@
 - KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多
+- Meeting — MeetingAudio：一对多
 - Meeting — MeetingRecord：一对多
+- MeetingAudio — MeetingRecord：0..1 对 0..1（`record_id`）
 - Meeting — Preparation：一对多
 - Meeting — MeetingMinutes：一对多
 - Meeting — ActionItem：一对多

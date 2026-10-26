@@ -67,12 +67,21 @@
           <h2 class="meeting-detail__section-title">记录与问答</h2>
           <div class="meeting-detail__split">
             <div class="meeting-detail__split-main">
-              <RecordSection :meeting-id="meetingId" :readonly="isArchived" />
+              <RecordSection :key="recordsKey" :meeting-id="meetingId" :readonly="isArchived" />
             </div>
             <aside class="meeting-detail__split-aside">
               <ChatPanel :meeting-id="meetingId" :readonly="isArchived" />
             </aside>
           </div>
+        </section>
+
+        <section v-else-if="activeTab === 'audio'" class="meeting-detail__section">
+          <h2 class="meeting-detail__section-title">音频转写</h2>
+          <AudioSection
+            :meeting-id="meetingId"
+            :readonly="isArchived"
+            @saved="recordsKey += 1"
+          />
         </section>
 
         <section v-else-if="activeTab === 'minutes'" class="meeting-detail__section">
@@ -185,6 +194,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppButton from '@/components/AppButton.vue'
 import ActionItemSection from '@/components/ActionItemSection.vue'
 import AiAssistantDrawer from '@/components/AiAssistantDrawer.vue'
+import AudioSection from '@/components/AudioSection.vue'
 import AiAssistantEntry from '@/components/AiAssistantEntry.vue'
 import ChatPanel from '@/components/ChatPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -217,6 +227,7 @@ const tabs: TabItem[] = [
   { value: 'materials', label: '材料' },
   { value: 'preparation', label: '会前准备' },
   { value: 'records', label: '记录' },
+  { value: 'audio', label: '音频' },
   { value: 'minutes', label: '纪要' },
   { value: 'issues', label: '问题' },
   { value: 'checklist', label: '收尾' },
@@ -245,6 +256,7 @@ const actionError = ref<unknown>(null)
 
 const assistantOpen = ref(false)
 const materialsKey = ref(0)
+const recordsKey = ref(0)
 const minutesSectionKey = ref(0)
 const checklistKey = ref(0)
 

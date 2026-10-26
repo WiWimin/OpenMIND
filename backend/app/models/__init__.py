@@ -1,5 +1,6 @@
 from app.db.base import Base
 from app.models.action_item import ActionItem
+from app.models.audio import MeetingAudio
 from app.models.chunk import DocumentChunk
 from app.models.issue import OpenIssue
 from app.models.knowledge_chunk import KnowledgeChunk
@@ -21,6 +22,7 @@ __all__ = [
     "KnowledgeChunk",
     "KnowledgeDocument",
     "Meeting",
+    "MeetingAudio",
     "MeetingMaterial",
     "MeetingMinutes",
     "MeetingRecord",

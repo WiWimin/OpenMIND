@@ -224,6 +224,16 @@ failed → processing   （重试）
 - **未预期处理异常**：材料置 `failed` 并写入安全错误摘要，记录服务端日志，不长期停留在 `processing`。
 - **删除材料**：同步删除文件对象与 `document_chunks`；`meeting_records.source_material_id` 置空（`database.md 七`）。
 
+### 6.5 音频转写
+
+- 支持 MP3 / WAV / M4A / WEBM，上传后同步调用 OpenAI 兼容 `/audio/transcriptions`。
+- 服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`；未配置返回 `MODEL_CONFIG_REQUIRED`，不伪造转写。
+- 状态：`uploaded → processing → transcribed | failed`；确认后 `confirmed`。
+- 失败保留音频文件并记录安全错误摘要，可重试；不覆盖已有成功文本。
+- 用户在确认前可修订转写；确认生成 `record_type=transcript` 的会议记录，确认幂等。
+- 已确认音频不能重新转写或删除；删除未确认音频同步删除文件。
+- 实时流式 ASR 不在当前范围；音频原文件不进入 RAG。
+
 ## 七、Prompt 管理（`ai/prompts/`）
 
 - 所有模板集中在 `ai/prompts/`，按功能命名（如 `prepare.py`、`minutes.py`、`extract_action_items.py`、`chat.py`）。
