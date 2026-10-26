@@ -9,6 +9,7 @@ const record: MeetingRecord = {
   meeting_id: 'mtg_1',
   content: '讨论记录正文',
   record_type: 'manual',
+  marker_type: null,
   source_material_id: null,
   created_at: '2026-10-01T09:15:00+08:00',
   updated_at: '2026-10-01T09:15:00+08:00',
@@ -50,5 +51,42 @@ describe('RecordItem', () => {
     const wrapper = mount(RecordItem, { props: { record } })
     await button(wrapper, '删除')?.trigger('click')
     expect(wrapper.emitted('delete')).toHaveLength(1)
+  })
+
+  it('renders the marker badge', () => {
+    const wrapper = mount(RecordItem, {
+      props: { record: { ...record, marker_type: 'decision' } },
+    })
+
+    expect(wrapper.text()).toContain('决议')
+  })
+
+  it('emits a marker when toggled', async () => {
+    const wrapper = mount(RecordItem, { props: { record } })
+
+    await button(wrapper, '疑问')?.trigger('click')
+
+    expect(wrapper.emitted('marker')).toEqual([['question']])
+  })
+
+  it('clears an active marker', async () => {
+    const wrapper = mount(RecordItem, {
+      props: { record: { ...record, marker_type: 'decision' } },
+    })
+
+    await button(wrapper, '决议')?.trigger('click')
+
+    expect(wrapper.emitted('marker')).toEqual([[null]])
+  })
+
+  it('hides marker controls when readonly', () => {
+    const wrapper = mount(RecordItem, {
+      props: { record: { ...record, marker_type: 'highlight' }, readonly: true },
+    })
+    const labels = wrapper.findAll('button').map((item) => item.text())
+
+    expect(wrapper.text()).toContain('重点')
+    expect(labels).not.toContain('决议')
+    expect(labels).not.toContain('疑问')
   })
 })

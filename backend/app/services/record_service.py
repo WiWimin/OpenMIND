@@ -28,6 +28,7 @@ def create_record(
         meeting_id=meeting_id,
         content=payload.content,
         record_type=payload.record_type.value,
+        marker_type=payload.marker_type.value if payload.marker_type else None,
     )
 
 
@@ -56,6 +57,9 @@ def update_record(
     data = payload.model_dump(exclude_unset=True)
     if "content" in data and data["content"] is not None:
         record.content = data["content"]
+    if "marker_type" in data:
+        marker = data["marker_type"]
+        record.marker_type = marker.value if marker else None
     return record_repository.update(db, record)
 
 

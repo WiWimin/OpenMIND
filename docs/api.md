@@ -352,6 +352,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "meeting_id": "mtg_xxx",
   "content": "讨论记录正文",
   "record_type": "manual",
+  "marker_type": null,
   "source_material_id": null,
   "created_at": "2026-10-01T09:15:00+08:00",
   "updated_at": "2026-10-01T09:15:00+08:00"
@@ -359,14 +360,15 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```
 
 `record_type`：`manual` / `transcript` / `imported`。
+`marker_type`：`highlight` / `decision` / `question`，或 `null`；每条记录最多一个标记。
 
 ### 4.8 新增记录 `POST /api/v1/meetings/{meeting_id}/records`
 
 ```json
-{ "content": "讨论记录正文", "record_type": "manual" }
+{ "content": "讨论记录正文", "record_type": "manual", "marker_type": "decision" }
 ```
 
-`content` 必填。响应 `201` 为记录对象。
+`content` 必填；`marker_type` 可选。响应 `201` 为记录对象。
 
 ### 4.9 记录列表 `GET /api/v1/meetings/{meeting_id}/records`
 
@@ -374,7 +376,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ### 4.10 编辑记录 `PATCH /api/v1/records/{record_id}`
 
-可更新字段：`content`。响应 `200` 为更新后记录对象。
+可更新字段：`content`、`marker_type`。传 `marker_type: null` 清除标记；归档会议不可修改。响应 `200` 为更新后记录对象。
 
 ### 4.11 删除记录 `DELETE /api/v1/records/{record_id}` [提案]
 
@@ -481,21 +483,25 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "status": "draft",
   "version": 1,
   "source_record_ids": ["rec_xxx"],
+  "source_material_ids": ["mat_xxx"],
   "created_at": "2026-10-01T10:00:00+08:00",
   "updated_at": "2026-10-01T10:00:00+08:00"
 }
 ```
 
 `status`：`draft` / `confirmed`。
+`source_record_ids` 与 `source_material_ids` 记录实际参与生成的记录和材料。
 
 ### 5.10 生成纪要 `POST /api/v1/meetings/{meeting_id}/minutes/generate`
 
 ```json
-{ "record_ids": ["rec_xxx"], "include_action_items": true }
+{ "record_ids": ["rec_xxx"], "include_action_items": true, "include_materials": true }
 ```
 
-响应 `201`：纪要对象（`status = draft`）。
-每次生成**新增一条**纪要记录；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
+- `include_materials` 默认 `true`；为 `true` 时融合当前会议资料（最多 10 份、合计约 12000 字符）和记录标记。
+- `record_ids` 为空时使用当前会议最近记录（最多 100 条）；标记只从实际参与生成的记录中提取。
+- 响应 `201`：纪要对象（`status = draft`）。
+- 每次生成**新增一条**纪要记录；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
 
 ### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes` [提案]
 

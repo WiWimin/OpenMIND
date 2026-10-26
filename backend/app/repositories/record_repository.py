@@ -16,6 +16,7 @@ def create(
     meeting_id: str,
     content: str,
     record_type: str,
+    marker_type: str | None = None,
     source_material_id: str | None = None,
 ) -> MeetingRecord:
     record = MeetingRecord(
@@ -23,6 +24,7 @@ def create(
         meeting_id=meeting_id,
         content=content,
         record_type=record_type,
+        marker_type=marker_type,
         source_material_id=source_material_id,
     )
     db.add(record)

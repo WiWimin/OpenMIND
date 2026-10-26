@@ -7,6 +7,7 @@ import {
   meetingStatusMeta,
   minutesStatusMeta,
   preparationStatusMeta,
+  recordMarkerMeta,
   resolveStatusMeta,
   taskStatusMeta,
 } from '@/utils/statusLabels'
@@ -24,6 +25,12 @@ describe('status labels', () => {
 
   it('maps task statuses', () => {
     expect(taskStatusMeta.in_progress).toEqual({ label: '进行中', tone: 'info' })
+  })
+
+  it('maps record marker types', () => {
+    expect(recordMarkerMeta.highlight.tone).toBe('warning')
+    expect(recordMarkerMeta.decision.label).toBe('决议')
+    expect(recordMarkerMeta.question.tone).toBe('info')
   })
 
   it('maps meeting statuses', () => {

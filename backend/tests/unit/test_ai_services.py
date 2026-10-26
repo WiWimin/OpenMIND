@@ -14,6 +14,7 @@ from app.ai.extraction import (
 from app.ai.llm import LLMResult
 from app.ai.minutes import MinutesService
 from app.ai.preparation import PreparationDraft, PreparationService
+from app.ai.prompts.minutes import build_minutes
 
 
 class FakeLLM:
@@ -49,6 +50,30 @@ def test_minutes_generate() -> None:
     result = MinutesService(FakeLLM(text="纪要正文")).generate("主题", ["记录"])
 
     assert result == "纪要正文"
+
+
+def test_minutes_prompt_includes_materials_records_and_markers() -> None:
+    messages = build_minutes(
+        {
+            "meeting_topic": "周会",
+            "record_transcripts": ["讨论上线时间"],
+            "material_snippets": ["项目计划：周五上线"],
+            "marked_records": [
+                {
+                    "record_id": "rec_1",
+                    "marker_type": "decision",
+                    "content": "决定周五上线",
+                }
+            ],
+        }
+    )
+
+    system = messages[0]["content"]
+    user = messages[1]["content"]
+    assert "会议资料" in system
+    assert "项目计划：周五上线" in user
+    assert "讨论上线时间" in user
+    assert "[决议] 决定周五上线" in user
 
 
 def test_extract_action_items() -> None:

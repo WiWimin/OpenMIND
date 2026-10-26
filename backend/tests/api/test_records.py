@@ -45,6 +45,46 @@ def test_create_record(client: TestClient) -> None:
     assert data["source_material_id"] is None
 
 
+def test_create_record_with_marker(client: TestClient) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    response = client.post(
+        f"/api/v1/meetings/{meeting['meeting_id']}/records",
+        json={"content": "决定周五上线", "marker_type": "decision"},
+        headers=headers,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["marker_type"] == "decision"
+
+
+def test_update_record_marker_and_clear(client: TestClient) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    record = _create(client, headers, meeting["meeting_id"]).json()["data"]
+    url = f"/api/v1/records/{record['record_id']}"
+
+    marked = client.patch(url, json={"marker_type": "question"}, headers=headers)
+    assert marked.status_code == 200
+    assert marked.json()["data"]["marker_type"] == "question"
+
+    cleared = client.patch(url, json={"marker_type": None}, headers=headers)
+    assert cleared.status_code == 200
+    assert cleared.json()["data"]["marker_type"] is None
+
+
+def test_invalid_record_marker_rejected(client: TestClient) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    response = client.post(
+        f"/api/v1/meetings/{meeting['meeting_id']}/records",
+        json={"content": "记录", "marker_type": "unknown"},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
 def test_create_requires_auth(client: TestClient) -> None:
     response = client.post("/api/v1/meetings/mtg_x/records", json={"content": "x"})
     assert response.status_code == 401

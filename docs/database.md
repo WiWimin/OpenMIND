@@ -105,6 +105,7 @@
 | `meeting_id` | VARCHAR(40) | FK→meetings, NN, IDX | 所属会议 |
 | `content` | TEXT | NN | 记录文本 |
 | `record_type` | VARCHAR(20) | NN, default `manual` | `manual` / `transcript` / `imported` |
+| `marker_type` | VARCHAR(20) | ? | `highlight` / `decision` / `question`；每条记录最多一个 |
 | `source_material_id` | VARCHAR(40) | FK→meeting_materials, ? | 转写/导入来源 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
@@ -134,6 +135,7 @@
 | `status` | VARCHAR(20) | NN, default `draft` | 见 §五 |
 | `version` | INTEGER | NN, default 1 | |
 | `source_record_ids` | JSONB | NN, default `[]` | 生成依据的记录 ID 快照 |
+| `source_material_ids` | JSONB | NN, default `[]` | 生成依据的材料 ID 快照 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 

@@ -42,7 +42,9 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        minutes_service, "generate_text", lambda meeting, transcripts, config=None: "纪要"
+        minutes_service,
+        "generate_text",
+        lambda meeting, transcripts, config=None, **kwargs: "纪要",
     )
     monkeypatch.setattr(
         action_item_service,

@@ -77,6 +77,7 @@
             :record="record"
             :readonly="readonly"
             @save="(content) => saveEdit(record.record_id, content)"
+            @marker="(marker) => saveMarker(record.record_id, marker)"
             @delete="askDelete(record.record_id)"
           />
         </li>
@@ -136,7 +137,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import RecordItem from '@/components/RecordItem.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
-import type { MeetingRecord } from '@/types/record'
+import type { MeetingRecord, RecordMarkerType } from '@/types/record'
 
 const props = withDefaults(
   defineProps<{ meetingId: string; readonly?: boolean }>(),
@@ -241,6 +242,20 @@ async function saveEdit(recordId: string, content: string): Promise<void> {
     await recordsApi.updateRecord(recordId, { content })
     await load()
     toast.success('记录已更新')
+  } catch (caught) {
+    actionError.value = caught
+  }
+}
+
+async function saveMarker(
+  recordId: string,
+  marker: RecordMarkerType | null,
+): Promise<void> {
+  actionError.value = null
+  try {
+    await recordsApi.updateRecord(recordId, { marker_type: marker })
+    await load()
+    toast.success(marker ? '标记已更新' : '标记已清除')
   } catch (caught) {
     actionError.value = caught
   }

@@ -14,6 +14,7 @@ def create(
     meeting_id: str,
     content: str,
     source_record_ids: list[str],
+    source_material_ids: list[str] | None = None,
     status: str = "draft",
 ) -> MeetingMinutes:
     minutes = MeetingMinutes(
@@ -21,6 +22,7 @@ def create(
         meeting_id=meeting_id,
         content=content,
         source_record_ids=source_record_ids,
+        source_material_ids=source_material_ids or [],
         status=status,
     )
     db.add(minutes)

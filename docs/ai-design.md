@@ -226,8 +226,11 @@ failed → processing   （重试）
 - 输入：显式 `record_ids`。输出 `{ organized_content, source_record_ids[] }`。不落库。
 
 ### 8.4 纪要生成 `POST /meetings/{id}/minutes/generate`
-- 输入：`record_ids`（+ `include_action_items`）。
-- 输出：`minutes.content`。每次生成**新增一条** `meeting_minutes`（`status=draft`，`version=1`），记录 `source_record_ids`。
+- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）。
+- 上下文：显式记录（为空时当前会议最近 100 条）+ 当前会议资料（最多 10 份、合计约 12000 字符）+ 实际参与记录上的标记（`highlight` / `decision` / `question`）。
+- 资料只作背景，Prompt 明确禁止把资料中没有的信息写成会议事实；标记用于强调重点、决议和待确认问题。
+- 输出：`minutes.content`。每次生成**新增一条** `meeting_minutes`（`status=draft`，`version=1`），记录 `source_record_ids` 和实际使用的 `source_material_ids`。
+- `include_materials=false` 时不读取资料，`source_material_ids=[]`。
 - 编辑（`PATCH`）原地更新并 `version` 递增；确认置 `confirmed`。
 
 ### 8.5 行动项提取 `POST /meetings/{id}/action-items/extract`

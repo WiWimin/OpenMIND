@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.services import action_item_service, minutes_service
+from app.core.config import get_settings
+from app.services import action_item_service, material_service, minutes_service
 
 REGISTER = "/api/v1/auth/register"
 MEETINGS = "/api/v1/meetings"
@@ -21,10 +22,29 @@ def _meeting(client: TestClient, headers: dict[str, str]) -> dict:
     return response.json()["data"]
 
 
-def _record(client: TestClient, headers: dict[str, str], meeting_id: str) -> dict:
+def _record(
+    client: TestClient,
+    headers: dict[str, str],
+    meeting_id: str,
+    content: str = "讨论记录",
+    marker_type: str | None = None,
+) -> dict:
+    body: dict = {"content": content}
+    if marker_type is not None:
+        body["marker_type"] = marker_type
     response = client.post(
         f"/api/v1/meetings/{meeting_id}/records",
-        json={"content": "讨论记录"},
+        json=body,
+        headers=headers,
+    )
+    assert response.status_code == 201
+    return response.json()["data"]
+
+
+def _material(client: TestClient, headers: dict[str, str], meeting_id: str) -> dict:
+    response = client.post(
+        f"/api/v1/meetings/{meeting_id}/materials",
+        files={"file": ("plan.txt", "项目计划：周五上线".encode(), "text/plain")},
         headers=headers,
     )
     assert response.status_code == 201
@@ -40,9 +60,22 @@ def _generate(client: TestClient, headers: dict[str, str], meeting_id: str, **ex
 
 
 @pytest.fixture()
+def media_root(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    base = get_settings()
+
+    def fake_settings():
+        return base.model_copy(update={"storage_dir": str(tmp_path)})
+
+    monkeypatch.setattr(material_service, "get_settings", fake_settings)
+    return tmp_path
+
+
+@pytest.fixture()
 def fake_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        minutes_service, "generate_text", lambda meeting, transcripts, config=None: "会议纪要正文"
+        minutes_service,
+        "generate_text",
+        lambda meeting, transcripts, config=None, **kwargs: "会议纪要正文",
     )
 
 
@@ -59,6 +92,82 @@ def test_generate_minutes(client: TestClient, fake_minutes: None) -> None:
     assert data["status"] == "draft"
     assert data["version"] == 1
     assert data["source_record_ids"] == [record["record_id"]]
+    assert data["source_material_ids"] == []
+
+
+def test_generate_fuses_materials_and_marked_records(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    def capture(meeting, transcripts, config=None, **kwargs):
+        captured.update(kwargs)
+        return "融合纪要"
+
+    monkeypatch.setattr(minutes_service, "generate_text", capture)
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    material = _material(client, headers, meeting["meeting_id"])
+    decision = _record(
+        client,
+        headers,
+        meeting["meeting_id"],
+        content="决定周五上线",
+        marker_type="decision",
+    )
+    ordinary = _record(client, headers, meeting["meeting_id"], content="讨论排期")
+
+    response = _generate(
+        client,
+        headers,
+        meeting["meeting_id"],
+        record_ids=[decision["record_id"], ordinary["record_id"]],
+    )
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["source_record_ids"] == [
+        decision["record_id"],
+        ordinary["record_id"],
+    ]
+    assert data["source_material_ids"] == [material["material_id"]]
+    assert captured["material_snippets"] == ["项目计划：周五上线"]
+    assert captured["marked_records"] == [
+        {
+            "record_id": decision["record_id"],
+            "marker_type": "decision",
+            "content": "决定周五上线",
+        }
+    ]
+
+
+def test_generate_can_exclude_materials(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    def capture(meeting, transcripts, config=None, **kwargs):
+        captured.update(kwargs)
+        return "仅记录纪要"
+
+    monkeypatch.setattr(minutes_service, "generate_text", capture)
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    _material(client, headers, meeting["meeting_id"])
+    record = _record(client, headers, meeting["meeting_id"])
+
+    response = _generate(
+        client,
+        headers,
+        meeting["meeting_id"],
+        record_ids=[record["record_id"]],
+        include_materials=False,
+    )
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["source_material_ids"] == []
+    assert captured["material_snippets"] == []
 
 
 def test_generate_requires_auth(client: TestClient, fake_minutes: None) -> None:
@@ -82,7 +191,7 @@ def test_generate_cross_user_forbidden(client: TestClient, fake_minutes: None) -
 def test_generate_ai_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.core.exceptions import AppError
 
-    def boom(meeting, transcripts, config=None):
+    def boom(meeting, transcripts, config=None, **kwargs):
         raise AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
 
     monkeypatch.setattr(minutes_service, "generate_text", boom)
@@ -159,7 +268,9 @@ def test_generate_include_action_items(
     from app.ai.extraction import ActionItemCandidate
 
     monkeypatch.setattr(
-        minutes_service, "generate_text", lambda meeting, transcripts, config=None: "会议纪要正文"
+        minutes_service,
+        "generate_text",
+        lambda meeting, transcripts, config=None, **kwargs: "会议纪要正文",
     )
     monkeypatch.setattr(
         action_item_service,

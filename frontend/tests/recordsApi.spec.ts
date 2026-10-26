@@ -20,6 +20,7 @@ const record: MeetingRecord = {
   meeting_id: 'mtg_1',
   content: '讨论记录正文',
   record_type: 'manual',
+  marker_type: null,
   source_material_id: null,
   created_at: '2026-10-01T09:15:00+08:00',
   updated_at: '2026-10-01T09:15:00+08:00',
