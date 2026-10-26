@@ -93,6 +93,34 @@ def test_generate_minutes(client: TestClient, fake_minutes: None) -> None:
     assert data["version"] == 1
     assert data["source_record_ids"] == [record["record_id"]]
     assert data["source_material_ids"] == []
+    assert data["template"] == "standard"
+
+
+def test_generate_accepts_template(
+    client: TestClient, fake_minutes: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _generate(
+        client, headers, meeting["meeting_id"], template="concise"
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["template"] == "concise"
+
+
+def test_generate_rejects_unknown_template(
+    client: TestClient, fake_minutes: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _generate(
+        client, headers, meeting["meeting_id"], template="unknown"
+    )
+
+    assert response.status_code == 422
 
 
 def test_generate_fuses_materials_and_marked_records(
@@ -245,6 +273,30 @@ def test_update_minutes_increments_version(client: TestClient, fake_minutes: Non
     data = response.json()["data"]
     assert data["content"] == "修改后的纪要"
     assert data["version"] == 2
+
+
+def test_regeneration_does_not_overwrite_confirmed_minutes(
+    client: TestClient, fake_minutes: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    original = _generate(client, headers, meeting["meeting_id"]).json()["data"]
+    confirmed = client.post(
+        f"/api/v1/minutes/{original['minutes_id']}/confirm", headers=headers
+    ).json()["data"]
+
+    regenerated = _generate(
+        client, headers, meeting["meeting_id"], template="concise"
+    ).json()["data"]
+    current = client.get(
+        f"/api/v1/minutes/{original['minutes_id']}", headers=headers
+    ).json()["data"]
+
+    assert regenerated["minutes_id"] != confirmed["minutes_id"]
+    assert regenerated["template"] == "concise"
+    assert current["content"] == confirmed["content"]
+    assert current["status"] == "confirmed"
+    assert current["version"] == confirmed["version"]
 
 
 def test_confirm_minutes(client: TestClient, fake_minutes: None) -> None:

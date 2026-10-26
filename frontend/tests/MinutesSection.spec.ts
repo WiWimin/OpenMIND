@@ -35,6 +35,7 @@ const minutes: Minutes = {
   content: '会议纪要草稿',
   status: 'draft',
   version: 1,
+  template: 'standard',
   source_record_ids: ['rec_1'],
   source_material_ids: [],
   created_at: '2026-10-01T10:00:00+08:00',
@@ -104,6 +105,7 @@ describe('MinutesSection', () => {
         record_ids: [],
         include_action_items: true,
         include_materials: true,
+        template: 'standard',
       },
       expect.anything(),
     )
@@ -129,9 +131,38 @@ describe('MinutesSection', () => {
         record_ids: [],
         include_action_items: true,
         include_materials: false,
+        template: 'standard',
       },
       expect.anything(),
     )
+  })
+
+  it('generates with the selected template and displays it', async () => {
+    vi.mocked(minutesApi.listMinutes)
+      .mockResolvedValueOnce(listOf([]))
+      .mockResolvedValue(listOf([{ ...minutes, template: 'concise' }]))
+    vi.mocked(minutesApi.generateMinutes).mockResolvedValue({
+      ...minutes,
+      template: 'concise',
+    })
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('#minutes-template').setValue('concise')
+    await button(wrapper, '生成会议纪要')?.trigger('click')
+    await flushPromises()
+
+    expect(minutesApi.generateMinutes).toHaveBeenCalledWith(
+      'mtg_1',
+      {
+        record_ids: [],
+        include_action_items: true,
+        include_materials: true,
+        template: 'concise',
+      },
+      expect.anything(),
+    )
+    expect(wrapper.text()).toContain('简洁记录')
   })
 
   it('confirms a minutes draft', async () => {

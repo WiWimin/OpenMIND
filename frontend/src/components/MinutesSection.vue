@@ -2,6 +2,14 @@
   <div class="minutes-section">
     <div v-if="!readonly" class="minutes-section__toolbar">
       <AppButton :loading="generating" @click="generate">生成会议纪要</AppButton>
+      <label class="minutes-section__template">
+        <span>模板</span>
+        <select id="minutes-template" v-model="template">
+          <option v-for="option in TEMPLATE_OPTIONS" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
       <label class="minutes-section__materials">
         <input v-model="includeMaterials" type="checkbox" />
         <span>参考会议资料</span>
@@ -30,7 +38,10 @@
             :class="{ 'minutes-section__item--active': selected?.minutes_id === item.minutes_id }"
             @click="select(item)"
           >
-            <StatusBadge :label="statusOf(item).label" :tone="statusOf(item).tone" />
+            <span class="minutes-section__item-meta">
+              <StatusBadge :label="statusOf(item).label" :tone="statusOf(item).tone" />
+              <span class="minutes-section__template-label">{{ templateOf(item).label }}</span>
+            </span>
             <span class="minutes-section__time">{{ timeOf(item) }}</span>
           </button>
         </li>
@@ -39,6 +50,7 @@
       <div v-if="selected" class="minutes-section__editor">
         <div class="minutes-section__editor-head">
           <StatusBadge :label="statusOf(selected).label" :tone="statusOf(selected).tone" />
+          <span class="minutes-section__template-label">{{ templateOf(selected).label }}</span>
           <span class="minutes-section__version">v{{ selected.version }}</span>
         </div>
 
@@ -78,10 +90,16 @@ import RichTextEditor from '@/components/RichTextEditor.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
-import type { Minutes } from '@/types/minutes'
+import type { Minutes, MinutesTemplate } from '@/types/minutes'
 import { formatDateTime } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
-import { minutesStatusMeta } from '@/utils/statusLabels'
+import { minutesStatusMeta, minutesTemplateMeta } from '@/utils/statusLabels'
+
+const TEMPLATE_OPTIONS: { value: MinutesTemplate; label: string }[] = [
+  { value: 'standard', label: '标准纪要' },
+  { value: 'concise', label: '简洁记录' },
+  { value: 'task_list', label: '任务清单' },
+]
 
 const props = withDefaults(
   defineProps<{
@@ -105,6 +123,7 @@ const selected = ref<Minutes | null>(null)
 const draft = ref('')
 const generating = ref(false)
 const includeMaterials = ref(true)
+const template = ref<MinutesTemplate>('standard')
 const saving = ref(false)
 const confirming = ref(false)
 const exporting = ref(false)
@@ -112,6 +131,10 @@ const actionError = ref<unknown>(null)
 
 function statusOf(minutes: Minutes) {
   return minutesStatusMeta[minutes.status]
+}
+
+function templateOf(minutes: Minutes) {
+  return minutesTemplateMeta[minutes.template]
 }
 
 function timeOf(minutes: Minutes): string {
@@ -152,6 +175,7 @@ async function generate(): Promise<void> {
         record_ids: [],
         include_action_items: true,
         include_materials: includeMaterials.value,
+        template: template.value,
       },
       controller.signal,
     )
@@ -246,12 +270,36 @@ async function exportDocx(): Promise<void> {
   gap: var(--space-2);
 }
 
+.minutes-section__template,
 .minutes-section__materials {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
+}
+
+.minutes-section__template {
+  cursor: pointer;
+}
+
+.minutes-section__template select {
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  background: var(--color-surface);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+
+.minutes-section__template select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 111, 212, 0.16);
+}
+
+.minutes-section__materials {
   cursor: pointer;
 }
 
@@ -305,6 +353,19 @@ async function exportDocx(): Promise<void> {
 .minutes-section__item--active {
   border-color: var(--color-primary);
   background: rgba(59, 111, 212, 0.07);
+}
+
+.minutes-section__item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.minutes-section__template-label {
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .minutes-section__time {

@@ -14,6 +14,8 @@ class MinutesService:
         record_transcripts: list[str],
         material_snippets: list[str] | None = None,
         marked_records: list[dict[str, str]] | None = None,
+        *,
+        template: str = "standard",
     ) -> str:
         messages = build_minutes(
             {
@@ -21,6 +23,7 @@ class MinutesService:
                 "record_transcripts": record_transcripts,
                 "material_snippets": material_snippets or [],
                 "marked_records": marked_records or [],
+                "template": template,
             }
         )
         return self.llm.chat(messages).text

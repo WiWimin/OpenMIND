@@ -482,6 +482,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "content": "会议纪要草稿……",
   "status": "draft",
   "version": 1,
+  "template": "standard",
   "source_record_ids": ["rec_xxx"],
   "source_material_ids": ["mat_xxx"],
   "created_at": "2026-10-01T10:00:00+08:00",
@@ -490,18 +491,28 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```
 
 `status`：`draft` / `confirmed`。
+`template`：`standard` / `concise` / `task_list`。
 `source_record_ids` 与 `source_material_ids` 记录实际参与生成的记录和材料。
 
 ### 5.10 生成纪要 `POST /api/v1/meetings/{meeting_id}/minutes/generate`
 
 ```json
-{ "record_ids": ["rec_xxx"], "include_action_items": true, "include_materials": true }
+{
+  "record_ids": ["rec_xxx"],
+  "include_action_items": true,
+  "include_materials": true,
+  "template": "standard"
+}
 ```
 
 - `include_materials` 默认 `true`；为 `true` 时融合当前会议资料（最多 10 份、合计约 12000 字符）和记录标记。
+- `template` 默认 `standard`：
+  - `standard`：标准纪要；
+  - `concise`：简洁记录，仅保留关键结论、决议和待办；
+  - `task_list`：任务清单，列出负责人和截止时间，未提及则写“未指定”。
 - `record_ids` 为空时使用当前会议最近记录（最多 100 条）；标记只从实际参与生成的记录中提取。
 - 响应 `201`：纪要对象（`status = draft`）。
-- 每次生成**新增一条**纪要记录；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
+- 每次生成**新增一条**纪要记录，不覆盖已确认纪要；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
 
 ### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes` [提案]
 
