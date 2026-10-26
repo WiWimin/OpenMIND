@@ -134,6 +134,7 @@
 | `content` | TEXT | NN | 纪要正文 |
 | `status` | VARCHAR(20) | NN, default `draft` | 见 §五 |
 | `version` | INTEGER | NN, default 1 | |
+| `template` | VARCHAR(20) | NN, default `standard` | `standard` / `concise` / `task_list` |
 | `source_record_ids` | JSONB | NN, default `[]` | 生成依据的记录 ID 快照 |
 | `source_material_ids` | JSONB | NN, default `[]` | 生成依据的材料 ID 快照 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |

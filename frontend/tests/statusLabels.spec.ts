@@ -6,6 +6,7 @@ import {
   materialStatusMeta,
   meetingStatusMeta,
   minutesStatusMeta,
+  minutesTemplateMeta,
   preparationStatusMeta,
   recordMarkerMeta,
   resolveStatusMeta,
@@ -21,6 +22,12 @@ describe('status labels', () => {
   it('maps preparation and minutes statuses', () => {
     expect(preparationStatusMeta.generating.tone).toBe('info')
     expect(minutesStatusMeta.confirmed.label).toBe('已确认')
+  })
+
+  it('maps minutes templates', () => {
+    expect(minutesTemplateMeta.standard.label).toBe('标准纪要')
+    expect(minutesTemplateMeta.concise.tone).toBe('info')
+    expect(minutesTemplateMeta.task_list.label).toBe('任务清单')
   })
 
   it('maps task statuses', () => {

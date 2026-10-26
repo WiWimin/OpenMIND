@@ -76,6 +76,20 @@ def test_minutes_prompt_includes_materials_records_and_markers() -> None:
     assert "[决议] 决定周五上线" in user
 
 
+def test_minutes_prompt_uses_concise_template() -> None:
+    messages = build_minutes(
+        {
+            "meeting_topic": "周会",
+            "record_transcripts": ["讨论上线时间"],
+            "material_snippets": [],
+            "marked_records": [],
+            "template": "concise",
+        }
+    )
+
+    assert "简洁" in messages[0]["content"]
+
+
 def test_extract_action_items() -> None:
     result_obj = ActionItemsResult(items=[ActionItemCandidate(content="做某事", assignee="张三")])
     result = ActionItemExtractor(FakeLLM(obj=result_obj)).extract(["记录"])

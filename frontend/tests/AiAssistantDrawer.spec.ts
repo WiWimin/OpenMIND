@@ -34,6 +34,7 @@ const minutes: Minutes = {
   content: 'AI 生成的草稿内容',
   status: 'draft',
   version: 1,
+  template: 'standard',
   source_record_ids: [],
   source_material_ids: [],
   created_at: '2026-10-01T09:00:00+08:00',

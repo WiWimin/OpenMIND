@@ -31,6 +31,7 @@ def generate_text(
     *,
     material_snippets: list[str] | None = None,
     marked_records: list[dict[str, str]] | None = None,
+    template: str = "standard",
 ) -> str:
     topic_parts = [meeting.title]
     if meeting.topic:
@@ -40,6 +41,7 @@ def generate_text(
         transcripts,
         material_snippets or [],
         marked_records or [],
+        template=template,
     )
 
 
@@ -107,6 +109,7 @@ def generate_minutes(
         config,
         material_snippets=material_snippets,
         marked_records=marked_records,
+        template=payload.template.value,
     )
     minutes = minutes_repository.create(
         db,
@@ -115,6 +118,7 @@ def generate_minutes(
         content=content,
         source_record_ids=record_ids,
         source_material_ids=material_ids,
+        template=payload.template.value,
         status=_STATUS_DRAFT,
     )
     if payload.include_action_items:

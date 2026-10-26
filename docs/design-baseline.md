@@ -90,3 +90,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | BYOK 默认禁止全局回退 | 新增 D-22：未配置用户不再自动使用全局 Key；新增 `MODEL_CONFIG_REQUIRED`/`MODEL_QUOTA_EXCEEDED` |
 | 2026-10 | 闭环可靠性修复 | 归档只读、材料失败状态、来源/删除一致性、问答范围与受限记录上下文、任务/问题状态机 |
 | 2026-10 | 纪要融合与记录标记 | 记录新增 `marker_type`；纪要生成融合当前会议资料与实际参与记录的标记，记录 `source_material_ids`；迁移 `0013` |
+| 2026-10 | 纪要模板 | 新增 `standard` / `concise` / `task_list` 模板并记录 `meeting_minutes.template`；重新生成不覆盖已确认纪要；迁移 `0014` |

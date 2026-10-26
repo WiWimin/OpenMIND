@@ -46,6 +46,7 @@ const minutes: Minutes = {
   content: '纪要内容',
   status: 'draft',
   version: 1,
+  template: 'standard',
   source_record_ids: [],
   source_material_ids: [],
   created_at: '2026-10-01T10:00:00+08:00',

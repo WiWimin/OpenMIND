@@ -226,12 +226,14 @@ failed → processing   （重试）
 - 输入：显式 `record_ids`。输出 `{ organized_content, source_record_ids[] }`。不落库。
 
 ### 8.4 纪要生成 `POST /meetings/{id}/minutes/generate`
-- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）。
+- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）、`template`（默认 `standard`）。
+- 模板：`standard` 标准纪要、`concise` 简洁记录、`task_list` 任务清单；模板只改变输出组织方式，不降低来源与事实验证要求。
 - 上下文：显式记录（为空时当前会议最近 100 条）+ 当前会议资料（最多 10 份、合计约 12000 字符）+ 实际参与记录上的标记（`highlight` / `decision` / `question`）。
 - 资料只作背景，Prompt 明确禁止把资料中没有的信息写成会议事实；标记用于强调重点、决议和待确认问题。
-- 输出：`minutes.content`。每次生成**新增一条** `meeting_minutes`（`status=draft`，`version=1`），记录 `source_record_ids` 和实际使用的 `source_material_ids`。
+- 任务清单模板中未提及负责人或截止时间时写“未指定”，不得编造。
+- 输出：`minutes.content`。每次生成**新增一条** `meeting_minutes`（`status=draft`，`version=1`），记录 `template`、`source_record_ids` 和实际使用的 `source_material_ids`。
 - `include_materials=false` 时不读取资料，`source_material_ids=[]`。
-- 编辑（`PATCH`）原地更新并 `version` 递增；确认置 `confirmed`。
+- 重新生成始终新增草稿，不覆盖已确认纪要；编辑（`PATCH`）原地更新并 `version` 递增；确认置 `confirmed`。
 
 ### 8.5 行动项提取 `POST /meetings/{id}/action-items/extract`
 - 输出（结构化）：`[{ content, assignee?, due_date?, source_record_id?, source_excerpt? }]`。
