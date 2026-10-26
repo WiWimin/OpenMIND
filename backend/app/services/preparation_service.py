@@ -11,6 +11,7 @@ from app.schemas.preparation import PreparationUpdate
 from app.services import meeting_service
 from app.services.model_config_service import (
     ModelConfig,
+    ModelPurpose,
     build_llm_client,
     resolve_model_config,
 )
@@ -69,7 +70,7 @@ def generate_preparation(
         if include_history
         else material_repository.list_contents(db, meeting_id)
     )
-    config = resolve_model_config(db, user_id)
+    config = resolve_model_config(db, user_id, purpose=ModelPurpose.preparation)
     draft = generate_draft(meeting, snippets, user_goal, config)
     return preparation_repository.create(
         db,

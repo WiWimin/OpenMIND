@@ -74,6 +74,42 @@
 
       <ErrorMessage v-if="formError" :error="formError" />
 
+      <article class="purpose-card">
+        <header class="provider-card__head">
+          <div class="provider-card__intro">
+            <h2 class="provider-card__title">按用途模型</h2>
+            <p class="provider-card__hint">
+              仅覆盖模型名，API 地址与密钥沿用上方大模型配置；留空使用默认模型。
+            </p>
+          </div>
+        </header>
+
+        <div class="purpose-card__grid">
+          <FormField
+            v-for="option in PURPOSE_OPTIONS"
+            :key="option.key"
+            :id="`purpose-${option.key}`"
+            v-model="purposeModels[option.key]"
+            :label="option.label"
+            :placeholder="store.config?.llm_model || '默认模型'"
+          />
+        </div>
+
+        <p v-if="store.config?.llm_source === 'none'" class="model-settings__note">
+          请先保存大模型配置，再设置用途模型。
+        </p>
+
+        <div>
+          <AppButton
+            :loading="store.saving"
+            :disabled="store.config?.llm_source === 'none'"
+            @click="savePurposeModels"
+          >
+            保存用途模型
+          </AppButton>
+        </div>
+      </article>
+
       <p class="model-settings__note">
         填写某一提供方的 API 地址、密钥与模型名后保存，将整体替换该提供方；留空该提供方则清除其自备配置并回退服务端默认。密钥加密存库，不回显明文。
       </p>
@@ -121,7 +157,12 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import { useModelConfigStore } from '@/stores/modelConfig'
-import type { ModelConfigPayload, ModelConfigSource } from '@/types/modelConfig'
+import type {
+  ModelConfig,
+  ModelConfigPayload,
+  ModelConfigSource,
+  ModelPurpose,
+} from '@/types/modelConfig'
 
 type ProviderKey = 'llm' | 'embedding'
 
@@ -137,6 +178,20 @@ const SOURCE_LABELS: Record<ModelConfigSource, string> = {
   none: '未配置',
 }
 
+const PURPOSE_OPTIONS: { key: ModelPurpose; label: string }[] = [
+  { key: 'preparation', label: '会前准备' },
+  { key: 'chat', label: '会议问答与整理' },
+  { key: 'minutes', label: '纪要生成' },
+  { key: 'extraction', label: '行动项与问题提取' },
+]
+
+const EMPTY_PURPOSE_MODELS: Record<ModelPurpose, string> = {
+  preparation: '',
+  chat: '',
+  minutes: '',
+  extraction: '',
+}
+
 const store = useModelConfigStore()
 const toast = useToast()
 
@@ -145,6 +200,9 @@ const forms = reactive<Record<ProviderKey, ProviderForm>>({
   embedding: { apiBase: '', apiKey: '', model: '' },
 })
 
+const purposeModels = reactive<Record<ModelPurpose, string>>({
+  ...EMPTY_PURPOSE_MODELS,
+})
 const fieldErrors = reactive<Record<ProviderKey, string>>({ llm: '', embedding: '' })
 const formError = ref<unknown>(null)
 const loadError = ref<unknown>(null)
@@ -184,12 +242,37 @@ function resetForms(): void {
   fieldErrors.embedding = ''
 }
 
+function syncPurposeModels(config: ModelConfig | null): void {
+  for (const purpose of Object.keys(EMPTY_PURPOSE_MODELS) as ModelPurpose[]) {
+    purposeModels[purpose] = config?.llm_purpose_models?.[purpose] ?? ''
+  }
+}
+
 async function loadConfig(): Promise<void> {
   loadError.value = null
   try {
     await store.load()
+    syncPurposeModels(store.config)
   } catch (err) {
     loadError.value = err
+  }
+}
+
+async function savePurposeModels(): Promise<void> {
+  formError.value = null
+  const models: Partial<Record<ModelPurpose, string>> = {}
+  for (const purpose of Object.keys(EMPTY_PURPOSE_MODELS) as ModelPurpose[]) {
+    const model = purposeModels[purpose].trim()
+    if (model) {
+      models[purpose] = model
+    }
+  }
+  try {
+    await store.savePurposes({ models })
+    syncPurposeModels(store.config)
+    toast.success('用途模型已保存')
+  } catch (err) {
+    formError.value = err
   }
 }
 
@@ -275,6 +358,7 @@ async function confirmReset(): Promise<void> {
     await store.clear()
     loadError.value = null
     resetForms()
+    syncPurposeModels(store.config)
     toast.success('已恢复服务端默认配置')
   } catch (err) {
     formError.value = err
@@ -310,6 +394,23 @@ onMounted(loadConfig)
   box-shadow: var(--shadow-sm);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.purpose-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.purpose-card__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
 }
 
 .provider-card__head {

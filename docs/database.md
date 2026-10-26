@@ -205,9 +205,31 @@
 - 未生成 embedding 的分块可为空；检索不得把空向量当有效向量。
 - 删除/重新解析材料时清理旧分块。
 
+### 3.11 `user_model_configs` 用户模型配置
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | VARCHAR(40) | PK, FK→users | 每个用户一行 |
+| `llm_api_base` | VARCHAR(255) | ? | LLM API 地址 |
+| `llm_api_key_enc` | TEXT | ? | LLM 密钥 Fernet 密文 |
+| `llm_model` | VARCHAR(100) | ? | 默认 LLM 模型 |
+| `llm_purpose_models` | JSONB | NN, default `{}` | 用途→模型名覆盖 |
+| `embedding_api_base` | VARCHAR(255) | ? | Embedding API 地址 |
+| `embedding_api_key_enc` | TEXT | ? | Embedding 密钥 Fernet 密文 |
+| `embedding_model` | VARCHAR(100) | ? | Embedding 模型 |
+| `embedding_dim` | INTEGER | ? | 固定 1024 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- `llm_purpose_models` 仅保存允许用途：`preparation` / `chat` / `minutes` / `extraction`。
+- 未覆盖的用途回退到 `llm_model`；API 地址与密钥统一使用 LLM 配置。
+- 用途模型名最长 100 字符，空值不得保存。
+- 删除用户模型配置时同时清除用途覆盖。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
+- User — UserModelConfig：一对一（`user_model_configs.user_id` 主键）
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多
 - Meeting — MeetingRecord：一对多

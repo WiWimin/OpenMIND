@@ -4,6 +4,7 @@ import type {
   ModelConfig,
   ModelConfigDeleteResult,
   ModelConfigPayload,
+  PurposeModelsPayload,
 } from '@/types/modelConfig'
 import { unwrapData } from '@/utils/apiEnvelope'
 
@@ -16,6 +17,14 @@ export async function getModelConfig(): Promise<ModelConfig> {
 
 export async function saveModelConfig(payload: ModelConfigPayload): Promise<ModelConfig> {
   const { data } = await http.put<ApiSuccess<ModelConfig> | ModelConfig>(PATH, payload)
+  return unwrapData(data)
+}
+
+export async function savePurposeModels(payload: PurposeModelsPayload): Promise<ModelConfig> {
+  const { data } = await http.put<ApiSuccess<ModelConfig> | ModelConfig>(
+    `${PATH}/purposes`,
+    payload,
+  )
   return unwrapData(data)
 }
 

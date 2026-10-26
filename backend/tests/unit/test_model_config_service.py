@@ -74,6 +74,32 @@ def test_resolve_prefers_user_config(db_session: Session) -> None:
     assert config.embedding_dim == 1024
 
 
+def test_resolve_applies_purpose_model_override(db_session: Session) -> None:
+    _make_user(db_session, "usr_a", "alice")
+    model_config_repository.upsert(
+        db_session,
+        user_id="usr_a",
+        llm_api_base="https://llm.example.com",
+        llm_api_key_enc=encrypt("user-llm-key"),
+        llm_model="default-model",
+        llm_purpose_models={"minutes": "minutes-model"},
+        embedding_api_base=None,
+        embedding_api_key_enc=None,
+        embedding_model=None,
+        embedding_dim=None,
+    )
+
+    minutes = resolve_model_config(
+        db_session, "usr_a", purpose=model_config_service.ModelPurpose.minutes
+    )
+    chat = resolve_model_config(
+        db_session, "usr_a", purpose=model_config_service.ModelPurpose.chat
+    )
+
+    assert minutes.llm_model == "minutes-model"
+    assert chat.llm_model == "default-model"
+
+
 def test_resolve_partial_user_config_keeps_embedding_empty(db_session: Session) -> None:
     _make_user(db_session, "usr_a", "alice")
     model_config_repository.upsert(

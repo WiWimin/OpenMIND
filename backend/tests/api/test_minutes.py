@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.services import action_item_service, material_service, minutes_service
+from app.services.model_config_service import ModelConfig, ModelPurpose
 
 REGISTER = "/api/v1/auth/register"
 MEETINGS = "/api/v1/meetings"
@@ -196,6 +197,28 @@ def test_generate_can_exclude_materials(
     data = response.json()["data"]
     assert data["source_material_ids"] == []
     assert captured["material_snippets"] == []
+
+
+def test_generate_uses_minutes_model_purpose(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    def fake_resolve(db, user_id, *, purpose=None):
+        captured["purpose"] = purpose
+        return ModelConfig("", "", "", "", "", "", 1024)
+
+    monkeypatch.setattr(minutes_service, "resolve_model_config", fake_resolve)
+    monkeypatch.setattr(
+        minutes_service, "generate_text", lambda *args, **kwargs: "纪要"
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _generate(client, headers, meeting["meeting_id"])
+
+    assert response.status_code == 201
+    assert captured["purpose"] is ModelPurpose.minutes
 
 
 def test_generate_requires_auth(client: TestClient, fake_minutes: None) -> None:

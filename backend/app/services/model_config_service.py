@@ -13,7 +13,7 @@ from app.core.exceptions import AppError
 from app.core.url_validation import validate_api_base
 from app.models.model_config import UserModelConfig
 from app.repositories import model_config_repository
-from app.schemas.model_config import ModelConfigRead, ModelConfigWrite
+from app.schemas.model_config import ModelConfigRead, ModelConfigWrite, ModelPurpose
 
 EMBEDDING_DIM = 1024
 
@@ -42,7 +42,9 @@ def _decrypt_or_empty(token: str | None) -> str:
         ) from None
 
 
-def resolve_model_config(db: Session, user_id: str) -> ModelConfig:
+def resolve_model_config(
+    db: Session, user_id: str, *, purpose: ModelPurpose | None = None
+) -> ModelConfig:
     row = model_config_repository.get_by_user(db, user_id)
     settings = get_settings()
     llm_api_base = row.llm_api_base if row and row.llm_api_base else ""
@@ -62,6 +64,11 @@ def resolve_model_config(db: Session, user_id: str) -> ModelConfig:
         embedding_api_base = embedding_api_base or settings.embedding_api_base
         embedding_api_key = embedding_api_key or settings.embedding_api_key
         embedding_model = embedding_model or settings.embedding_model
+
+    if purpose is not None and row is not None:
+        override = (row.llm_purpose_models or {}).get(purpose.value)
+        if override:
+            llm_model = override
 
     return ModelConfig(
         llm_api_base=llm_api_base,
@@ -209,6 +216,38 @@ def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> U
     )
 
 
+def save_purpose_models(
+    db: Session, user_id: str, models: dict[ModelPurpose, str]
+) -> UserModelConfig:
+    cleaned: dict[str, str] = {}
+    for purpose, model in models.items():
+        text = model.strip()
+        if not text:
+            raise AppError(
+                "MODEL_CONFIG_INVALID", "用途模型名不能为空", http_status=400
+            )
+        if len(text) > 100:
+            raise AppError(
+                "MODEL_CONFIG_INVALID",
+                "用途模型名不能超过 100 个字符",
+                http_status=400,
+            )
+        cleaned[purpose.value] = text
+
+    if cleaned:
+        config = resolve_model_config(db, user_id)
+        if not (config.llm_api_base and config.llm_api_key and config.llm_model):
+            raise AppError(
+                "MODEL_CONFIG_INVALID",
+                "请先配置大模型，再设置用途模型",
+                http_status=400,
+            )
+
+    return model_config_repository.update_purpose_models(
+        db, user_id=user_id, models=cleaned
+    )
+
+
 def get_model_config_read(db: Session, user_id: str) -> ModelConfigRead:
     row = model_config_repository.get_by_user(db, user_id)
     config = resolve_model_config(db, user_id)
@@ -231,6 +270,7 @@ def get_model_config_read(db: Session, user_id: str) -> ModelConfigRead:
             mask_key(config.llm_api_key) if llm_source == "user" else ""
         ),
         llm_source=llm_source,
+        llm_purpose_models=(row.llm_purpose_models or {}) if row else {},
         embedding_api_base=config.embedding_api_base,
         embedding_model=config.embedding_model,
         embedding_api_key_masked=(

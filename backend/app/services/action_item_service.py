@@ -14,6 +14,7 @@ from app.schemas.action_item import ActionItemUpdate, ConvertToTaskRequest
 from app.services import meeting_service
 from app.services.model_config_service import (
     ModelConfig,
+    ModelPurpose,
     build_llm_client,
     resolve_model_config,
 )
@@ -78,7 +79,7 @@ def extract_action_items(
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     records = _gather_records(db, meeting_id, record_ids)
     transcripts = [f"[{record.record_id}] {record.content}" for record in records]
-    config = resolve_model_config(db, user_id)
+    config = resolve_model_config(db, user_id, purpose=ModelPurpose.extraction)
     candidates = extract_candidates(transcripts, config)
     items: list[ActionItem] = []
     for candidate in candidates:
