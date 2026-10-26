@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError
 from app.models.record import MeetingRecord
-from app.repositories import record_repository
+from app.repositories import (
+    action_item_repository,
+    issue_repository,
+    record_repository,
+)
 from app.schemas.record import RecordCreate, RecordUpdate
 from app.services import meeting_service
 from app.utils.ids import new_id
@@ -17,7 +21,7 @@ def _not_found() -> AppError:
 def create_record(
     db: Session, *, meeting_id: str, user_id: str, payload: RecordCreate
 ) -> MeetingRecord:
-    meeting_service.get_owned_meeting(db, meeting_id, user_id)
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     return record_repository.create(
         db,
         record_id=new_id("rec"),
@@ -48,6 +52,7 @@ def update_record(
     db: Session, record_id: str, user_id: str, payload: RecordUpdate
 ) -> MeetingRecord:
     record = get_owned_record(db, record_id, user_id)
+    meeting_service.get_mutable_meeting(db, record.meeting_id, user_id)
     data = payload.model_dump(exclude_unset=True)
     if "content" in data and data["content"] is not None:
         record.content = data["content"]
@@ -56,4 +61,13 @@ def update_record(
 
 def delete_record(db: Session, record_id: str, user_id: str) -> None:
     record = get_owned_record(db, record_id, user_id)
+    meeting_service.get_mutable_meeting(db, record.meeting_id, user_id)
+    if action_item_repository.exists_by_source_record(
+        db, record_id
+    ) or issue_repository.exists_by_source_record(db, record_id):
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "记录被行动项或问题引用，无法删除",
+            http_status=409,
+        )
     record_repository.delete(db, record)

@@ -54,7 +54,7 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     class _InsufficientChat:
-        def answer(self, question, *, user_id, scope, current_meeting_id):
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None):
             return ChatAnswer(answer="无法确认", sources=[], insufficient_evidence=True)
 
     monkeypatch.setattr(

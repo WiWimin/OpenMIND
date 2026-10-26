@@ -186,6 +186,7 @@ def test_illegal_state_transitions_return_409(
     assert deleted.json()["error_code"] == "BUSINESS_RULE_VIOLATION"
 
     # 已完成任务不可取消
+    client.patch(f"/api/v1/tasks/{task_id}", json={"status": "in_progress"}, headers=headers)
     client.patch(f"/api/v1/tasks/{task_id}", json={"status": "completed"}, headers=headers)
     cancel = client.post(f"/api/v1/tasks/{task_id}/cancel", headers=headers)
     assert cancel.status_code == 409

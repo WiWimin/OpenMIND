@@ -121,6 +121,7 @@ class EmbeddingClient:
 - 载体：`document_chunks.embedding vector(1024)`（`database.md 三.10`）。
 - **权限范围**：检索必须经 `document_chunks → meeting_materials → meetings` 关联，限定 `meetings.user_id = current_user.user_id`；禁止先全库检索再过滤。
 - 只检索 `embedding IS NOT NULL` 的分块。
+- 会议记录当前**不写入** `document_chunks`；问答额外使用当前会议最近记录作为受限上下文（按条数与字符上限截断）。这不是完整历史记录检索，完整记录检索需后续独立设计。
 
 ### 5.2 检索接口
 
@@ -151,8 +152,8 @@ class Retriever:
 
 ### 5.3 来源返回
 
-- `api.md 五.6` 的 `sources[]` 由检索结果映射：`{ meeting_id, material_id, record_id(null), excerpt }`。
-- 不得伪造引用；`excerpt` 取自命中分块原文。
+- `api.md 五.7` 的 `sources[]` 可来自材料分块或当前会议记录：材料来源有 `material_id`，记录来源有 `record_id` 且 `material_id=null`。
+- 不得伪造引用；材料 `excerpt` 取自命中分块原文，记录 `excerpt` 取自当前会议记录原文。
 
 ## 六、文件解析链路（M03，`ai/parsers/`）
 
@@ -169,12 +170,14 @@ failed → processing   （重试）
 上传(POST materials)
   → 校验扩展名/大小（pdf/docx/txt，≤ MAX_UPLOAD_MB）
   → 落盘 storage/（storage_key 不入前端）
-  → 建材料记录 processing_status=uploaded
-  → 解析(ai/parsers)：processing_status=processing
-      ├─ 成功：写 content，processing_status=processed
+  → 建材料记录（默认 uploaded）
+  → 同步解析/索引：processing_status=processing
+      ├─ 成功：写 content，processing_status=processed，parse_error=null
       │        切分 + Embedding → document_chunks
       └─ 失败：processing_status=failed，写 parse_error（安全摘要）
 ```
+
+上传接口当前同步完成处理，响应中的材料状态通常已是 `processed` 或 `failed`；`uploaded/processing` 是内部/瞬时状态，不作为上传成功的客户端契约。
 
 - 解析层已实现（PR #4）：`parse_bytes(data, file_name) -> ParsedDocument{file_name, content, parser, metadata}`，按扩展名分发，未知/空/损坏统一抛 `ParseError`。
 - `type` 取值（无点）：`pdf`/`docx`/`txt`；解析层按扩展名（带点）分发，业务层负责去点归一。
@@ -194,6 +197,7 @@ failed → processing   （重试）
 
 - **解析失败**：材料置 `failed` 并记录 `parse_error`，不产生分块；用户可重新上传（重试）。
 - **索引失败**（解析成功但切分/Embedding 失败）：材料置 `failed`，写入原因；重试时先清理旧分块再重建。
+- **未预期处理异常**：材料置 `failed` 并写入安全错误摘要，记录服务端日志，不长期停留在 `processing`。
 - **删除材料**：同步删除文件对象与 `document_chunks`；`meeting_records.source_material_id` 置空（`database.md 七`）。
 
 ## 七、Prompt 管理（`ai/prompts/`）
@@ -207,14 +211,15 @@ failed → processing   （重试）
 > 接口契约见 `api.md 五`；以下为实现要点。
 
 ### 8.1 会前准备 `POST /meetings/{id}/prepare`
-- 输入：会议信息 + 材料分块（当前会议）。
+- 输入：会议信息 + 材料内容（当前会议；`include_history=true` 时加入有限历史材料）。
 - 输出（结构化）：`{ summary: str, checklist: list[str] }`。
 - 落库：**每次生成新增一条** `preparations`（`status=draft`，`version=1`）。
 - 失败：置 `failed` 并返回统一错误。
 
 ### 8.2 会中问答 `POST /meetings/{id}/chat`
-- 流程：检索（`scope`）→ 组装 Prompt → LLM 生成 → 返回 `{answer, sources[], insufficient_evidence}`。
-- 检索为空 → `insufficient_evidence=true` 且回答明确说明无法确认。
+- 流程：按 `scope` 检索材料分块 + 当前会议最近记录（有限条数/长度）→ 组装 Prompt → LLM 生成 → 返回 `{answer, sources[], insufficient_evidence}`。
+- 默认 `current_meeting`；`current_and_history` 只扩展材料检索范围，记录始终限当前会议。
+- 材料与记录都为空 → `insufficient_evidence=true` 且回答明确说明无法确认；来源分别带 `material_id` 或 `record_id`。
 - 不落库（问答历史非 MVP）。
 
 ### 8.3 整理记录 `POST /meetings/{id}/organize`
@@ -251,6 +256,9 @@ failed → processing   （重试）
 | 模型超时 | `MODEL_TIMEOUT` | 504 | 是 |
 | 模型输出无法解析/不符合 schema | `MODEL_OUTPUT_INVALID` | 502 | 视情况 |
 | 触发限流 | `RATE_LIMITED` | 429 | 是 |
+| 未配置模型（BYOK） | `MODEL_CONFIG_REQUIRED` | 400 | 否 |
+| 模型额度不足 | `MODEL_QUOTA_EXCEEDED` | 402 | 否 |
+| 密钥/配置无效 | `MODEL_CONFIG_INVALID` | 400 | 否 |
 | 文件无法解析 | `FILE_PARSE_FAILED` | 422 | 通常否 |
 | 其他未预期 | `INTERNAL_ERROR` | 500 | 视情况 |
 

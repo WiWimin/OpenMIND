@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.ai.chat import ChatAnswer, ChatService
+from app.ai.chat import ChatAnswer, ChatService, RecordContext
 from app.ai.prompts import build_organize
 from app.ai.rag import VectorRetriever
 from app.core.exceptions import AppError
@@ -25,6 +25,26 @@ def _organize_text(transcripts: list[str], style: str, config: ModelConfig) -> s
     return build_llm_client(config).chat(messages).text
 
 
+def _recent_record_context(
+    db: Session, meeting_id: str, *, limit: int = 20, char_limit: int = 8000
+) -> list[RecordContext]:
+    records = record_repository.list_recent_by_meeting(db, meeting_id, limit=limit)
+    selected: list[RecordContext] = []
+    used = 0
+    for record in reversed(records):
+        if used + len(record.content) > char_limit:
+            break
+        selected.append(
+            RecordContext(
+                meeting_id=meeting_id,
+                record_id=record.record_id,
+                content=record.content,
+            )
+        )
+        used += len(record.content)
+    return selected
+
+
 def chat(
     db: Session,
     *,
@@ -34,12 +54,13 @@ def chat(
     context_scope: str,
     include_sources: bool,
 ) -> ChatAnswer:
-    meeting_service.get_owned_meeting(db, meeting_id, user_id)
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     return _chat_service(db, user_id).answer(
         question,
         user_id=user_id,
         scope=context_scope,
         current_meeting_id=meeting_id,
+        records=_recent_record_context(db, meeting_id),
     )
 
 
@@ -51,7 +72,7 @@ def organize(
     record_ids: list[str],
     style: str,
 ) -> tuple[str, list[str]]:
-    meeting_service.get_owned_meeting(db, meeting_id, user_id)
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     records = record_repository.list_by_ids(db, meeting_id, record_ids)
     if not records:
         raise AppError("VALIDATION_ERROR", "未找到可整理的会议记录", http_status=422)

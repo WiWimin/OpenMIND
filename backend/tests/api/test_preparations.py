@@ -1,8 +1,12 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.ai.preparation import PreparationDraft
 from app.core.exceptions import AppError
+from app.models.user import User
+from app.repositories import material_repository
 from app.services import preparation_service
 
 REGISTER = "/api/v1/auth/register"
@@ -51,6 +55,50 @@ def test_generate_preparation(client: TestClient, fake_draft: None) -> None:
     assert data["checklist"] == ["确认里程碑", "排查风险"]
     assert data["status"] == "draft"
     assert data["version"] == 1
+
+
+def test_include_history_controls_material_scope(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    current = _create_meeting(client, headers)
+    history = _create_meeting(client, headers)
+    user = db_session.execute(select(User)).scalars().one()
+    for meeting, file_name, content in (
+        (current, "current.txt", "当前会议材料"),
+        (history, "history.txt", "历史会议材料"),
+    ):
+        material = material_repository.create(
+            db_session,
+            material_id=f"mat_{file_name}",
+            meeting_id=meeting["meeting_id"],
+            user_id=user.user_id,
+            file_name=file_name,
+            material_type="txt",
+            source=None,
+            storage_key=f"materials/{file_name}",
+        )
+        material.content = content
+        db_session.commit()
+
+    captured: list[list[str]] = []
+
+    def fake(meeting, snippets, user_goal, config=None):
+        captured.append(snippets)
+        return PreparationDraft(summary="摘要", checklist=[])
+
+    monkeypatch.setattr(preparation_service, "generate_draft", fake)
+
+    for include_history in (False, True):
+        response = client.post(
+            f"/api/v1/meetings/{current['meeting_id']}/prepare",
+            json={"include_history": include_history},
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    assert captured[0] == ["当前会议材料"]
+    assert set(captured[1]) == {"当前会议材料", "历史会议材料"}
 
 
 def test_generate_requires_auth(client: TestClient, fake_draft: None) -> None:

@@ -121,6 +121,22 @@ def test_update_cross_user_forbidden(client: TestClient, fake_extract: None) -> 
     assert response.status_code == 404
 
 
+def test_issue_terminal_status_cannot_reopen(
+    client: TestClient, fake_extract: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    issue = _extract(client, headers, meeting["meeting_id"])[0]
+    url = f"/api/v1/issues/{issue['issue_id']}"
+
+    resolved = client.patch(url, json={"status": "resolved"}, headers=headers)
+    assert resolved.status_code == 200
+
+    reopened = client.patch(url, json={"status": "open"}, headers=headers)
+    assert reopened.status_code == 409
+    assert reopened.json()["error_code"] == "BUSINESS_RULE_VIOLATION"
+
+
 def test_issue_update_validation(client: TestClient, fake_extract: None) -> None:
     headers = _auth(client)
     meeting = _meeting(client, headers)
@@ -129,6 +145,49 @@ def test_issue_update_validation(client: TestClient, fake_extract: None) -> None
         f"/api/v1/issues/{issue['issue_id']}", json={"status": "bogus"}, headers=headers
     )
     assert response.status_code == 422
+
+
+def test_extract_discards_unknown_source_record(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    _record(client, headers, meeting["meeting_id"])
+    monkeypatch.setattr(
+        issue_service,
+        "extract_candidates",
+        lambda transcripts, config=None: [
+            IssueCandidate(description="问题", source_record_id="rec_missing")
+        ],
+    )
+
+    issue = _extract(client, headers, meeting["meeting_id"])[0]
+
+    assert issue["source"]["record_id"] is None
+
+
+def test_delete_record_referenced_by_issue_conflict(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    record = _record(client, headers, meeting["meeting_id"])
+    monkeypatch.setattr(
+        issue_service,
+        "extract_candidates",
+        lambda transcripts, config=None: [
+            IssueCandidate(
+                description="问题",
+                source_record_id=record["record_id"],
+            )
+        ],
+    )
+    _extract(client, headers, meeting["meeting_id"])
+
+    response = client.delete(f"/api/v1/records/{record['record_id']}", headers=headers)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "BUSINESS_RULE_VIOLATION"
 
 
 def test_meeting_delete_cascades_issues(client: TestClient, fake_extract: None) -> None:

@@ -99,6 +99,29 @@ describe('MaterialSection', () => {
     expect(materialsApi.listMaterials).toHaveBeenCalledTimes(2)
   })
 
+  it('shows a parse failure instead of a success toast', async () => {
+    const failed: Material = {
+      ...processed,
+      material_id: 'mat_failed',
+      processing_status: 'failed',
+      parse_error: 'PDF 文件无法读取或已损坏',
+    }
+    vi.mocked(materialsApi.listMaterials)
+      .mockResolvedValueOnce(listOf([]))
+      .mockResolvedValueOnce(listOf([failed]))
+    vi.mocked(materialsApi.uploadMaterial).mockResolvedValue(failed)
+    const wrapper = mountSection()
+    await flushPromises()
+
+    const file = new File(['bad'], 'broken.pdf')
+    await selectFile(wrapper, file)
+    await wrapper.get('.material-uploader .app-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.error-message').text()).toContain('PDF 文件无法读取或已损坏')
+    expect(materialsApi.listMaterials).toHaveBeenCalledTimes(2)
+  })
+
   it('deletes a material after confirmation', async () => {
     vi.mocked(materialsApi.listMaterials).mockResolvedValue(listOf([processed]))
     vi.mocked(materialsApi.deleteMaterial).mockResolvedValue({ deleted: true, material_id: 'mat_1' })

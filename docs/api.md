@@ -323,7 +323,9 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选）、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
 
-响应 `201`：材料对象（`processing_status = uploaded`）。文件类型不支持 `415`，过大 `413`。
+响应 `201`：材料对象。当前为同步解析/索引，成功时 `processing_status = processed`；解析或索引失败时返回 `failed` 并写入 `parse_error`，文件类型不支持 `415`，过大 `413`。
+
+> 上传路径的解析失败以 `processing_status=failed` + `parse_error` 表达，不返回 `422 FILE_PARSE_FAILED`；后者用于解析层错误语义说明，不是上传接口的响应。
 
 ### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials` [提案]
 
@@ -336,7 +338,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ### 4.5 删除材料 `DELETE /api/v1/materials/{material_id}`
 
 响应 `200`：`{ "status": "success", "data": { "deleted": true, "material_id": "mat_xxx" } }`。
-删除后相关分块与向量索引同步清理，RAG 不得再检索到。
+删除后相关分块与向量索引同步清理，RAG 不得再检索到；引用该材料的 `meeting_records.source_material_id` 置空。
 
 ### 4.6 音频转写 `POST /api/v1/materials/{material_id}/transcribe` [扩展]
 
@@ -377,6 +379,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ### 4.11 删除记录 `DELETE /api/v1/records/{record_id}` [提案]
 
 响应 `200`：`{ "status": "success", "data": { "deleted": true, "record_id": "rec_xxx" } }`。
+若该记录被行动项或问题引用，返回 `409 BUSINESS_RULE_VIOLATION`，以保留来源可追溯性。
 
 ## 五、AI 应用（M04、M05、M06、M07、M09，B）
 
@@ -405,7 +408,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 { "include_history": true, "user_goal": "确认本周里程碑和待解决风险" }
 ```
 
-响应 `200`：准备稿对象（`status = draft`）。同步完成；超时返回统一错误。
+响应 `200`：准备稿对象（`status = draft`）。同步完成；超时返回统一错误。`include_history=true` 时在用户授权范围内加入有限历史材料；`false` 时只使用当前会议材料。
 每次生成**新增一条**准备稿记录；对某条记录的编辑原地更新并 `version` 递增（`ai-design.md 八.1`）。
 
 ### 5.3 准备稿列表 `GET /api/v1/meetings/{meeting_id}/preparations`
@@ -430,10 +433,10 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ### 5.7 会议问答 `POST /api/v1/meetings/{meeting_id}/chat`
 
 ```json
-{ "question": "上次会议决定了什么？", "context_scope": "current_and_history", "include_sources": true }
+{ "question": "上次会议决定了什么？", "context_scope": "current_meeting", "include_sources": true }
 ```
 
-`context_scope`：`current_meeting` / `current_and_history`（仅控制检索范围，不授予权限）。
+`context_scope`：`current_meeting`（默认）/ `current_and_history`。它只控制材料检索范围，不授予权限；会议记录始终只取当前会议最近记录（有限条数/长度），不是完整历史记录检索。
 
 响应 `200`：
 
@@ -443,14 +446,15 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "data": {
     "answer": "根据已有会议材料，上次会议决定……",
     "sources": [
-      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "excerpt": "相关原文片段" }
+      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "excerpt": "相关原文片段" },
+      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "excerpt": "当前会议记录片段" }
     ],
     "insufficient_evidence": false
   }
 }
 ```
 
-- `sources` 可为空数组，不得伪造引用。
+- `sources` 可为空数组，不得伪造引用；来源可以是材料分块（`material_id` 有值）或当前会议记录（`record_id` 有值，`material_id` 为 `null`）。
 - 证据不足时 `insufficient_evidence = true`。
 
 ### 5.8 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
@@ -635,7 +639,7 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 }
 ```
 
-`status`：`todo` / `in_progress` / `completed` / `cancelled`。
+`status`：`todo` / `in_progress` / `completed` / `cancelled`。允许流转：`todo → in_progress → completed`；未完成任务可转入 `cancelled`，终态不可回退。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |

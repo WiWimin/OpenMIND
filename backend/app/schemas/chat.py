@@ -12,13 +12,13 @@ class ChatContextScope(StrEnum):
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
-    context_scope: ChatContextScope = ChatContextScope.current_and_history
+    context_scope: ChatContextScope = ChatContextScope.current_meeting
     include_sources: bool = True
 
 
 class ChatSource(BaseModel):
     meeting_id: str
-    material_id: str
+    material_id: str | None
     record_id: str | None
     excerpt: str
 

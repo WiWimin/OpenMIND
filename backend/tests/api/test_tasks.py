@@ -80,6 +80,20 @@ def test_update_task_fields(client: TestClient, db_session: Session) -> None:
     assert data["due_date"] == "2026-10-09"
 
 
+def test_todo_cannot_complete_without_in_progress(
+    client: TestClient, db_session: Session
+) -> None:
+    headers, user_id = _register(client)
+    _seed(db_session, user_id, task_id="tsk_1", status="todo")
+
+    response = client.patch(
+        "/api/v1/tasks/tsk_1", json={"status": "completed"}, headers=headers
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "BUSINESS_RULE_VIOLATION"
+
+
 def test_update_task_status_transitions(client: TestClient, db_session: Session) -> None:
     headers, user_id = _register(client)
     _seed(db_session, user_id, task_id="tsk_1", status="todo")

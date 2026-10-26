@@ -1,6 +1,6 @@
 <template>
   <div class="issues-section">
-    <div class="issues-section__toolbar">
+    <div v-if="!readonly" class="issues-section__toolbar">
       <AppButton :loading="extracting" @click="extract">提取未解决问题</AppButton>
       <AppButton v-if="extracting" variant="ghost" @click="cancelExtract">取消生成</AppButton>
     </div>
@@ -47,7 +47,7 @@
 
           <template v-else>
             <p v-if="issue.follow_up" class="issue-item__follow">跟进：{{ issue.follow_up }}</p>
-            <div class="issue-item__actions">
+            <div v-if="!readonly" class="issue-item__actions">
               <AppButton variant="ghost" @click="startEdit(issue)">编辑</AppButton>
             </div>
           </template>
@@ -86,7 +86,10 @@ import type { SelectOption } from '@/types/ui'
 import { isRequestCancelled } from '@/utils/requests'
 import { issueStatusMeta } from '@/utils/statusLabels'
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{ meetingId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
 const toast = useToast()
 

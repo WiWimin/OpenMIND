@@ -40,26 +40,27 @@
       <div class="meeting-detail__panel">
         <section v-if="activeTab === 'materials'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">材料</h2>
-          <MaterialSection :meeting-id="meetingId" />
+          <MaterialSection :meeting-id="meetingId" :readonly="isArchived" />
         </section>
 
         <section v-else-if="activeTab === 'preparation'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">会前准备</h2>
           <AiAssistantEntry
+            v-if="!isArchived"
             description="会前准备由 AI 基于材料生成，可在问答中追问细节。"
             @go-to-chat="openAssistant"
           />
-          <PreparationSection :meeting-id="meetingId" />
+          <PreparationSection :meeting-id="meetingId" :readonly="isArchived" />
         </section>
 
         <section v-else-if="activeTab === 'records'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">记录与问答</h2>
           <div class="meeting-detail__split">
             <div class="meeting-detail__split-main">
-              <RecordSection :meeting-id="meetingId" />
+              <RecordSection :meeting-id="meetingId" :readonly="isArchived" />
             </div>
             <aside class="meeting-detail__split-aside">
-              <ChatPanel :meeting-id="meetingId" />
+              <ChatPanel :meeting-id="meetingId" :readonly="isArchived" />
             </aside>
           </div>
         </section>
@@ -67,6 +68,7 @@
         <section v-else-if="activeTab === 'minutes'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">纪要与行动项</h2>
           <AiAssistantEntry
+            v-if="!isArchived"
             description="纪要与行动项由 AI 从记录中提取生成，确认前可自由编辑。"
             @go-to-chat="openAssistant"
           />
@@ -74,17 +76,23 @@
             :key="minutesSectionKey"
             :meeting-id="meetingId"
             :meeting-title="store.current.title"
+            :readonly="isArchived"
           />
-          <ActionItemSection class="meeting-detail__sub" :meeting-id="meetingId" />
+          <ActionItemSection
+            class="meeting-detail__sub"
+            :meeting-id="meetingId"
+            :readonly="isArchived"
+          />
         </section>
 
         <section v-else-if="activeTab === 'issues'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">问题</h2>
           <AiAssistantEntry
+            v-if="!isArchived"
             description="问题由 AI 从纪要与记录中提取，可手动编辑补充。"
             @go-to-chat="openAssistant"
           />
-          <IssuesSection :meeting-id="meetingId" />
+          <IssuesSection :meeting-id="meetingId" :readonly="isArchived" />
         </section>
 
         <section v-else class="meeting-detail__section">
@@ -129,6 +137,7 @@
     />
 
     <button
+      v-if="!isArchived"
       type="button"
       class="meeting-detail__ai-fab"
       aria-label="打开 AI 助手"

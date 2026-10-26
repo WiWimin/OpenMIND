@@ -269,6 +269,7 @@
   - 若存在**已转换行动项**（`action_items.status = converted`）或**引用该会议的个人任务**（`personal_tasks.meeting_id`），**禁止删除**，业务层返回 `409 BUSINESS_RULE_VIOLATION`。
   - 否则在事务中删除该会议的材料、分块、记录、准备稿、纪要、行动项与问题。
 - 删除材料：删除文件对象、`document_chunks` 与向量；`meeting_records.source_material_id` 引用该材料时置空，不删除原始记录。
+- 删除记录：若被行动项（`source_record_id`）或问题（`source_record_id`）引用，返回 `409 BUSINESS_RULE_VIOLATION`，避免来源失去可追溯性。
 - 删除行动项：已转换为任务的不允许直接删除（应取消状态或保留关联），避免任务失去来源。
 - 用户删除：MVP 不提供。
 - 文件存储不支持事务时，须设计失败补偿/清理机制。

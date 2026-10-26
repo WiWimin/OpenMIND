@@ -69,6 +69,26 @@ def test_upload_material(client: TestClient, media_root) -> None:
     assert (media_root / "materials" / f"{data['material_id']}.txt").exists()
 
 
+def test_upload_parse_failure_returns_failed_material(
+    client: TestClient, media_root
+) -> None:
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+
+    response = _upload(
+        client,
+        headers,
+        meeting["meeting_id"],
+        name="broken.pdf",
+        content=b"not a real pdf",
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["processing_status"] == "failed"
+    assert data["parse_error"]
+
+
 def test_upload_requires_auth(client: TestClient, media_root) -> None:
     response = client.post(
         "/api/v1/meetings/mtg_x/materials",
@@ -143,6 +163,36 @@ def test_get_material_and_cross_user(client: TestClient, media_root) -> None:
     url = f"/api/v1/materials/{material['material_id']}"
     assert client.get(url, headers=bob).status_code == 404
     assert client.delete(url, headers=bob).status_code == 404
+
+
+def test_delete_material_clears_record_source(
+    client: TestClient, media_root, db_session
+) -> None:
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    material = _upload(client, headers, meeting["meeting_id"]).json()["data"]
+
+    from app.repositories import record_repository
+
+    record_repository.create(
+        db_session,
+        record_id="rec_source",
+        meeting_id=meeting["meeting_id"],
+        content="来源记录",
+        record_type="imported",
+        source_material_id=material["material_id"],
+    )
+
+    response = client.delete(
+        f"/api/v1/materials/{material['material_id']}", headers=headers
+    )
+    assert response.status_code == 200
+
+    records = client.get(
+        f"/api/v1/meetings/{meeting['meeting_id']}/records", headers=headers
+    ).json()["data"]["items"]
+    source_record = next(item for item in records if item["record_id"] == "rec_source")
+    assert source_record["source_material_id"] is None
 
 
 def test_delete_material_removes_row_and_file(client: TestClient, media_root) -> None:

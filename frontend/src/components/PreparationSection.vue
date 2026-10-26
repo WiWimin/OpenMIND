@@ -1,6 +1,6 @@
 <template>
   <div class="preparation-section">
-    <div class="preparation-section__toolbar">
+    <div v-if="!readonly" class="preparation-section__toolbar">
       <FormTextarea
         id="preparation-goal"
         v-model="userGoal"
@@ -49,15 +49,22 @@
           <span class="preparation-section__version">v{{ selected.version }}</span>
         </div>
 
-        <FormTextarea id="preparation-summary" v-model="draftSummary" label="会前摘要" :rows="6" />
+        <FormTextarea
+          id="preparation-summary"
+          v-model="draftSummary"
+          label="会前摘要"
+          :rows="6"
+          :readonly="readonly"
+        />
         <FormTextarea
           id="preparation-checklist"
           v-model="draftChecklist"
           label="准备清单（每行一项）"
           :rows="6"
+          :readonly="readonly"
         />
 
-        <div class="preparation-section__actions">
+        <div v-if="!readonly" class="preparation-section__actions">
           <AppButton :loading="saving" @click="save">保存</AppButton>
           <AppButton
             v-if="selected.status !== 'confirmed'"
@@ -90,7 +97,10 @@ import { formatDateTime } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
 import { preparationStatusMeta } from '@/utils/statusLabels'
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{ meetingId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
 const toast = useToast()
 

@@ -89,5 +89,14 @@ def has_converted_by_meeting(db: Session, meeting_id: str) -> bool:
     return int(db.execute(statement).scalar_one()) > 0
 
 
+def exists_by_source_record(db: Session, record_id: str) -> bool:
+    statement = (
+        select(func.count())
+        .select_from(ActionItem)
+        .where(ActionItem.source_record_id == record_id)
+    )
+    return int(db.execute(statement).scalar_one()) > 0
+
+
 def delete_by_meeting(db: Session, meeting_id: str) -> None:
     db.execute(sa_delete(ActionItem).where(ActionItem.meeting_id == meeting_id))
