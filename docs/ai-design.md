@@ -91,6 +91,8 @@ class LLMClient:
 - `api_base` 默认只允许 HTTPS 公网地址；拒绝本机、私有/保留 IP、URL 内嵌凭证及 query/fragment。自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS`，该开关会扩大 SSRF 面，仅限可信部署。应用层校验不能完全消除 DNS rebinding，部署侧仍应限制出站访问。
 - `SECRET_KEY` 在非开发环境必须为至少 32 字符的随机值；轮换时通过 `SECRET_KEY_PREVIOUS` 保留旧密钥解密既有密文，新加密始终使用当前 `SECRET_KEY`。解密失败返回 `MODEL_CONFIG_INVALID`，用户可清除并重新保存配置。
 - 默认要求用户配置 BYOK；`ALLOW_GLOBAL_FALLBACK=false` 时未配置用户返回 `MODEL_CONFIG_REQUIRED`（400），不会静默使用服务端全局 Key。仅显式开启 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局”回退。
+- 按用途模型：`user_model_configs.llm_purpose_models` 保存 `preparation` / `chat` / `minutes` / `extraction` 的模型名覆盖；仅覆盖模型名，API 地址与密钥沿用 LLM 基础配置。未覆盖或未设置时使用默认 `llm_model`。
+- 调用方必须显式传入用途：会前准备、会议问答/整理、纪要生成、行动项/问题提取分别使用对应用途；Embedding 仍使用独立 Embedding 配置。
 - 模型额度不足返回 `MODEL_QUOTA_EXCEEDED`（402）；密钥无效返回 `MODEL_CONFIG_INVALID`（400）。
 - Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），用户自备模型也必须为 1024 维。
 

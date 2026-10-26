@@ -16,6 +16,7 @@ def upsert(
     llm_api_base: str | None,
     llm_api_key_enc: str | None,
     llm_model: str | None,
+    llm_purpose_models: dict[str, str] | None = None,
     embedding_api_base: str | None,
     embedding_api_key_enc: str | None,
     embedding_model: str | None,
@@ -28,10 +29,25 @@ def upsert(
     config.llm_api_base = llm_api_base
     config.llm_api_key_enc = llm_api_key_enc
     config.llm_model = llm_model
+    if llm_purpose_models is not None:
+        config.llm_purpose_models = llm_purpose_models
     config.embedding_api_base = embedding_api_base
     config.embedding_api_key_enc = embedding_api_key_enc
     config.embedding_model = embedding_model
     config.embedding_dim = embedding_dim
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+def update_purpose_models(
+    db: Session, *, user_id: str, models: dict[str, str]
+) -> UserModelConfig:
+    config = db.get(UserModelConfig, user_id)
+    if config is None:
+        config = UserModelConfig(user_id=user_id)
+        db.add(config)
+    config.llm_purpose_models = models
     db.commit()
     db.refresh(config)
     return config

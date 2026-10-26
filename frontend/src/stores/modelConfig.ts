@@ -2,7 +2,11 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import * as settingsApi from '@/api/settings'
-import type { ModelConfig, ModelConfigPayload } from '@/types/modelConfig'
+import type {
+  ModelConfig,
+  ModelConfigPayload,
+  PurposeModelsPayload,
+} from '@/types/modelConfig'
 
 export const useModelConfigStore = defineStore('modelConfig', () => {
   const config = ref<ModelConfig | null>(null)
@@ -38,6 +42,21 @@ export const useModelConfigStore = defineStore('modelConfig', () => {
     }
   }
 
+  async function savePurposes(payload: PurposeModelsPayload): Promise<ModelConfig> {
+    saving.value = true
+    error.value = null
+    try {
+      const updated = await settingsApi.savePurposeModels(payload)
+      config.value = updated
+      return updated
+    } catch (err) {
+      error.value = err
+      throw err
+    } finally {
+      saving.value = false
+    }
+  }
+
   async function clear(): Promise<void> {
     saving.value = true
     error.value = null
@@ -52,5 +71,5 @@ export const useModelConfigStore = defineStore('modelConfig', () => {
     }
   }
 
-  return { config, loading, saving, error, load, save, clear }
+  return { config, loading, saving, error, load, save, savePurposes, clear }
 })

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { clearModelConfig, getModelConfig, saveModelConfig } from '@/api/settings'
+import {
+  clearModelConfig,
+  getModelConfig,
+  saveModelConfig,
+  savePurposeModels,
+} from '@/api/settings'
 import type { ModelConfig } from '@/types/modelConfig'
 import { response } from './support'
 
@@ -18,6 +23,7 @@ const config: ModelConfig = {
   llm_model: 'custom-model',
   llm_api_key_masked: 'sk-...-key',
   llm_source: 'user',
+  llm_purpose_models: {},
   embedding_api_base: 'https://emb.example.com/v1',
   embedding_model: 'text-embedding-1024',
   embedding_api_key_masked: 'sk-...-key',
@@ -47,6 +53,14 @@ describe('settings api', () => {
 
     await expect(saveModelConfig(payload)).resolves.toEqual(config)
     expect(put).toHaveBeenCalledWith('/me/settings/model', payload)
+  })
+
+  it('saves purpose model overrides', async () => {
+    const payload = { models: { minutes: 'minutes-model' } }
+    put.mockResolvedValue(response({ status: 'success', data: config }))
+
+    await expect(savePurposeModels(payload)).resolves.toEqual(config)
+    expect(put).toHaveBeenCalledWith('/me/settings/model/purposes', payload)
   })
 
   it('clears the model config', async () => {

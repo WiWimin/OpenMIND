@@ -12,6 +12,7 @@ from app.schemas.minutes import MinutesGenerateRequest, MinutesUpdate
 from app.services import meeting_service
 from app.services.model_config_service import (
     ModelConfig,
+    ModelPurpose,
     build_llm_client,
     resolve_model_config,
 )
@@ -102,7 +103,7 @@ def generate_minutes(
     material_snippets, material_ids = _gather_materials(
         db, meeting_id, enabled=payload.include_materials
     )
-    config = resolve_model_config(db, user_id)
+    config = resolve_model_config(db, user_id, purpose=ModelPurpose.minutes)
     content = generate_text(
         meeting,
         transcripts,

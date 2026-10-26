@@ -122,6 +122,96 @@ def test_global_keys_are_not_masked_or_returned(
     assert bob_read["embedding_api_key_masked"] == ""
 
 
+def test_put_purpose_models_and_read(
+    client: TestClient, fake_probes: None
+) -> None:
+    headers = _auth(client)
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    response = client.put(
+        "/api/v1/me/settings/model/purposes",
+        json={"models": {"minutes": "minutes-model", "chat": "chat-model"}},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["llm_purpose_models"] == {
+        "minutes": "minutes-model",
+        "chat": "chat-model",
+    }
+    got = client.get("/api/v1/me/settings/model", headers=headers).json()["data"]
+    assert got["llm_purpose_models"]["minutes"] == "minutes-model"
+
+
+def test_purpose_models_require_configured_llm(
+    client: TestClient, fake_probes: None
+) -> None:
+    headers = _auth(client)
+
+    response = client.put(
+        "/api/v1/me/settings/model/purposes",
+        json={"models": {"minutes": "minutes-model"}},
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "MODEL_CONFIG_INVALID"
+
+
+def test_unknown_purpose_model_rejected(
+    client: TestClient, fake_probes: None
+) -> None:
+    headers = _auth(client)
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    response = client.put(
+        "/api/v1/me/settings/model/purposes",
+        json={"models": {"unknown": "some-model"}},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_empty_purpose_models_clear_overrides(
+    client: TestClient, fake_probes: None
+) -> None:
+    headers = _auth(client)
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+    client.put(
+        "/api/v1/me/settings/model/purposes",
+        json={"models": {"minutes": "minutes-model"}},
+        headers=headers,
+    )
+
+    response = client.put(
+        "/api/v1/me/settings/model/purposes",
+        json={"models": {}},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["llm_purpose_models"] == {}
+
+
+def test_base_config_save_preserves_purpose_models(
+    client: TestClient, fake_probes: None
+) -> None:
+    headers = _auth(client)
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+    client.put(
+        "/api/v1/me/settings/model/purposes",
+        json={"models": {"minutes": "minutes-model"}},
+        headers=headers,
+    )
+
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    got = client.get("/api/v1/me/settings/model", headers=headers).json()["data"]
+    assert got["llm_purpose_models"] == {"minutes": "minutes-model"}
+
+
 def test_private_api_base_rejected(client: TestClient, fake_probes: None) -> None:
     headers = _auth(client)
     payload = _payload()

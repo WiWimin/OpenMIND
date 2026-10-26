@@ -8,6 +8,7 @@ import type { ModelConfig } from '@/types/modelConfig'
 vi.mock('@/api/settings', () => ({
   getModelConfig: vi.fn(),
   saveModelConfig: vi.fn(),
+  savePurposeModels: vi.fn(),
   clearModelConfig: vi.fn(),
 }))
 
@@ -16,6 +17,7 @@ const config: ModelConfig = {
   llm_model: 'custom-model',
   llm_api_key_masked: 'sk-...-key',
   llm_source: 'user',
+  llm_purpose_models: {},
   embedding_api_base: 'https://emb.example.com/v1',
   embedding_model: 'text-embedding-1024',
   embedding_api_key_masked: 'sk-...-key',
@@ -49,6 +51,22 @@ describe('modelConfig store', () => {
 
     expect(settingsApi.saveModelConfig).toHaveBeenCalledWith(payload)
     expect(store.config).toEqual(config)
+    expect(store.saving).toBe(false)
+  })
+
+  it('saves purpose models and updates state', async () => {
+    const payload = { models: { minutes: 'minutes-model' } }
+    const updated = {
+      ...config,
+      llm_purpose_models: { minutes: 'minutes-model' },
+    }
+    vi.mocked(settingsApi.savePurposeModels).mockResolvedValue(updated)
+
+    const store = useModelConfigStore()
+    await store.savePurposes(payload)
+
+    expect(settingsApi.savePurposeModels).toHaveBeenCalledWith(payload)
+    expect(store.config).toEqual(updated)
     expect(store.saving).toBe(false)
   })
 

@@ -9,6 +9,7 @@ import ModelSettingsView from '@/views/settings/ModelSettingsView.vue'
 vi.mock('@/api/settings', () => ({
   getModelConfig: vi.fn(),
   saveModelConfig: vi.fn(),
+  savePurposeModels: vi.fn(),
   clearModelConfig: vi.fn(),
 }))
 
@@ -17,6 +18,7 @@ const configUser: ModelConfig = {
   llm_model: 'custom-model',
   llm_api_key_masked: 'sk-...-key',
   llm_source: 'user',
+  llm_purpose_models: { minutes: 'minutes-model' },
   embedding_api_base: 'https://emb.example.com/v1',
   embedding_model: 'text-embedding-1024',
   embedding_api_key_masked: 'sk-...-key',
@@ -29,6 +31,7 @@ const configEmpty: ModelConfig = {
   llm_model: '',
   llm_api_key_masked: '',
   llm_source: 'none',
+  llm_purpose_models: {},
   embedding_api_base: '',
   embedding_model: '',
   embedding_api_key_masked: '',
@@ -64,6 +67,28 @@ describe('ModelSettingsView', () => {
     expect(wrapper.text()).toContain('向量模型（Embedding）')
     expect(wrapper.text()).toContain('用户配置')
     expect(wrapper.text()).toContain('custom-model')
+    expect(wrapper.text()).toContain('按用途模型')
+    expect((wrapper.get('#purpose-minutes').element as HTMLInputElement).value).toBe(
+      'minutes-model',
+    )
+  })
+
+  it('saves purpose model overrides', async () => {
+    vi.mocked(settingsApi.getModelConfig).mockResolvedValue(configUser)
+    vi.mocked(settingsApi.savePurposeModels).mockResolvedValue({
+      ...configUser,
+      llm_purpose_models: { minutes: 'minutes-model', chat: 'chat-model' },
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('#purpose-chat').setValue('chat-model')
+    await buttonByText(wrapper, '保存用途模型').trigger('click')
+    await flushPromises()
+
+    expect(settingsApi.savePurposeModels).toHaveBeenCalledWith({
+      models: { minutes: 'minutes-model', chat: 'chat-model' },
+    })
   })
 
   it('blocks saving a provider that is only partially filled', async () => {

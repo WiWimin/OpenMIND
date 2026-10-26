@@ -187,6 +187,7 @@
 | --- | --- | --- |
 | GET | `/api/v1/me/settings/model` | 读取当前生效的模型配置（密钥脱敏） |
 | PUT | `/api/v1/me/settings/model` | 保存/替换模型配置（probe 校验后加密存库） |
+| PUT | `/api/v1/me/settings/model/purposes` | 保存按用途覆盖的模型名 |
 | DELETE | `/api/v1/me/settings/model` | 清空自备配置，回退服务端全局 |
 
 PUT 请求（字段可按提供方整体省略，省略即清空该提供方）：
@@ -202,6 +203,24 @@ PUT 请求（字段可按提供方整体省略，省略即清空该提供方）�
 }
 ```
 
+按用途模型请求（`PUT /api/v1/me/settings/model/purposes`，整体替换用途覆盖；空对象 `models: {}` 清除全部覆盖）：
+
+```json
+{
+  "models": {
+    "preparation": "prep-model",
+    "chat": "chat-model",
+    "minutes": "minutes-model",
+    "extraction": "extract-model"
+  }
+}
+```
+
+- 用途：`preparation`（会前准备）、`chat`（会议问答与整理）、`minutes`（纪要生成）、`extraction`（行动项/问题提取）。
+- 仅覆盖模型名，API 地址与密钥沿用大模型配置；未覆盖的用途使用 `llm_model`。
+- 设置用途模型前必须已有生效的大模型配置。
+- 保存基础模型配置不会清除用途覆盖；使用 `models: {}` 清除全部用途覆盖。
+
 GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ```json
@@ -212,6 +231,9 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
     "llm_model": "model-name",
     "llm_api_key_masked": "sk-...abcd",
     "llm_source": "user",
+    "llm_purpose_models": {
+      "minutes": "minutes-model"
+    },
     "embedding_api_base": "https://api.example.com/v1",
     "embedding_model": "text-embedding-1024",
     "embedding_api_key_masked": "sk-...abcd",
@@ -229,6 +251,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 默认 `ALLOW_GLOBAL_FALLBACK=false`：未配置 BYOK 的用户不会自动使用服务端全局 Key；AI 接口返回 `400 MODEL_CONFIG_REQUIRED`。
 - 仅当 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局（`docker/.env`）”回退。
 - `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
+- `llm_purpose_models` 返回已保存的用途模型覆盖；未知用途或空模型名在写入时返回 `422`，未配置大模型时写入返回 `400 MODEL_CONFIG_INVALID`。
 - 轮换 `SECRET_KEY` 时设置 `SECRET_KEY_PREVIOUS` 为旧值以解密既有密文；新写入使用当前 `SECRET_KEY`。确认全部配置已重新保存后可移除旧值。
 - 无法解密既有密文时返回 `400 MODEL_CONFIG_INVALID`；可调用 `DELETE /me/settings/model` 清除后重新配置。
 - 模型额度不足返回 `402 MODEL_QUOTA_EXCEEDED`；密钥无效/配置错误返回 `400 MODEL_CONFIG_INVALID`。

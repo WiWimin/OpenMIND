@@ -10,13 +10,14 @@ from app.repositories import record_repository
 from app.services import meeting_service
 from app.services.model_config_service import (
     ModelConfig,
+    ModelPurpose,
     build_llm_client,
     resolve_model_config,
 )
 
 
 def _chat_service(db: Session, user_id: str) -> ChatService:
-    config = resolve_model_config(db, user_id)
+    config = resolve_model_config(db, user_id, purpose=ModelPurpose.chat)
     return ChatService(build_llm_client(config), VectorRetriever(db, user_id))
 
 
@@ -77,6 +78,6 @@ def organize(
     if not records:
         raise AppError("VALIDATION_ERROR", "未找到可整理的会议记录", http_status=422)
     transcripts = [record.content for record in records]
-    config = resolve_model_config(db, user_id)
+    config = resolve_model_config(db, user_id, purpose=ModelPurpose.chat)
     organized = _organize_text(transcripts, style, config)
     return organized, [record.record_id for record in records]

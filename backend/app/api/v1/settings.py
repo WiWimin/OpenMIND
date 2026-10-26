@@ -8,6 +8,7 @@ from app.schemas.model_config import (
     ModelConfigDeleteResult,
     ModelConfigRead,
     ModelConfigWrite,
+    PurposeModelsWrite,
 )
 from app.services import model_config_service
 
@@ -25,6 +26,17 @@ def put_model_config(
     payload: ModelConfigWrite, db: DbSession, current_user: CurrentUser
 ) -> Envelope[ModelConfigRead]:
     model_config_service.save_model_config(db, current_user.user_id, payload)
+    data = model_config_service.get_model_config_read(db, current_user.user_id)
+    return Envelope(data=data)
+
+
+@router.put(
+    "/me/settings/model/purposes", response_model=Envelope[ModelConfigRead]
+)
+def put_purpose_models(
+    payload: PurposeModelsWrite, db: DbSession, current_user: CurrentUser
+) -> Envelope[ModelConfigRead]:
+    model_config_service.save_purpose_models(db, current_user.user_id, payload.models)
     data = model_config_service.get_model_config_read(db, current_user.user_id)
     return Envelope(data=data)
 
