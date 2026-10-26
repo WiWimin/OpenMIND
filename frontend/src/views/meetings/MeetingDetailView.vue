@@ -40,7 +40,17 @@
       <div class="meeting-detail__panel">
         <section v-if="activeTab === 'materials'" class="meeting-detail__section">
           <h2 class="meeting-detail__section-title">材料</h2>
-          <MaterialSection :meeting-id="meetingId" :readonly="isArchived" />
+          <MaterialSection
+            :key="materialsKey"
+            :meeting-id="meetingId"
+            :readonly="isArchived"
+          />
+          <LocalWorkspacePanel
+            :meeting-id="meetingId"
+            :meeting-title="store.current.title"
+            :readonly="isArchived"
+            @imported="materialsKey += 1"
+          />
         </section>
 
         <section v-else-if="activeTab === 'preparation'" class="meeting-detail__section">
@@ -181,6 +191,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import IssuesSection from '@/components/IssuesSection.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
 import MaterialSection from '@/components/MaterialSection.vue'
 import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import MinutesSection from '@/components/MinutesSection.vue'
@@ -233,6 +244,7 @@ const deleting = ref(false)
 const actionError = ref<unknown>(null)
 
 const assistantOpen = ref(false)
+const materialsKey = ref(0)
 const minutesSectionKey = ref(0)
 const checklistKey = ref(0)
 
