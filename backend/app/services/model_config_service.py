@@ -43,25 +43,26 @@ def _decrypt_or_empty(token: str | None) -> str:
 
 
 def resolve_model_config(db: Session, user_id: str) -> ModelConfig:
-    settings = get_settings()
     row = model_config_repository.get_by_user(db, user_id)
-    llm_api_base = (row.llm_api_base if row and row.llm_api_base else "") or settings.llm_api_base
-    llm_api_key = _decrypt_or_empty(row.llm_api_key_enc if row else None) or settings.llm_api_key
-    llm_model = (row.llm_model if row and row.llm_model else "") or settings.llm_model
-    embedding_api_base = (
-        (row.embedding_api_base if row and row.embedding_api_base else "")
-        or settings.embedding_api_base
-    )
-    embedding_api_key = (
-        _decrypt_or_empty(row.embedding_api_key_enc if row else None)
-        or settings.embedding_api_key
-    )
-    embedding_model = (
-        (row.embedding_model if row and row.embedding_model else "") or settings.embedding_model
-    )
+    settings = get_settings()
+    llm_api_base = row.llm_api_base if row and row.llm_api_base else ""
+    llm_api_key = _decrypt_or_empty(row.llm_api_key_enc if row else None)
+    llm_model = row.llm_model if row and row.llm_model else ""
+    embedding_api_base = row.embedding_api_base if row and row.embedding_api_base else ""
+    embedding_api_key = _decrypt_or_empty(row.embedding_api_key_enc if row else None)
+    embedding_model = row.embedding_model if row and row.embedding_model else ""
     embedding_dim = (
         (row.embedding_dim if row and row.embedding_dim else None) or settings.embedding_dim
     )
+
+    if settings.allow_global_fallback:
+        llm_api_base = llm_api_base or settings.llm_api_base
+        llm_api_key = llm_api_key or settings.llm_api_key
+        llm_model = llm_model or settings.llm_model
+        embedding_api_base = embedding_api_base or settings.embedding_api_base
+        embedding_api_key = embedding_api_key or settings.embedding_api_key
+        embedding_model = embedding_model or settings.embedding_model
+
     return ModelConfig(
         llm_api_base=llm_api_base,
         llm_api_key=llm_api_key,

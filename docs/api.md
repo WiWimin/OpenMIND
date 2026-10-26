@@ -56,6 +56,8 @@
 | `MODEL_TIMEOUT` | 504 | 模型调用超时 | 是 |
 | `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析 | 视情况 |
 | `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/维度不符/额度不足等） | 否 |
+| `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
+| `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
 | `RATE_LIMITED` | 429 | 请求频率超过限制 | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
 | `INTERNAL_ERROR` | 500 | 未预期的服务端错误 | 视情况 |
@@ -224,11 +226,12 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - `_masked` 仅在来源为 `user` 时返回值；`global` / `none` 返回空字符串，避免向普通用户泄露服务端全局密钥片段。
 - 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成；失败返回 `400 MODEL_CONFIG_INVALID`。
 - 保存前校验 `api_base`：默认只允许 HTTPS 公网地址，拒绝本机/私有/保留地址、URL 内嵌凭证和 query/fragment；自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS=true`。
-- 生效优先级：用户配置 > 服务端全局（`docker/.env`）；全局留空即不兜底。
+- 默认 `ALLOW_GLOBAL_FALLBACK=false`：未配置 BYOK 的用户不会自动使用服务端全局 Key；AI 接口返回 `400 MODEL_CONFIG_REQUIRED`。
+- 仅当 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局（`docker/.env`）”回退。
 - `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
 - 轮换 `SECRET_KEY` 时设置 `SECRET_KEY_PREVIOUS` 为旧值以解密既有密文；新写入使用当前 `SECRET_KEY`。确认全部配置已重新保存后可移除旧值。
 - 无法解密既有密文时返回 `400 MODEL_CONFIG_INVALID`；可调用 `DELETE /me/settings/model` 清除后重新配置。
-- 未配置任何模型时，AI 相关接口返回 `MODEL_CONFIG_INVALID`。
+- 模型额度不足返回 `402 MODEL_QUOTA_EXCEEDED`；密钥无效/配置错误返回 `400 MODEL_CONFIG_INVALID`。
 
 ## 三、会议管理（M02，A）
 

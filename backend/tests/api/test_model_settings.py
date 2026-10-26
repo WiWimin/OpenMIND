@@ -86,9 +86,10 @@ def test_config_isolated_per_user(client: TestClient, fake_probes: None) -> None
     client.put("/api/v1/me/settings/model", json=_payload(), headers=alice)
 
     bob_read = client.get("/api/v1/me/settings/model", headers=bob).json()["data"]
-    assert bob_read["llm_model"] == get_settings().llm_model
+    assert bob_read["llm_model"] == ""
     assert bob_read["llm_model"] != "custom-model"
-    assert bob_read["llm_source"] != "user"
+    assert bob_read["llm_source"] == "none"
+    assert bob_read["llm_api_key_masked"] == ""
 
 
 def test_global_keys_are_not_masked_or_returned(
@@ -106,6 +107,7 @@ def test_global_keys_are_not_masked_or_returned(
                 "embedding_api_base": "https://example.com/v1",
                 "embedding_api_key": "sk-global-embedding",
                 "embedding_model": "global-embedding",
+                "allow_global_fallback": True,
             }
         ),
     )
@@ -114,9 +116,9 @@ def test_global_keys_are_not_masked_or_returned(
     client.put("/api/v1/me/settings/model", json=_payload(), headers=alice)
 
     bob_read = client.get("/api/v1/me/settings/model", headers=bob).json()["data"]
-    assert bob_read["llm_source"] != "user"
+    assert bob_read["llm_source"] == "global"
     assert bob_read["llm_api_key_masked"] == ""
-    assert bob_read["embedding_source"] != "user"
+    assert bob_read["embedding_source"] == "global"
     assert bob_read["embedding_api_key_masked"] == ""
 
 
@@ -190,10 +192,10 @@ def test_delete_clears_config(client: TestClient, fake_probes: None) -> None:
     assert deleted.json()["data"]["deleted"] is True
 
     after = client.get("/api/v1/me/settings/model", headers=headers).json()["data"]
-    assert after["llm_model"] == get_settings().llm_model
+    assert after["llm_model"] == ""
     assert after["llm_model"] != "custom-model"
-    assert after["llm_source"] != "user"
-    assert after["embedding_source"] != "user"
+    assert after["llm_source"] == "none"
+    assert after["embedding_source"] == "none"
 
 
 def test_requires_auth(client: TestClient) -> None:
