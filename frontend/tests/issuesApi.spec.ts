@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
 import { extractIssues, listIssues, updateIssue } from '@/api/issues'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ListData } from '@/types/api'
 import type { OpenIssue } from '@/types/issue'
 import { response } from './support'
@@ -36,7 +37,7 @@ describe('issues api', () => {
     await expect(extractIssues('mtg_1', { record_ids: ['rec_1'] })).resolves.toEqual([issue])
     expect(post).toHaveBeenCalledWith('/meetings/mtg_1/issues/extract', {
       record_ids: ['rec_1'],
-    }, { signal: undefined })
+    }, { signal: undefined, timeout: LONG_REQUEST_TIMEOUT_MS })
   })
 
   it('lists issues with pagination params', async () => {

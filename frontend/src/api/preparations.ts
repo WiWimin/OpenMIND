@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, ListData } from '@/types/api'
 import type { PageParams } from '@/types/pagination'
 import type {
@@ -16,7 +17,7 @@ export async function generatePreparation(
   const { data } = await http.post<ApiSuccess<Preparation> | Preparation>(
     `/meetings/${meetingId}/prepare`,
     payload,
-    { signal },
+    { signal, timeout: LONG_REQUEST_TIMEOUT_MS },
   )
   return unwrapData(data)
 }

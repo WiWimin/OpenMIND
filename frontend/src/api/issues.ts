@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, ListData } from '@/types/api'
 import type { ExtractIssuesPayload, OpenIssue, UpdateIssuePayload } from '@/types/issue'
 import type { PageParams } from '@/types/pagination'
@@ -11,7 +12,10 @@ export async function extractIssues(
 ): Promise<OpenIssue[]> {
   const { data } = await http.post<
     ApiSuccess<{ items: OpenIssue[] }> | { items: OpenIssue[] } | OpenIssue[]
-  >(`/meetings/${meetingId}/issues/extract`, payload, { signal })
+  >(`/meetings/${meetingId}/issues/extract`, payload, {
+    signal,
+    timeout: LONG_REQUEST_TIMEOUT_MS,
+  })
   return unwrapList<OpenIssue>(data)
 }
 

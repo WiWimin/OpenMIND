@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
   confirmPreparation,
   generatePreparation,
@@ -44,6 +45,7 @@ describe('preparations api', () => {
     )
     expect(post).toHaveBeenCalledWith('/meetings/mtg_1/prepare', { user_goal: '确认风险' }, {
       signal: undefined,
+      timeout: LONG_REQUEST_TIMEOUT_MS,
     })
   })
 

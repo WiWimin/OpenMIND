@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type {
   ActionItem,
@@ -17,7 +18,10 @@ export async function extractActionItems(
 ): Promise<ActionItem[]> {
   const { data } = await http.post<
     ApiSuccess<{ items: ActionItem[] }> | { items: ActionItem[] } | ActionItem[]
-  >(`/meetings/${meetingId}/action-items/extract`, payload, { signal })
+  >(`/meetings/${meetingId}/action-items/extract`, payload, {
+    signal,
+    timeout: LONG_REQUEST_TIMEOUT_MS,
+  })
   return unwrapList<ActionItem>(data)
 }
 

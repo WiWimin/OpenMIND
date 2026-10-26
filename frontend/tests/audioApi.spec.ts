@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
   confirmAudio,
   deleteAudio,
@@ -60,7 +61,10 @@ describe('audio api', () => {
     const [path, body, options] = post.mock.calls[0]
     expect(path).toBe('/meetings/mtg_1/audio')
     expect((body as FormData).get('file')).toBe(file)
-    expect(options).toEqual({ headers: { 'Content-Type': 'multipart/form-data' } })
+    expect(options).toEqual({
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
   })
 
   it('updates transcript', async () => {
@@ -78,7 +82,9 @@ describe('audio api', () => {
 
     await expect(retryAudio('aud_1')).resolves.toEqual(audio)
     await expect(confirmAudio('aud_1')).resolves.toEqual(audio)
-    expect(post).toHaveBeenCalledWith('/audio/aud_1/retry')
+    expect(post).toHaveBeenCalledWith('/audio/aud_1/retry', undefined, {
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
     expect(post).toHaveBeenCalledWith('/audio/aud_1/confirm')
   })
 

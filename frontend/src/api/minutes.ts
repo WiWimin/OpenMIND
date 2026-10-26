@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, ListData } from '@/types/api'
 import type { GenerateMinutesPayload, Minutes, UpdateMinutesPayload } from '@/types/minutes'
 import type { PageParams } from '@/types/pagination'
@@ -12,7 +13,7 @@ export async function generateMinutes(
   const { data } = await http.post<ApiSuccess<Minutes> | Minutes>(
     `/meetings/${meetingId}/minutes/generate`,
     payload,
-    { signal },
+    { signal, timeout: LONG_REQUEST_TIMEOUT_MS },
   )
   return unwrapData(data)
 }
