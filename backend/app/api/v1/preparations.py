@@ -32,6 +32,7 @@ def generate_preparation(
         meeting_id=meeting_id,
         user_id=current_user.user_id,
         user_goal=payload.user_goal,
+        include_history=payload.include_history,
     )
     return Envelope(data=PreparationRead.model_validate(preparation))
 

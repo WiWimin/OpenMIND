@@ -3,7 +3,7 @@ export type ChatContextScope = 'current_meeting' | 'current_and_history'
 
 export interface ChatSource {
   meeting_id: string
-  material_id: string
+  material_id: string | null
   record_id: string | null
   excerpt: string
 }

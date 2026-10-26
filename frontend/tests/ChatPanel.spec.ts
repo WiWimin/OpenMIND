@@ -39,10 +39,27 @@ describe('ChatPanel', () => {
 
     expect(chatApi.askMeeting).toHaveBeenCalledWith('mtg_1', {
       question: '上次决定什么？',
+      context_scope: 'current_meeting',
       include_sources: true,
     })
     expect(wrapper.text()).toContain('使用 Vue 3')
     expect(wrapper.text()).toContain('相关原文片段')
+  })
+
+  it('sends the selected context scope', async () => {
+    vi.mocked(chatApi.askMeeting).mockResolvedValue(result)
+    const wrapper = mount(ChatPanel, { props: { meetingId: 'mtg_1' } })
+
+    await wrapper.get('#chat-scope').setValue('current_and_history')
+    await wrapper.get('#chat-question').setValue('历史会议？')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(chatApi.askMeeting).toHaveBeenCalledWith('mtg_1', {
+      question: '历史会议？',
+      context_scope: 'current_and_history',
+      include_sources: true,
+    })
   })
 
   it('warns when evidence is insufficient', async () => {

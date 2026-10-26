@@ -223,6 +223,30 @@ describe('MeetingDetailView', () => {
     expect(wrapper.text()).toContain('该会议已归档')
     expect(headerButton(wrapper, '编辑')?.attributes('disabled')).toBeDefined()
     expect(headerButton(wrapper, '归档')?.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('上传资料')
+  })
+
+  it('hides mutation controls on every archived meeting tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue({ ...meeting, status: 'archived' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const controlsByTab: Record<string, string[]> = {
+      会前准备: ['生成会前准备'],
+      记录: ['保存记录', '提问'],
+      纪要: ['生成会议纪要', '提取行动项'],
+      问题: ['提取未解决问题'],
+    }
+    for (const [label, controls] of Object.entries(controlsByTab)) {
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text() === label)
+      await tab?.trigger('click')
+      await flushPromises()
+      for (const control of controls) {
+        expect(headerButton(wrapper, control)).toBeUndefined()
+      }
+    }
+
+    expect(wrapper.find('.meeting-detail__ai-fab').exists()).toBe(false)
   })
 
   it('archives the meeting after confirmation', async () => {

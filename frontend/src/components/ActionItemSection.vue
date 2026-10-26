@@ -1,6 +1,6 @@
 <template>
   <div class="action-section">
-    <div class="action-section__toolbar">
+    <div v-if="!readonly" class="action-section__toolbar">
       <AppButton :loading="extracting" @click="extract">提取行动项</AppButton>
       <AppButton v-if="extracting" variant="ghost" @click="cancelExtract">取消生成</AppButton>
     </div>
@@ -59,7 +59,7 @@
             </div>
           </form>
 
-          <div v-else class="action-item__actions">
+          <div v-else-if="!readonly" class="action-item__actions">
             <AppButton v-if="item.status !== 'converted'" variant="ghost" @click="startEdit(item)">
               编辑
             </AppButton>
@@ -133,7 +133,10 @@ import { formatDate } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
 import { actionItemStatusMeta } from '@/utils/statusLabels'
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{ meetingId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
 const toast = useToast()
 

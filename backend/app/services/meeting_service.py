@@ -35,6 +35,17 @@ def get_owned_meeting(db: Session, meeting_id: str, user_id: str) -> Meeting:
     return meeting
 
 
+def get_mutable_meeting(db: Session, meeting_id: str, user_id: str) -> Meeting:
+    meeting = get_owned_meeting(db, meeting_id, user_id)
+    if meeting.status == _ARCHIVED:
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "会议已归档，仅可查看",
+            http_status=409,
+        )
+    return meeting
+
+
 def list_meetings(
     db: Session,
     user_id: str,
@@ -65,9 +76,7 @@ def create_meeting(db: Session, user_id: str, payload: MeetingCreate) -> Meeting
 def update_meeting(
     db: Session, meeting_id: str, user_id: str, payload: MeetingUpdate
 ) -> Meeting:
-    meeting = get_owned_meeting(db, meeting_id, user_id)
-    if meeting.status == _ARCHIVED:
-        raise AppError("BUSINESS_RULE_VIOLATION", "会议已归档，不可编辑", http_status=409)
+    meeting = get_mutable_meeting(db, meeting_id, user_id)
     data = payload.model_dump(exclude_unset=True)
     if "title" in data and data["title"] is None:
         raise AppError("VALIDATION_ERROR", "标题不能为空", http_status=422)

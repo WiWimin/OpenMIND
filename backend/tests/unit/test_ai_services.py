@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.ai.chat import ChatService
+from app.ai.chat import ChatService, RecordContext, Source
 from app.ai.extraction import (
     ActionItemCandidate,
     ActionItemExtractor,
@@ -92,3 +92,29 @@ def test_chat_insufficient_evidence() -> None:
 
     assert answer.insufficient_evidence is True
     assert answer.sources == []
+
+
+def test_chat_uses_limited_record_context_with_source() -> None:
+    service = ChatService(FakeLLM(text="根据记录回答"), FakeRetriever([]))
+    answer = service.answer(
+        "决定了什么？",
+        user_id="u1",
+        current_meeting_id="meet-1",
+        records=[
+            RecordContext(
+                meeting_id="meet-1",
+                record_id="rec_1",
+                content="决定周五前完成联调",
+            )
+        ],
+    )
+
+    assert answer.insufficient_evidence is False
+    assert answer.sources == [
+        Source(
+            meeting_id="meet-1",
+            material_id=None,
+            record_id="rec_1",
+            excerpt="决定周五前完成联调",
+        )
+    ]

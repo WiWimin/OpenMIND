@@ -163,6 +163,7 @@ import { useTasksStore, type TaskStatusFilter } from '@/stores/tasks'
 import type { PersonalTask, TaskStatus } from '@/types/task'
 import type { SelectOption } from '@/types/ui'
 import { formatDate, formatDateTime } from '@/utils/datetime'
+import { resolveErrorMessage } from '@/utils/errors'
 import { taskStatusMeta } from '@/utils/statusLabels'
 
 const store = useTasksStore()
@@ -289,9 +290,13 @@ function onFilter(value: string): void {
   void store.setStatusFilter(value as TaskStatusFilter)
 }
 
-function changeStatus(task: PersonalTask, value: string): void {
-  void store.updateTask(task.task_id, { status: value as TaskStatus })
-  toast.success('任务状态已更新')
+async function changeStatus(task: PersonalTask, value: string): Promise<void> {
+  try {
+    await store.updateTask(task.task_id, { status: value as TaskStatus })
+    toast.success('任务状态已更新')
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, '任务状态更新失败'))
+  }
 }
 
 function loadMore(): void {

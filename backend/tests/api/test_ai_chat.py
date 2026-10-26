@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.ai.chat import ChatAnswer, Source
+from app.schemas.chat import ChatContextScope, ChatRequest
 from app.services import ai_chat_service
 
 REGISTER = "/api/v1/auth/register"
@@ -46,6 +47,10 @@ def test_chat_insufficient_evidence(client: TestClient) -> None:
     assert data["sources"] == []
 
 
+def test_chat_request_defaults_to_current_meeting() -> None:
+    assert ChatRequest(question="?").context_scope == ChatContextScope.current_meeting
+
+
 def test_chat_requires_auth(client: TestClient) -> None:
     response = client.post("/api/v1/meetings/mtg_x/chat", json={"question": "?"})
     assert response.status_code == 401
@@ -60,7 +65,7 @@ def test_chat_meeting_not_found(client: TestClient) -> None:
 
 def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeChat:
-        def answer(self, question, *, user_id, scope, current_meeting_id):
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None):
             return ChatAnswer(
                 answer="根据材料，结论是……",
                 sources=[Source("mtg_old", "mat_old", None, "相关原文片段")],
@@ -92,7 +97,7 @@ def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
 
 def test_chat_include_sources_false(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeChat:
-        def answer(self, question, *, user_id, scope, current_meeting_id):
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None):
             return ChatAnswer(
                 answer="答案",
                 sources=[Source("mtg_old", "mat_old", None, "片段")],

@@ -15,7 +15,7 @@
 
     <template v-else>
       <p class="record-item__content">{{ record.content }}</p>
-      <div class="record-item__actions">
+      <div v-if="!readonly" class="record-item__actions">
         <AppButton variant="ghost" @click="startEdit">编辑</AppButton>
         <AppButton variant="ghost" @click="emit('delete')">删除</AppButton>
       </div>
@@ -42,9 +42,11 @@ const props = withDefaults(
   defineProps<{
     record: MeetingRecord
     saving?: boolean
+    readonly?: boolean
   }>(),
   {
     saving: false,
+    readonly: false,
   },
 )
 

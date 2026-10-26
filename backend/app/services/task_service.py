@@ -13,7 +13,7 @@ _COMPLETED = "completed"
 _CANCELLED = "cancelled"
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    _TODO: {_IN_PROGRESS, _COMPLETED, _CANCELLED},
+    _TODO: {_IN_PROGRESS, _CANCELLED},
     _IN_PROGRESS: {_COMPLETED, _CANCELLED},
     _COMPLETED: set(),
     _CANCELLED: set(),

@@ -22,6 +22,18 @@ def _meeting(client: TestClient, headers: dict[str, str]) -> dict:
     return response.json()["data"]
 
 
+def _record(
+    client: TestClient, headers: dict[str, str], meeting_id: str
+) -> dict:
+    response = client.post(
+        f"/api/v1/meetings/{meeting_id}/records",
+        json={"content": "张三负责下周一前完成接口联调"},
+        headers=headers,
+    )
+    assert response.status_code == 201
+    return response.json()["data"]
+
+
 def _extract(
     client: TestClient, headers: dict[str, str], meeting_id: str
 ) -> list[dict]:
@@ -54,6 +66,7 @@ def fake_extract(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_extract_action_items(client: TestClient, fake_extract: None) -> None:
     headers = _auth(client)
     meeting = _meeting(client, headers)
+    _record(client, headers, meeting["meeting_id"])
     items = _extract(client, headers, meeting["meeting_id"])
     assert len(items) == 1
     item = items[0]
@@ -195,3 +208,70 @@ def test_delete_converted_action_conflict(client: TestClient, fake_extract: None
 
     response = client.delete(action_url, headers=headers)
     assert response.status_code == 409
+
+
+def test_extract_discards_unknown_source_record(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    _record(client, headers, meeting["meeting_id"])
+    monkeypatch.setattr(
+        action_item_service,
+        "extract_candidates",
+        lambda transcripts, config=None: [
+            ActionItemCandidate(content="行动项", source_record_id="rec_missing")
+        ],
+    )
+
+    item = _extract(client, headers, meeting["meeting_id"])[0]
+
+    assert item["source"]["record_id"] is None
+
+
+def test_extract_keeps_valid_source_record(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    record = _record(client, headers, meeting["meeting_id"])
+    monkeypatch.setattr(
+        action_item_service,
+        "extract_candidates",
+        lambda transcripts, config=None: [
+            ActionItemCandidate(
+                content="行动项",
+                source_record_id=record["record_id"],
+                source_excerpt="张三负责",
+            )
+        ],
+    )
+
+    item = _extract(client, headers, meeting["meeting_id"])[0]
+
+    assert item["source"]["record_id"] == record["record_id"]
+    assert item["source"]["excerpt"] == "张三负责"
+
+
+def test_delete_record_referenced_by_action_conflict(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    record = _record(client, headers, meeting["meeting_id"])
+    monkeypatch.setattr(
+        action_item_service,
+        "extract_candidates",
+        lambda transcripts, config=None: [
+            ActionItemCandidate(
+                content="行动项",
+                source_record_id=record["record_id"],
+            )
+        ],
+    )
+    _extract(client, headers, meeting["meeting_id"])
+
+    response = client.delete(f"/api/v1/records/{record['record_id']}", headers=headers)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "BUSINESS_RULE_VIOLATION"

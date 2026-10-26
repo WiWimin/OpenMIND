@@ -1,6 +1,6 @@
 <template>
   <div class="material-section">
-    <MaterialUploader :uploading="uploading" @upload="upload" />
+    <MaterialUploader v-if="!readonly" :uploading="uploading" @upload="upload" />
 
     <ErrorMessage v-if="uploadError" :error="uploadError" />
 
@@ -20,7 +20,12 @@
     />
 
     <template v-else>
-      <MaterialList :items="items" @delete="askDelete" @view="askView" />
+      <MaterialList
+        :items="items"
+        :readonly="readonly"
+        @delete="askDelete"
+        @view="askView"
+      />
       <AppPagination
         v-if="pagination.total_pages > 1"
         class="material-section__pagination"
@@ -99,7 +104,10 @@ import { materialStatusMeta } from '@/utils/statusLabels'
 
 const POLL_INTERVAL_MS = 3000
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{ meetingId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
 const toast = useToast()
 
@@ -181,8 +189,17 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
   uploading.value = true
   uploadError.value = null
   try {
-    await materialsApi.uploadMaterial(props.meetingId, payload)
+    const material = await materialsApi.uploadMaterial(props.meetingId, payload)
     await load(1)
+    if (material.processing_status === 'failed') {
+      uploadError.value = {
+        status: 'error',
+        error_code: 'FILE_PARSE_FAILED',
+        message: material.parse_error ?? '文件解析失败',
+        retryable: false,
+      }
+      return
+    }
     toast.success('资料已上传')
   } catch (caught) {
     uploadError.value = caught

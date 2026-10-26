@@ -49,7 +49,7 @@ def _gather(db: Session, meeting_id: str, record_ids: list[str]) -> tuple[list[s
 def generate_minutes(
     db: Session, *, meeting_id: str, user_id: str, payload: MinutesGenerateRequest
 ) -> MeetingMinutes:
-    meeting = meeting_service.get_owned_meeting(db, meeting_id, user_id)
+    meeting = meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     transcripts, record_ids = _gather(db, meeting_id, payload.record_ids)
     config = resolve_model_config(db, user_id)
     content = generate_text(meeting, transcripts, config)
@@ -91,6 +91,7 @@ def update_minutes(
     db: Session, minutes_id: str, user_id: str, payload: MinutesUpdate
 ) -> MeetingMinutes:
     minutes = get_owned_minutes(db, minutes_id, user_id)
+    meeting_service.get_mutable_meeting(db, minutes.meeting_id, user_id)
     data = payload.model_dump(exclude_unset=True)
     if data.get("content") is not None:
         minutes.content = data["content"]
@@ -100,6 +101,7 @@ def update_minutes(
 
 def confirm_minutes(db: Session, minutes_id: str, user_id: str) -> MeetingMinutes:
     minutes = get_owned_minutes(db, minutes_id, user_id)
+    meeting_service.get_mutable_meeting(db, minutes.meeting_id, user_id)
     if minutes.status != _STATUS_CONFIRMED:
         minutes.status = _STATUS_CONFIRMED
         minutes_repository.update(db, minutes)

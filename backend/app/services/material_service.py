@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -8,12 +9,14 @@ from app.ai.parsers import SUPPORTED_EXTENSIONS, parse_bytes
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.material import MeetingMaterial
-from app.repositories import chunk_repository, material_repository
+from app.repositories import chunk_repository, material_repository, record_repository
 from app.services import indexing_service, meeting_service
 from app.utils import storage
 from app.utils.ids import new_id
 
 _ALLOWED_TYPES = {extension.lstrip(".") for extension in SUPPORTED_EXTENSIONS}
+
+logger = logging.getLogger(__name__)
 
 
 def _infer_material_type(file_name: str, material_type: str | None) -> str:
@@ -37,9 +40,15 @@ def _process_material(
         material.content = parsed.content
         indexing_service.index_material(db, material)
         material.processing_status = "processed"
+        material.parse_error = None
     except AppError as exc:
         material.processing_status = "failed"
         material.parse_error = exc.message
+    except Exception:
+        material.processing_status = "failed"
+        material.parse_error = "材料处理失败，请重试"
+        logger.exception("材料处理出现未预期异常 material_id=%s", material.material_id)
+        raise
     finally:
         db.commit()
         db.refresh(material)
@@ -55,7 +64,7 @@ def upload_material(
     source: str | None,
     material_type: str | None,
 ) -> MeetingMaterial:
-    meeting_service.get_owned_meeting(db, meeting_id, user_id)
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     normalized_type = _infer_material_type(file_name, material_type)
 
     settings = get_settings()
@@ -114,6 +123,8 @@ def get_owned_material(db: Session, material_id: str, user_id: str) -> MeetingMa
 
 def delete_material(db: Session, material_id: str, user_id: str) -> None:
     material = get_owned_material(db, material_id, user_id)
+    meeting_service.get_mutable_meeting(db, material.meeting_id, user_id)
+    record_repository.clear_source_material(db, material_id)
     storage.delete_object(get_settings().storage_dir, material.storage_key)
     chunk_repository.delete_by_material(db, material_id)
     material_repository.delete(db, material)

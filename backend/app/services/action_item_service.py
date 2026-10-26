@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.ai.extraction import ActionItemCandidate, ActionItemExtractor
 from app.core.exceptions import AppError
 from app.models.action_item import ActionItem
+from app.models.record import MeetingRecord
 from app.models.task import PersonalTask
 from app.repositories import action_item_repository, record_repository, task_repository
 from app.schemas.action_item import ActionItemUpdate, ConvertToTaskRequest
@@ -43,25 +44,45 @@ def _not_found() -> AppError:
     return AppError("RESOURCE_NOT_FOUND", "行动项不存在或不可访问", http_status=404)
 
 
-def _gather_transcripts(db: Session, meeting_id: str, record_ids: list[str]) -> list[str]:
+def _gather_records(
+    db: Session, meeting_id: str, record_ids: list[str]
+) -> list[MeetingRecord]:
     if record_ids:
-        records = record_repository.list_by_ids(db, meeting_id, record_ids)
-    else:
-        records = record_repository.list_by_meeting(
-            db, meeting_id, limit=_MAX_RECORDS, offset=0
-        )
-    return [record.content for record in records]
+        return record_repository.list_by_ids(db, meeting_id, record_ids)
+    return record_repository.list_by_meeting(
+        db, meeting_id, limit=_MAX_RECORDS, offset=0
+    )
+
+
+def _source_record(
+    records: list[MeetingRecord], candidate: ActionItemCandidate
+) -> tuple[str | None, str | None]:
+    valid_ids = {record.record_id for record in records}
+    source_id = candidate.source_record_id
+    if source_id is None:
+        source_id = records[0].record_id if len(records) == 1 else None
+    elif source_id not in valid_ids:
+        source_id = None
+    if source_id is None:
+        return None, None
+    record = next(record for record in records if record.record_id == source_id)
+    excerpt = candidate.source_excerpt
+    if not excerpt or excerpt not in record.content:
+        excerpt = record.content[:200] or None
+    return source_id, excerpt
 
 
 def extract_action_items(
     db: Session, *, meeting_id: str, user_id: str, record_ids: list[str]
 ) -> list[ActionItem]:
-    meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    transcripts = _gather_transcripts(db, meeting_id, record_ids)
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    records = _gather_records(db, meeting_id, record_ids)
+    transcripts = [f"[{record.record_id}] {record.content}" for record in records]
     config = resolve_model_config(db, user_id)
     candidates = extract_candidates(transcripts, config)
     items: list[ActionItem] = []
     for candidate in candidates:
+        source_record_id, source_excerpt = _source_record(records, candidate)
         items.append(
             action_item_repository.create(
                 db,
@@ -70,8 +91,8 @@ def extract_action_items(
                 content=candidate.content,
                 assignee=candidate.assignee,
                 due_date=_parse_date(candidate.due_date),
-                source_record_id=candidate.source_record_id,
-                source_excerpt=candidate.source_excerpt,
+                source_record_id=source_record_id,
+                source_excerpt=source_excerpt,
                 status=_PENDING,
             )
         )
@@ -101,6 +122,7 @@ def update_action_item(
     db: Session, action_id: str, user_id: str, payload: ActionItemUpdate
 ) -> ActionItem:
     item = get_owned_action_item(db, action_id, user_id)
+    meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
     data = payload.model_dump(exclude_unset=True)
     if data.get("content") is not None:
         item.content = data["content"]
@@ -113,6 +135,7 @@ def update_action_item(
 
 def confirm_action_item(db: Session, action_id: str, user_id: str) -> ActionItem:
     item = get_owned_action_item(db, action_id, user_id)
+    meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
     if item.status == _PENDING:
         item.status = _CONFIRMED
         action_item_repository.update(db, item)
@@ -121,6 +144,7 @@ def confirm_action_item(db: Session, action_id: str, user_id: str) -> ActionItem
 
 def delete_action_item(db: Session, action_id: str, user_id: str) -> None:
     item = get_owned_action_item(db, action_id, user_id)
+    meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
     if item.status == _CONVERTED:
         raise AppError(
             "BUSINESS_RULE_VIOLATION", "已转为任务的行动项不可删除", http_status=409
@@ -132,6 +156,7 @@ def convert_to_task(
     db: Session, *, action_id: str, user_id: str, payload: ConvertToTaskRequest
 ) -> tuple[PersonalTask, bool]:
     item = get_owned_action_item(db, action_id, user_id)
+    meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
     existing = task_repository.get_by_action(db, action_id)
     if existing is not None:
         return existing, False

@@ -12,6 +12,7 @@
       :rows="rows"
       :placeholder="placeholder"
       :required="required"
+      :readonly="readonly"
       :maxlength="maxlength"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="error ? errorId : undefined"
@@ -31,6 +32,7 @@ const props = withDefaults(
     rows?: number
     placeholder?: string
     required?: boolean
+    readonly?: boolean
     maxlength?: number
     error?: string
   }>(),
@@ -38,6 +40,7 @@ const props = withDefaults(
     rows: 4,
     placeholder: '',
     required: false,
+    readonly: false,
     maxlength: undefined,
     error: '',
   },

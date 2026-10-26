@@ -66,6 +66,7 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 LLM/Embedding 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.10` |
 | D-21 | 模型配置安全 | 非开发环境拒绝弱 `SECRET_KEY`；轮换使用 `SECRET_KEY_PREVIOUS`；`api_base` 默认仅允许 HTTPS 公网地址；全局密钥不返回脱敏片段 | `api.md 二.5`、`ai-design.md 三.5`、`docker/.env.example` |
 | D-22 | BYOK 默认不回退全局 | `ALLOW_GLOBAL_FALLBACK=false` 为默认值；未配置用户返回 `MODEL_CONFIG_REQUIRED`，避免团队承担用户 Token 费用 | `api.md 二.5`、`ai-design.md 三.5`、`config.py` |
+| D-23 | 记录检索先受限 | 当前阶段只把当前会议最近记录作为问答受限上下文；完整历史记录检索需独立 schema/检索设计，不宣称已实现 | `api.md 五.7`、`ai-design.md 五/八.2` |
 
 ## 四、待确认事项
 
@@ -87,3 +88,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | BYOK 生效来源与前端设置页 | `api.md 2.5` 响应新增 `llm_source`/`embedding_source`；前端新增模型设置页（用户配置 > 服务端默认） |
 | 2026-10 | 模型配置安全加固 | 新增 D-21：弱 `SECRET_KEY` 拒绝、密钥轮换、`api_base` SSRF 校验、全局密钥不脱敏回显 |
 | 2026-10 | BYOK 默认禁止全局回退 | 新增 D-22：未配置用户不再自动使用全局 Key；新增 `MODEL_CONFIG_REQUIRED`/`MODEL_QUOTA_EXCEEDED` |
+| 2026-10 | 闭环可靠性修复 | 归档只读、材料失败状态、来源/删除一致性、问答范围与受限记录上下文、任务/问题状态机 |

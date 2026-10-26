@@ -1,6 +1,12 @@
 <template>
   <div class="chat-panel">
-    <form class="chat-panel__ask" @submit.prevent="ask">
+    <form v-if="!readonly" class="chat-panel__ask" @submit.prevent="ask">
+      <FormSelect
+        id="chat-scope"
+        v-model="scope"
+        label="检索范围"
+        :options="scopeOptions"
+      />
       <FormTextarea
         id="chat-question"
         v-model="question"
@@ -24,7 +30,11 @@
     <ErrorMessage v-if="error" :error="error" />
 
     <p v-if="turns.length === 0" class="chat-panel__hint">
-      基于本会议的材料与记录进行问答，回答会附来源。
+      {{
+        readonly
+          ? '会议已归档，不能继续发起问答。'
+          : '默认检索当前会议材料与最近记录；选择历史范围时仅扩展历史材料，记录仍限当前会议。'
+      }}
     </p>
 
     <ul class="chat-panel__turns">
@@ -53,17 +63,26 @@ import { nextTick, ref } from 'vue'
 import * as chatApi from '@/api/chat'
 import AppButton from '@/components/AppButton.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
+import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import SourceRef from '@/components/SourceRef.vue'
-import type { ChatResult, ChatSource } from '@/types/chat'
+import type { ChatContextScope, ChatResult, ChatSource } from '@/types/chat'
 
 interface ChatTurn {
   question: string
   result: ChatResult
 }
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{ meetingId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
+const scope = ref<ChatContextScope>('current_meeting')
+const scopeOptions = [
+  { value: 'current_meeting', label: '当前会议' },
+  { value: 'current_and_history', label: '当前及历史' },
+]
 const question = ref('')
 const formError = ref('')
 const asking = ref(false)
@@ -86,6 +105,7 @@ async function ask(): Promise<void> {
   try {
     const result = await chatApi.askMeeting(props.meetingId, {
       question: text,
+      context_scope: scope.value,
       include_sources: true,
     })
     turns.value.push({ question: text, result })

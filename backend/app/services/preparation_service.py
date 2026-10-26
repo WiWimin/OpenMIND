@@ -36,11 +36,39 @@ def _not_found() -> AppError:
     return AppError("RESOURCE_NOT_FOUND", "准备稿不存在或不可访问", http_status=404)
 
 
+def _history_snippets(
+    db: Session, user_id: str, *, max_materials: int = 10, char_limit: int = 20000
+) -> list[str]:
+    rows = material_repository.list_content_rows(db, user_id)
+    snippets: list[str] = []
+    used = 0
+    for row in reversed(rows):
+        content = row.content or ""
+        if not content:
+            continue
+        if used + len(content) > char_limit:
+            break
+        snippets.append(content)
+        used += len(content)
+        if len(snippets) >= max_materials:
+            break
+    return list(reversed(snippets))
+
+
 def generate_preparation(
-    db: Session, *, meeting_id: str, user_id: str, user_goal: str | None
+    db: Session,
+    *,
+    meeting_id: str,
+    user_id: str,
+    user_goal: str | None,
+    include_history: bool = True,
 ) -> Preparation:
-    meeting = meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    snippets = material_repository.list_contents(db, meeting_id)
+    meeting = meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    snippets = (
+        _history_snippets(db, user_id)
+        if include_history
+        else material_repository.list_contents(db, meeting_id)
+    )
     config = resolve_model_config(db, user_id)
     draft = generate_draft(meeting, snippets, user_goal, config)
     return preparation_repository.create(
@@ -76,6 +104,7 @@ def update_preparation(
     db: Session, preparation_id: str, user_id: str, payload: PreparationUpdate
 ) -> Preparation:
     preparation = get_owned_preparation(db, preparation_id, user_id)
+    meeting_service.get_mutable_meeting(db, preparation.meeting_id, user_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(preparation, field, value)
     preparation.version += 1
@@ -84,6 +113,7 @@ def update_preparation(
 
 def confirm_preparation(db: Session, preparation_id: str, user_id: str) -> Preparation:
     preparation = get_owned_preparation(db, preparation_id, user_id)
+    meeting_service.get_mutable_meeting(db, preparation.meeting_id, user_id)
     if preparation.status != _STATUS_CONFIRMED:
         preparation.status = _STATUS_CONFIRMED
         preparation_repository.update(db, preparation)

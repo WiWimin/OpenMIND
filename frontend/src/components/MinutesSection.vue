@@ -1,6 +1,6 @@
 <template>
   <div class="minutes-section">
-    <div class="minutes-section__toolbar">
+    <div v-if="!readonly" class="minutes-section__toolbar">
       <AppButton :loading="generating" @click="generate">生成会议纪要</AppButton>
       <AppButton v-if="generating" variant="ghost" @click="cancelGenerate">取消生成</AppButton>
     </div>
@@ -38,9 +38,14 @@
           <span class="minutes-section__version">v{{ selected.version }}</span>
         </div>
 
-        <RichTextEditor id="minutes-content" v-model="draft" label="纪要内容" />
+        <RichTextEditor
+          id="minutes-content"
+          v-model="draft"
+          label="纪要内容"
+          :editable="!readonly"
+        />
 
-        <div class="minutes-section__actions">
+        <div v-if="!readonly" class="minutes-section__actions">
           <AppButton :loading="saving" @click="save">保存</AppButton>
           <AppButton
             v-if="selected.status !== 'confirmed'"
@@ -78,9 +83,11 @@ const props = withDefaults(
   defineProps<{
     meetingId: string
     meetingTitle?: string
+    readonly?: boolean
   }>(),
   {
     meetingTitle: '',
+    readonly: false,
   },
 )
 
@@ -310,4 +317,5 @@ async function exportDocx(): Promise<void> {
   display: flex;
   gap: var(--space-2);
 }
+
 </style>

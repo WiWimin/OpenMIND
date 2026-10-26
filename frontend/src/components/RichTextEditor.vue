@@ -1,7 +1,12 @@
 <template>
   <div class="rich-editor">
     <label class="rich-editor__label" :for="id">{{ label }}</label>
-    <div v-if="editor" class="rich-editor__toolbar" role="toolbar" aria-label="格式工具栏">
+    <div
+      v-if="editor && editable !== false"
+      class="rich-editor__toolbar"
+      role="toolbar"
+      aria-label="格式工具栏"
+    >
       <button
         type="button"
         class="rich-editor__tool"
@@ -119,12 +124,16 @@ import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
 import { TextStyle } from '@tiptap/extension-text-style'
 
-const props = defineProps<{
-  id: string
-  modelValue: string
-  label: string
-  placeholder?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    id: string
+    modelValue: string
+    label: string
+    placeholder?: string
+    editable?: boolean
+  }>(),
+  { editable: true },
+)
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
@@ -164,7 +173,7 @@ function toHtml(content: string): string {
 const editor = new Editor({
   extensions: [StarterKit, Color, TextStyle, FontFamily, Highlight, Image],
   content: toHtml(props.modelValue),
-  editable: true,
+  editable: props.editable !== false,
   onUpdate: () => {
     emit('update:modelValue', editor.getHTML())
   },
@@ -210,6 +219,13 @@ watch(
     if (next !== editor.getHTML()) {
       editor.commands.setContent(next, { emitUpdate: false })
     }
+  },
+)
+
+watch(
+  () => props.editable,
+  (value) => {
+    editor.setEditable(value !== false)
   },
 )
 

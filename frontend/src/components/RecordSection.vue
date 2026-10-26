@@ -1,6 +1,6 @@
 <template>
   <div class="record-section">
-    <form class="record-section__add" @submit.prevent="add">
+    <form v-if="!readonly" class="record-section__add" @submit.prevent="add">
       <FormTextarea
         id="record-content"
         v-model="newContent"
@@ -16,7 +16,11 @@
       </div>
     </form>
 
-    <form v-if="importOpen" class="record-section__import" @submit.prevent="importText">
+    <form
+      v-if="!readonly && importOpen"
+      class="record-section__import"
+      @submit.prevent="importText"
+    >
       <FormTextarea
         id="record-import-content"
         v-model="importContent"
@@ -49,7 +53,7 @@
     />
 
     <template v-else>
-      <div class="record-section__organize">
+      <div v-if="!readonly" class="record-section__organize">
         <AppButton :disabled="selectedIds.length === 0" :loading="organizing" @click="organize">
           AI 整理所选（{{ selectedIds.length }}）
         </AppButton>
@@ -71,6 +75,7 @@
           <RecordItem
             class="record-section__item"
             :record="record"
+            :readonly="readonly"
             @save="(content) => saveEdit(record.record_id, content)"
             @delete="askDelete(record.record_id)"
           />
@@ -133,7 +138,10 @@ import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import type { MeetingRecord } from '@/types/record'
 
-const props = defineProps<{ meetingId: string }>()
+const props = withDefaults(
+  defineProps<{ meetingId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
 const toast = useToast()
 
