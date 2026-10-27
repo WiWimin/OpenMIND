@@ -34,7 +34,15 @@ describe('MaterialItem', () => {
 
   it('emits delete with the material id', async () => {
     const wrapper = mount(MaterialItem, { props: { material } })
-    await wrapper.get('.app-button').trigger('click')
+    const deleteButton = wrapper.findAll('.app-button').find((node) => node.text() === '删除')
+    await deleteButton?.trigger('click')
     expect(wrapper.emitted('delete')).toEqual([['mat_1']])
+  })
+
+  it('emits view with the material id', async () => {
+    const wrapper = mount(MaterialItem, { props: { material } })
+    const viewButton = wrapper.findAll('.app-button').find((node) => node.text() === '查看详情')
+    await viewButton?.trigger('click')
+    expect(wrapper.emitted('view')).toEqual([['mat_1']])
   })
 })

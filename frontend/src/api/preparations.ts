@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, ListData } from '@/types/api'
 import type { PageParams } from '@/types/pagination'
 import type {
@@ -11,10 +12,12 @@ import { unwrapData } from '@/utils/apiEnvelope'
 export async function generatePreparation(
   meetingId: string,
   payload: GeneratePreparationPayload,
+  signal?: AbortSignal,
 ): Promise<Preparation> {
   const { data } = await http.post<ApiSuccess<Preparation> | Preparation>(
     `/meetings/${meetingId}/prepare`,
     payload,
+    { signal, timeout: LONG_REQUEST_TIMEOUT_MS },
   )
   return unwrapData(data)
 }
@@ -44,6 +47,13 @@ export async function updatePreparation(
   const { data } = await http.patch<ApiSuccess<Preparation> | Preparation>(
     `/preparations/${preparationId}`,
     payload,
+  )
+  return unwrapData(data)
+}
+
+export async function confirmPreparation(preparationId: string): Promise<Preparation> {
+  const { data } = await http.post<ApiSuccess<Preparation> | Preparation>(
+    `/preparations/${preparationId}/confirm`,
   )
   return unwrapData(data)
 }

@@ -6,8 +6,8 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」Web 应用，
 
 服务对象是单个参会人，而非团队协作平台；第一版不做多人实时协作、会议主持、共享空间与组织权限体系。
 
-> **当前进度（务必留意）**：仅完成 **第一阶段基础工程（M00）**——前后端骨架、数据库与迁移、Docker Compose、CI 与协作规范。
-> **会议业务、用户认证、AI / RAG / 大模型调用均尚未开发**（见第 14、15 节）。
+> **当前进度**：MVP 闭环 **M00–M10 已全部实现**——认证、会议管理、资料解析、RAG、会前准备、会中记录与问答、纪要、行动项、个人任务、未解决问题。
+> 阶段发布（`develop → main` 合并与 `m00-m10` tag）及部分历史文档同步仍在收尾（见第 14、15 节）。
 
 ## 2. 项目目标
 
@@ -24,7 +24,7 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」Web 应用，
 | 后端 | Python、FastAPI、Pydantic |
 | ORM 与迁移 | SQLAlchemy、Alembic |
 | 数据库 | PostgreSQL 16、pgvector |
-| AI 能力 | 云端 LLM + Embedding API（服务端统一调用，**后续阶段**） |
+| AI 能力 | 云端 LLM + Embedding API（服务端统一调用，支持用户自带密钥） |
 | 文件存储 | 本地持久化目录（MVP） |
 | 开发环境 | Docker Compose |
 | 质量保障 | pytest、Vitest、ruff、ESLint、Prettier、GitHub Actions CI |
@@ -57,7 +57,7 @@ OpenMIND/
 │   │   ├── schemas/         # Pydantic 请求/响应模型
 │   │   ├── repositories/    # 数据库查询与持久化
 │   │   ├── services/        # 业务规则
-│   │   ├── ai/              # LLM、Embedding、RAG、Prompt（后续阶段）
+│   │   ├── ai/              # LLM、Embedding、RAG、Prompt
 │   │   └── utils/           # 通用工具
 │   ├── alembic/             # Alembic 迁移
 │   ├── tests/               # pytest 测试
@@ -110,13 +110,14 @@ cp docker/.env.example docker/.env          # Windows: copy docker\.env.example 
 | `POSTGRES_*` | 数据库连接信息 | `openmind` / `change-me` / `openmind` |
 | `DATABASE_URL` | SQLAlchemy 连接串（宿主机视角） | `postgresql+psycopg://…@localhost:5432/openmind` |
 | `STORAGE_DIR` / `MAX_UPLOAD_MB` | 文件存储目录与上传大小上限 | `./storage` / `20` |
-| `LLM_*` / `EMBEDDING_*` | 大模型与向量模型配置（**后续阶段使用**） | `https://api.example.com/v1` 等 |
+| `LLM_*` / `EMBEDDING_*` | 服务端全局模型配置；默认仅供显式开启回退时使用 | `https://api.example.com/v1` 等 |
+| `ALLOW_GLOBAL_FALLBACK` | 是否允许未配置 BYOK 的用户回退到服务端全局配置；默认 `false` | `false` |
 | `CORS_ORIGINS` | 允许的前端来源 | `http://localhost:5173` |
 | `VITE_API_BASE_URL` | 前端 axios `baseURL` | `http://localhost:8000/api/v1` |
-| `VITE_APP_ENV` | 前端展示的环境标识 | `development` |
+| `VITE_APP_ENV` | 预留的构建期环境标识（当前前端未消费） | `development` |
 | `VITE_DEV_PROXY_TARGET` | 开发期 Vite 代理目标（示例中默认注释；容器内由 Compose 注入 `http://backend:8000`） | `http://localhost:8000` |
 
-> **安全约束**：LLM / Embedding 密钥只存在于服务端环境变量，不得硬编码，也不能下发前端；`docker/.env` 永不入库。
+> **安全约束**：LLM / Embedding 密钥只能存在于服务端环境变量或用户 BYOK 的加密存储中；任何接口不得返回明文，`docker/.env` 永不入库。非开发环境必须配置至少 32 字符的随机 `SECRET_KEY`。默认要求用户配置 BYOK；只有显式设置 `ALLOW_GLOBAL_FALLBACK=true` 时才允许未配置用户使用服务端全局 Key。
 
 ## 7. Docker 启动方式
 
@@ -191,7 +192,7 @@ docker compose -f docker/compose.dev.yml logs --tail 100 backend
 | 健康检查 | http://localhost:8000/health |
 | 数据库就绪探针 | http://localhost:8000/api/v1/health/db |
 
-> 当前后端仅注册健康检查相关接口；业务接口将在后续阶段按 [`docs/api.md`](docs/api.md) 逐步实现。
+> 业务接口已按 [`docs/api.md`](docs/api.md) 实现；Swagger 中可查看全部已注册接口。
 
 ## 12. Git 分支规范
 
@@ -239,26 +240,25 @@ main（阶段验收通过后）
 4. `git commit` 提交（Conventional Commits）。
 5. 发起 **Pull Request**，**base 必须是 `develop`**（不得合入其他特性分支），按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
 6. 至少一名成员 Code Review 通过、CI 全绿后，用 merge commit 合并到 `develop`；合并后删除工作分支。
-7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本（`main` 目前停留在 M00，需补做一次）。
+7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本；本轮验收通过后执行 `develop → main` 发布。
 8. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
 
 > CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）仅做检查，不包含任何自动部署流程。
 
 ## 14. 当前已完成的功能
 
-> 以下为**已实现并经本地验证**的内容：第一阶段基础工程（M00）与 M03 解析管线。
+> 以下为**已实现并经本地验证**的内容：MVP 闭环（M00–M10）已全部实现。
 
 **前端基础工程**
 - Vue 3 + TypeScript + Vite 骨架，Pinia 与 Vue Router 已接入。
-- 首页展示当前环境标识，并通过「后端连接状态」卡片调用 `GET /api/v1/health/db` 显示连接结果（复用 `/api` 代理，5 秒超时，失败归一化为「未连接」）。
-- axios 客户端与统一错误归一化（`ApiError`）。
-- Vitest 测试 25 个用例、`typecheck`、`lint` 均通过。
+- 登录态路由守卫、统一 axios 错误归一化（`ApiError`）与页面外壳（`WorkspaceLayout`）。
+- Vitest 测试 361 个用例，Playwright 浏览器 E2E 覆盖核心闭环，`typecheck`、`lint`、`build` 均通过。
 
 **后端基础工程**
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
 - 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 5 个用例、`ruff check` 均通过。
+- pytest 291 个用例、`ruff check` 均通过。
 
 **数据与基础设施**
 - PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline`、`0002_enable_pgvector` 已可在容器内执行并通过校验。
@@ -274,14 +274,25 @@ main（阶段验收通过后）
 **协作与规范**
 - Git 分支规范、Conventional Commits、PR / Issue 模板、CI 检查工作流、`.editorconfig`、前后端 lint/format 配置。
 
-**明确尚未实现（未开发，不在「已完成」范围）**
-- 用户认证与个人工作区（M01）：注册、登录、退出、当前用户。
-- 会议管理（M02）：会议列表、创建、详情、编辑、删除、归档。
-- 会议资料的上传与状态流转（M03，解析管线已合并）、AI 基础服务与 RAG、会前准备、会中记录与问答、纪要与行动项、个人任务、未解决问题（M04–M09）。
+**业务功能（M01–M10）**
+- 用户认证（注册 / 登录 / 退出 / 当前用户，HS256 JWT）。
+- 会议管理（创建 / 列表 / 详情 / 编辑 / 删除 / 归档）。
+- 资料上传与解析（PDF / DOCX / TXT）、RAG 权限内向量检索、模型密钥用户自带（BYOK）。
+- 会前准备、会中记录与问答、纪要、行动项、个人任务、未解决问题。
+- 纪要模板与富文本编辑、DOCX 导出、记录重点/决议/疑问标记。
+- 按用途模型路由、用户记忆中心、个人知识库、本地会议工作区。
+- 音频导入与转写：支持外部 OpenAI 兼容 ASR，或本地 FunASR（SenseVoice CPU，`--profile asr`）。
+- 后端 API 测试、前端组件测试与 Playwright 浏览器 E2E。
+
+**明确尚未实现 / 待验证（非 MVP 范围）**
+- 外部 ASR 服务可按原配置接入；本地 FunASR 已在 CPU 上完成真实转写与浏览器 E2E。实时流式 ASR 未纳入。
+- 本地 FunASR 服务无鉴权，只应本地/内网使用；模型权重许可需按模型页面确认。
+- 本地目录授权与真实读写需按人工验收清单执行。
+- PDF 扫描件 OCR、MIME 嗅探、并发编辑乐观锁（见 `docs/design-baseline.md §四`）。
 
 ## 15. 后续开发规划
 
-按 [`docs/module-task-plan.md`](docs/module-task-plan.md) 的模块拆分与 [`docs/requirements.md`](docs/requirements.md) 的功能需求推进（**均为规划，尚未实现**）：
+按 [`docs/module-task-plan.md`](docs/module-task-plan.md) 的模块拆分与 [`docs/requirements.md`](docs/requirements.md) 的功能需求推进（MVP 已完成，下表为阶段交付回顾）：
 
 | 阶段 | 模块范围 | 目标交付 |
 | --- | --- | --- |
@@ -314,6 +325,8 @@ main（阶段验收通过后）
 | 前端类型检查 | `cd frontend && npm run typecheck` |
 | 前端 lint | `cd frontend && npm run lint` |
 | 前端测试 | `cd frontend && npm run test` |
+| 浏览器 E2E | `cd frontend && npm run test:e2e`（需先启动服务并配置模型） |
+| 本地 FunASR | `scripts/asr.ps1 up`（Windows）/ `scripts/asr.sh up` |
 | 前端构建 | `cd frontend && npm run build` |
 | 一键测试 | `scripts/test.ps1`（Windows）/ `scripts/test.sh` |
 

@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import {
   actionItemStatusMeta,
+  audioStatusMeta,
   issueStatusMeta,
+  knowledgeStatusMeta,
   materialStatusMeta,
   meetingStatusMeta,
   minutesStatusMeta,
+  minutesTemplateMeta,
   preparationStatusMeta,
+  recordMarkerMeta,
   resolveStatusMeta,
   taskStatusMeta,
 } from '@/utils/statusLabels'
@@ -17,13 +21,35 @@ describe('status labels', () => {
     expect(materialStatusMeta.failed.tone).toBe('danger')
   })
 
+  it('maps audio statuses', () => {
+    expect(audioStatusMeta.transcribed).toEqual({ label: '已转写', tone: 'success' })
+    expect(audioStatusMeta.failed.tone).toBe('danger')
+  })
+
+  it('maps knowledge base statuses', () => {
+    expect(knowledgeStatusMeta.processed).toEqual({ label: '已索引', tone: 'success' })
+    expect(knowledgeStatusMeta.failed.tone).toBe('danger')
+  })
+
   it('maps preparation and minutes statuses', () => {
     expect(preparationStatusMeta.generating.tone).toBe('info')
     expect(minutesStatusMeta.confirmed.label).toBe('已确认')
   })
 
+  it('maps minutes templates', () => {
+    expect(minutesTemplateMeta.standard.label).toBe('标准纪要')
+    expect(minutesTemplateMeta.concise.tone).toBe('info')
+    expect(minutesTemplateMeta.task_list.label).toBe('任务清单')
+  })
+
   it('maps task statuses', () => {
     expect(taskStatusMeta.in_progress).toEqual({ label: '进行中', tone: 'info' })
+  })
+
+  it('maps record marker types', () => {
+    expect(recordMarkerMeta.highlight.tone).toBe('warning')
+    expect(recordMarkerMeta.decision.label).toBe('决议')
+    expect(recordMarkerMeta.question.tone).toBe('info')
   })
 
   it('maps meeting statuses', () => {

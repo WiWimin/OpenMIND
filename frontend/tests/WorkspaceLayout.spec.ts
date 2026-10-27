@@ -50,6 +50,20 @@ describe('WorkspaceLayout', () => {
     expect(wrapper.text()).toContain('Alice')
   })
 
+  it('exposes the knowledge base, memory and model settings navigation entries', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(WorkspaceLayout, {
+      global: {
+        plugins: [pinia],
+        stubs: { RouterView: true, RouterLink: { template: '<a><slot /></a>' } },
+      },
+    })
+    expect(wrapper.text()).toContain('知识库')
+    expect(wrapper.text()).toContain('记忆中心')
+    expect(wrapper.text()).toContain('模型设置')
+  })
+
   it('logs out and returns to the login page', async () => {
     vi.mocked(authApi.logout).mockResolvedValue(undefined)
     const { auth, wrapper } = mountLayout()

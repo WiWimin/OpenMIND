@@ -1,9 +1,12 @@
 import type { ActionItemStatus } from '@/types/actionItem'
+import type { AudioStatus } from '@/types/audio'
 import type { IssueStatus } from '@/types/issue'
+import type { KnowledgeStatus } from '@/types/knowledge'
 import type { MaterialProcessingStatus } from '@/types/material'
 import type { MeetingStatus } from '@/types/meeting'
-import type { MinutesStatus } from '@/types/minutes'
+import type { MinutesStatus, MinutesTemplate } from '@/types/minutes'
 import type { PreparationStatus } from '@/types/preparation'
+import type { RecordMarkerType } from '@/types/record'
 import type { TaskStatus } from '@/types/task'
 import type { StatusTone } from '@/types/ui'
 
@@ -24,6 +27,21 @@ export const materialStatusMeta: Record<MaterialProcessingStatus, StatusMeta> = 
   failed: { label: '解析失败', tone: 'danger' },
 }
 
+export const knowledgeStatusMeta: Record<KnowledgeStatus, StatusMeta> = {
+  uploaded: { label: '已上传', tone: 'neutral' },
+  processing: { label: '解析中', tone: 'info' },
+  processed: { label: '已索引', tone: 'success' },
+  failed: { label: '解析失败', tone: 'danger' },
+}
+
+export const audioStatusMeta: Record<AudioStatus, StatusMeta> = {
+  uploaded: { label: '已上传', tone: 'neutral' },
+  processing: { label: '转写中', tone: 'info' },
+  transcribed: { label: '已转写', tone: 'success' },
+  failed: { label: '转写失败', tone: 'danger' },
+  confirmed: { label: '已保存', tone: 'success' },
+}
+
 export const preparationStatusMeta: Record<PreparationStatus, StatusMeta> = {
   generating: { label: '生成中', tone: 'info' },
   draft: { label: '草稿', tone: 'neutral' },
@@ -34,6 +52,18 @@ export const preparationStatusMeta: Record<PreparationStatus, StatusMeta> = {
 export const minutesStatusMeta: Record<MinutesStatus, StatusMeta> = {
   draft: { label: '草稿', tone: 'neutral' },
   confirmed: { label: '已确认', tone: 'success' },
+}
+
+export const minutesTemplateMeta: Record<MinutesTemplate, StatusMeta> = {
+  standard: { label: '标准纪要', tone: 'neutral' },
+  concise: { label: '简洁记录', tone: 'info' },
+  task_list: { label: '任务清单', tone: 'warning' },
+}
+
+export const recordMarkerMeta: Record<RecordMarkerType, StatusMeta> = {
+  highlight: { label: '重点', tone: 'warning' },
+  decision: { label: '决议', tone: 'success' },
+  question: { label: '疑问', tone: 'info' },
 }
 
 export const actionItemStatusMeta: Record<ActionItemStatus, StatusMeta> = {

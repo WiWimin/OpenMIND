@@ -12,13 +12,21 @@ class RecordType(StrEnum):
     imported = "imported"
 
 
+class RecordMarkerType(StrEnum):
+    highlight = "highlight"
+    decision = "decision"
+    question = "question"
+
+
 class RecordCreate(BaseModel):
     content: str = Field(min_length=1)
     record_type: RecordType = RecordType.manual
+    marker_type: RecordMarkerType | None = None
 
 
 class RecordUpdate(BaseModel):
     content: str | None = Field(default=None, min_length=1)
+    marker_type: RecordMarkerType | None = None
 
 
 class MeetingRecordRead(BaseModel):
@@ -28,6 +36,7 @@ class MeetingRecordRead(BaseModel):
     meeting_id: str
     content: str
     record_type: RecordType
+    marker_type: RecordMarkerType | None
     source_material_id: str | None
     created_at: datetime
     updated_at: datetime

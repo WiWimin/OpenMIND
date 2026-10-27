@@ -65,7 +65,7 @@ feature/<stream>-* · fix/*
 - `main` **只接受 `develop` 的合并**，禁止直接向 `main` 提交。
 - 推进时机：每个阶段（M00–M10，见 `module-task-plan.md` 六阶段）验收通过后，或里程碑演示前。
 - 流程：`develop` 全部 CI 绿 → 以 `develop` 为 head、`main` 为 base 发起“阶段发布”PR（或本地 `git merge`）→ 合并后按阶段打 tag（如 `m01-m02`）。
-- **当前状态**：`main` 已推进至 `b291b7c`（阶段发布：M00 基础 / M01 认证前端 / M03 解析 / M04 AI + 本规则），`develop` 与 `main` 同步（领先 0）。后续每个阶段验收通过后继续推进。
+- **当前状态**：`main` 为 `b7386db`；`develop` 领先 `main` 89 个提交（MVP M00–M10 已完成）。阶段发布待执行，合并后打 `m00-m10` tag。
 
 ## 六、提交与 PR 规范
 
@@ -85,7 +85,7 @@ feature/<stream>-* · fix/*
 ## 八、待办（本次流程修复）
 
 - [x] 补做一次 `develop → main` 合并（已完成：`b291b7c`）。
-- [ ] 归拢未并入 `develop` 的前端分支：`feature/frontend-foundation`、`feature/m01-auth-ui`、`feature/m02-meeting-frontend`、`feature/m03-material-frontend` —— 从 `develop` 重新切分或按栈顺序 PR 到 `develop`。
+- [x] 归拢未并入 `develop` 的前端分支：相关 `feature/*` 分支均已并入 `develop` 并删除。
 - [ ] 停止“特性分支堆叠 PR”做法（见 §三）。
 
 ## 九、变更记录

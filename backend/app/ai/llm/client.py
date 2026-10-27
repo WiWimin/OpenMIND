@@ -4,6 +4,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -15,6 +16,16 @@ logger = logging.getLogger(__name__)
 
 _BACKOFF_SECONDS = (1, 3)
 _MAX_ATTEMPTS = 3
+
+_QUOTA_HINTS = ("quota", "balance", "insufficient", "billing", "免费额度", "额度", "余额")
+
+
+def _is_quota_error(response: httpx.Response) -> bool:
+    try:
+        text = response.text.lower()
+    except Exception:
+        return False
+    return any(hint in text for hint in _QUOTA_HINTS)
 
 
 @dataclass(frozen=True)
@@ -35,9 +46,9 @@ class LLMClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         settings = get_settings()
-        self.api_base = (api_base or settings.llm_api_base).rstrip("/")
-        self.api_key = api_key or settings.llm_api_key
-        self.model = model or settings.llm_model
+        self.api_base = (settings.llm_api_base if api_base is None else api_base).rstrip("/")
+        self.api_key = settings.llm_api_key if api_key is None else api_key
+        self.model = settings.llm_model if model is None else model
         self._client = httpx.Client(base_url=self.api_base, transport=transport)
 
     def chat(
@@ -73,9 +84,21 @@ class LLMClient:
                     headers=self._headers(),
                     timeout=timeout_s,
                 )
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    "LLM 调用超时 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    model or self.model,
+                    type(exc).__name__,
+                )
                 last_error = self._timeout_error()
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "LLM 调用网络异常 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    model or self.model,
+                    type(exc).__name__,
+                )
                 last_error = self._network_error()
             else:
                 if response.status_code == httpx.codes.OK:
@@ -109,9 +132,9 @@ class LLMClient:
     def _ensure_configured(self) -> None:
         if not self.api_base or not self.api_key:
             raise AppError(
-                "INTERNAL_ERROR",
-                "模型服务未配置",
-                http_status=500,
+                "MODEL_CONFIG_REQUIRED",
+                "未配置大模型（LLM）",
+                http_status=400,
                 retryable=False,
             )
 
@@ -139,14 +162,28 @@ class LLMClient:
         if 500 <= status_code < 600:
             return AppError(
                 "INTERNAL_ERROR",
-                "模型服务异常",
+                "模型服务暂时不可用",
                 http_status=500,
                 retryable=True,
             )
+        if status_code in (401, 403):
+            return AppError(
+                "MODEL_CONFIG_INVALID",
+                "模型密钥无效或已失效",
+                http_status=400,
+                retryable=False,
+            )
+        if status_code == 402 or _is_quota_error(response):
+            return AppError(
+                "MODEL_QUOTA_EXCEEDED",
+                "模型额度不足",
+                http_status=402,
+                retryable=False,
+            )
         return AppError(
-            "INTERNAL_ERROR",
-            "模型服务调用失败",
-            http_status=500,
+            "MODEL_CONFIG_INVALID",
+            "模型调用失败，请检查配置",
+            http_status=400,
             retryable=False,
         )
 

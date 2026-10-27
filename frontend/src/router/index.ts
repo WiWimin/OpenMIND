@@ -12,9 +12,23 @@ declare module 'vue-router' {
 
 const routes: RouteRecordRaw[] = [
   {
-    path: ROUTE_PATHS.home,
-    name: ROUTE_NAMES.home,
-    component: () => import('@/views/HomeView.vue'),
+    path: ROUTE_PATHS.root,
+    name: ROUTE_NAMES.root,
+    redirect: () => ({
+      name: useAuthStore().isAuthenticated ? ROUTE_NAMES.dashboard : ROUTE_NAMES.login,
+    }),
+  },
+  {
+    path: ROUTE_PATHS.dashboard,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.dashboard,
+        component: () => import('@/views/DashboardView.vue'),
+      },
+    ],
   },
   {
     path: ROUTE_PATHS.login,
@@ -36,7 +50,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: ROUTE_NAMES.meetings,
-        component: () => import('@/views/meetings/MeetingListView.vue'),
+        component: () => import('@/views/DashboardView.vue'),
       },
       {
         path: ':meetingId',
@@ -46,8 +60,56 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: ROUTE_PATHS.tasks,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.tasks,
+        component: () => import('@/views/TasksView.vue'),
+      },
+    ],
+  },
+  {
+    path: ROUTE_PATHS.knowledge,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.knowledge,
+        component: () => import('@/views/KnowledgeView.vue'),
+      },
+    ],
+  },
+  {
+    path: ROUTE_PATHS.memory,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.memory,
+        component: () => import('@/views/MemoryView.vue'),
+      },
+    ],
+  },
+  {
+    path: ROUTE_PATHS.settings,
+    component: () => import('@/layouts/WorkspaceLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: ROUTE_NAMES.settings,
+        component: () => import('@/views/settings/ModelSettingsView.vue'),
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
-    redirect: { name: ROUTE_NAMES.home },
+    redirect: { name: ROUTE_NAMES.root },
   },
 ]
 
@@ -65,7 +127,7 @@ export function createAppRouter(): Router {
     }
 
     if (to.meta.guestOnly && auth.isAuthenticated) {
-      return { name: ROUTE_NAMES.meetings }
+      return { name: ROUTE_NAMES.dashboard }
     }
 
     if (auth.isAuthenticated && !auth.user) {

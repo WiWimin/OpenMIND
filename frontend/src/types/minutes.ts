@@ -1,5 +1,6 @@
-// 纪要读取/编辑/确认接口为 [提案]（api.md 5.10–5.13），待团队确认
+// 纪要读取/编辑/确认接口为 [提案]（api.md 5.11–5.14），待团队确认
 export type MinutesStatus = 'draft' | 'confirmed'
+export type MinutesTemplate = 'standard' | 'concise' | 'task_list'
 
 export interface Minutes {
   minutes_id: string
@@ -7,7 +8,9 @@ export interface Minutes {
   content: string
   status: MinutesStatus
   version: number
+  template: MinutesTemplate
   source_record_ids: string[]
+  source_material_ids: string[]
   created_at: string
   updated_at: string
 }
@@ -15,6 +18,8 @@ export interface Minutes {
 export interface GenerateMinutesPayload {
   record_ids: string[]
   include_action_items?: boolean
+  include_materials?: boolean
+  template?: MinutesTemplate
 }
 
 export interface UpdateMinutesPayload {

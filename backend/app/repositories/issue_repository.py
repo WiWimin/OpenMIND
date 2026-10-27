@@ -67,5 +67,14 @@ def update(db: Session, issue: OpenIssue) -> OpenIssue:
     return issue
 
 
+def exists_by_source_record(db: Session, record_id: str) -> bool:
+    statement = (
+        select(func.count())
+        .select_from(OpenIssue)
+        .where(OpenIssue.source_record_id == record_id)
+    )
+    return int(db.execute(statement).scalar_one()) > 0
+
+
 def delete_by_meeting(db: Session, meeting_id: str) -> None:
     db.execute(sa_delete(OpenIssue).where(OpenIssue.meeting_id == meeting_id))

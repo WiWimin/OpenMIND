@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
+  confirmPreparation,
   generatePreparation,
   getPreparation,
   listPreparations,
@@ -41,7 +43,10 @@ describe('preparations api', () => {
     await expect(generatePreparation('mtg_1', { user_goal: '确认风险' })).resolves.toEqual(
       preparation,
     )
-    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/prepare', { user_goal: '确认风险' })
+    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/prepare', { user_goal: '确认风险' }, {
+      signal: undefined,
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
   })
 
   it('lists preparations with pagination params', async () => {
@@ -67,5 +72,13 @@ describe('preparations api', () => {
 
     await expect(updatePreparation('prep_1', { checklist: ['a'] })).resolves.toEqual(preparation)
     expect(patch).toHaveBeenCalledWith('/preparations/prep_1', { checklist: ['a'] })
+  })
+
+  it('confirms a preparation', async () => {
+    const confirmed: Preparation = { ...preparation, status: 'confirmed' }
+    post.mockResolvedValue(response(confirmed))
+
+    await expect(confirmPreparation('prep_1')).resolves.toEqual(confirmed)
+    expect(post).toHaveBeenCalledWith('/preparations/prep_1/confirm')
   })
 })

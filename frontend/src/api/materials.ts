@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type { Material, MaterialUploadPayload } from '@/types/material'
 import type { PageParams } from '@/types/pagination'
@@ -32,7 +33,10 @@ export async function uploadMaterial(
   const { data } = await http.post<ApiSuccess<Material> | Material>(
     `/meetings/${meetingId}/materials`,
     form,
-    { headers: { 'Content-Type': 'multipart/form-data' } },
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    },
   )
   return unwrapData(data)
 }

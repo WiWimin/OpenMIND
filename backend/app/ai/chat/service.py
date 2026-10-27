@@ -8,11 +8,20 @@ from app.ai.prompts import build_chat
 
 
 @dataclass(frozen=True)
-class Source:
+class RecordContext:
     meeting_id: str
-    material_id: str
+    record_id: str
+    content: str
+
+
+@dataclass(frozen=True)
+class Source:
+    meeting_id: str | None
+    material_id: str | None
     record_id: str | None
     excerpt: str
+    document_id: str | None = None
+    document_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +56,8 @@ class ChatService:
         user_id: str,
         scope: str = "current_meeting",
         current_meeting_id: str | None = None,
+        records: list[RecordContext] | None = None,
+        memory_context: str = "",
     ) -> ChatAnswer:
         chunks = self.retriever.retrieve(
             question,
@@ -54,14 +65,24 @@ class ChatService:
             scope=scope,
             current_meeting_id=current_meeting_id,
         )
-        if not chunks:
+        record_context = [] if scope == "knowledge_base" else (records or [])
+        if not chunks and not record_context:
             return ChatAnswer(
                 answer="根据现有材料无法确认该问题的答案。",
                 sources=[],
                 insufficient_evidence=True,
             )
         contexts = [chunk.excerpt for chunk in chunks]
-        messages = build_chat({"question": question, "contexts": contexts})
+        contexts.extend(
+            f"[记录 {record.record_id}] {record.content}" for record in record_context
+        )
+        messages = build_chat(
+            {
+                "question": question,
+                "contexts": contexts,
+                "memory_context": memory_context,
+            }
+        )
         answer = self.llm.chat(messages).text
         sources = [
             Source(
@@ -69,7 +90,18 @@ class ChatService:
                 material_id=chunk.material_id,
                 record_id=chunk.record_id,
                 excerpt=chunk.excerpt,
+                document_id=getattr(chunk, "document_id", None),
+                document_name=getattr(chunk, "document_name", None),
             )
             for chunk in chunks
         ]
+        sources.extend(
+            Source(
+                meeting_id=record.meeting_id,
+                material_id=None,
+                record_id=record.record_id,
+                excerpt=record.content[:500],
+            )
+            for record in record_context
+        )
         return ChatAnswer(answer=answer, sources=sources, insufficient_evidence=False)

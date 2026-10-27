@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
 import { deleteMaterial, getMaterial, listMaterials, uploadMaterial } from '@/api/materials'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ListData } from '@/types/api'
 import type { Material } from '@/types/material'
 import { response } from './support'
@@ -58,7 +59,10 @@ describe('materials api', () => {
     expect(url).toBe('/meetings/mtg_1/materials')
     expect((form as FormData).get('file')).toBe(file)
     expect((form as FormData).get('source')).toBe('会前材料')
-    expect(config).toEqual({ headers: { 'Content-Type': 'multipart/form-data' } })
+    expect(config).toEqual({
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
   })
 
   it('deletes a material and returns the deleted id', async () => {

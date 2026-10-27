@@ -11,9 +11,17 @@ class MinutesStatus(StrEnum):
     confirmed = "confirmed"
 
 
+class MinutesTemplate(StrEnum):
+    standard = "standard"
+    concise = "concise"
+    task_list = "task_list"
+
+
 class MinutesGenerateRequest(BaseModel):
     record_ids: list[str] = Field(default_factory=list)
     include_action_items: bool = False
+    include_materials: bool = True
+    template: MinutesTemplate | None = None
 
 
 class MinutesUpdate(BaseModel):
@@ -28,6 +36,8 @@ class MinutesRead(BaseModel):
     content: str
     status: MinutesStatus
     version: int
+    template: MinutesTemplate
     source_record_ids: list[str]
+    source_material_ids: list[str]
     created_at: datetime
     updated_at: datetime

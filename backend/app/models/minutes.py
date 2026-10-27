@@ -24,7 +24,13 @@ class MeetingMinutes(Base):
         String(20), nullable=False, default="draft", server_default="draft"
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    template: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="standard", server_default="standard"
+    )
     source_record_ids: Mapped[list[str]] = mapped_column(
+        _source_ids_type, nullable=False, default=list
+    )
+    source_material_ids: Mapped[list[str]] = mapped_column(
         _source_ids_type, nullable=False, default=list
     )
     created_at: Mapped[datetime] = mapped_column(

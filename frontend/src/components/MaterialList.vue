@@ -4,7 +4,9 @@
       v-for="material in items"
       :key="material.material_id"
       :material="material"
+      :readonly="readonly"
       @delete="emit('delete', $event)"
+      @view="emit('view', $event)"
     />
   </ul>
 </template>
@@ -13,8 +15,10 @@
 import MaterialItem from '@/components/MaterialItem.vue'
 import type { Material } from '@/types/material'
 
-defineProps<{ items: Material[] }>()
-const emit = defineEmits<{ delete: [materialId: string] }>()
+withDefaults(defineProps<{ items: Material[]; readonly?: boolean }>(), {
+  readonly: false,
+})
+const emit = defineEmits<{ delete: [materialId: string]; view: [materialId: string] }>()
 </script>
 
 <style scoped>

@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, ListData } from '@/types/api'
 import type { GenerateMinutesPayload, Minutes, UpdateMinutesPayload } from '@/types/minutes'
 import type { PageParams } from '@/types/pagination'
@@ -7,15 +8,17 @@ import { unwrapData } from '@/utils/apiEnvelope'
 export async function generateMinutes(
   meetingId: string,
   payload: GenerateMinutesPayload,
+  signal?: AbortSignal,
 ): Promise<Minutes> {
   const { data } = await http.post<ApiSuccess<Minutes> | Minutes>(
     `/meetings/${meetingId}/minutes/generate`,
     payload,
+    { signal, timeout: LONG_REQUEST_TIMEOUT_MS },
   )
   return unwrapData(data)
 }
 
-// [提案] 纪要读取/编辑/确认接口（api.md 5.10–5.13），待团队确认
+// [提案] 纪要读取/编辑/确认接口（api.md 5.11–5.14），待团队确认
 export async function listMinutes(
   meetingId: string,
   params: PageParams = {},

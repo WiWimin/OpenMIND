@@ -99,13 +99,39 @@ describe('MaterialSection', () => {
     expect(materialsApi.listMaterials).toHaveBeenCalledTimes(2)
   })
 
+  it('shows a parse failure instead of a success toast', async () => {
+    const failed: Material = {
+      ...processed,
+      material_id: 'mat_failed',
+      processing_status: 'failed',
+      parse_error: 'PDF 文件无法读取或已损坏',
+    }
+    vi.mocked(materialsApi.listMaterials)
+      .mockResolvedValueOnce(listOf([]))
+      .mockResolvedValueOnce(listOf([failed]))
+    vi.mocked(materialsApi.uploadMaterial).mockResolvedValue(failed)
+    const wrapper = mountSection()
+    await flushPromises()
+
+    const file = new File(['bad'], 'broken.pdf')
+    await selectFile(wrapper, file)
+    await wrapper.get('.material-uploader .app-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.error-message').text()).toContain('PDF 文件无法读取或已损坏')
+    expect(materialsApi.listMaterials).toHaveBeenCalledTimes(2)
+  })
+
   it('deletes a material after confirmation', async () => {
     vi.mocked(materialsApi.listMaterials).mockResolvedValue(listOf([processed]))
     vi.mocked(materialsApi.deleteMaterial).mockResolvedValue({ deleted: true, material_id: 'mat_1' })
     const wrapper = mountSection()
     await flushPromises()
 
-    await wrapper.get('.material-item .app-button').trigger('click')
+    const deleteButton = wrapper
+      .findAll('.material-item .app-button')
+      .find((button) => button.text() === '删除')
+    await deleteButton?.trigger('click')
     const confirm = wrapper
       .get('.modal')
       .findAll('button')
@@ -114,6 +140,22 @@ describe('MaterialSection', () => {
     await flushPromises()
 
     expect(materialsApi.deleteMaterial).toHaveBeenCalledWith('mat_1')
+  })
+
+  it('shows material details on demand', async () => {
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue(listOf([processed]))
+    const wrapper = mountSection()
+    await flushPromises()
+
+    const viewButton = wrapper
+      .findAll('.material-item .app-button')
+      .find((button) => button.text() === '查看详情')
+    await viewButton?.trigger('click')
+
+    const modal = wrapper.get('.modal')
+    expect(modal.text()).toContain('项目方案.pdf')
+    expect(modal.text()).toContain('未填写')
+    expect(modal.text()).toContain('已解析')
   })
 
   it('polls while a material is processing', async () => {

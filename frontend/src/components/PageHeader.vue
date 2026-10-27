@@ -30,18 +30,20 @@ withDefaults(
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .page-header__title {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .page-header__description {
   margin: var(--space-1) 0 0;
   color: var(--color-muted-foreground);
+  font-size: 0.9375rem;
 }
 
 .page-header__actions {

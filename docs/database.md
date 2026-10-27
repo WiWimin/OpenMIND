@@ -105,6 +105,7 @@
 | `meeting_id` | VARCHAR(40) | FK→meetings, NN, IDX | 所属会议 |
 | `content` | TEXT | NN | 记录文本 |
 | `record_type` | VARCHAR(20) | NN, default `manual` | `manual` / `transcript` / `imported` |
+| `marker_type` | VARCHAR(20) | ? | `highlight` / `decision` / `question`；每条记录最多一个 |
 | `source_material_id` | VARCHAR(40) | FK→meeting_materials, ? | 转写/导入来源 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
@@ -133,7 +134,9 @@
 | `content` | TEXT | NN | 纪要正文 |
 | `status` | VARCHAR(20) | NN, default `draft` | 见 §五 |
 | `version` | INTEGER | NN, default 1 | |
+| `template` | VARCHAR(20) | NN, default `standard` | `standard` / `concise` / `task_list` |
 | `source_record_ids` | JSONB | NN, default `[]` | 生成依据的记录 ID 快照 |
+| `source_material_ids` | JSONB | NN, default `[]` | 生成依据的材料 ID 快照 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -202,12 +205,107 @@
 - 未生成 embedding 的分块可为空；检索不得把空向量当有效向量。
 - 删除/重新解析材料时清理旧分块。
 
+### 3.11 `user_model_configs` 用户模型配置
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | VARCHAR(40) | PK, FK→users | 每个用户一行 |
+| `llm_api_base` | VARCHAR(255) | ? | LLM API 地址 |
+| `llm_api_key_enc` | TEXT | ? | LLM 密钥 Fernet 密文 |
+| `llm_model` | VARCHAR(100) | ? | 默认 LLM 模型 |
+| `llm_purpose_models` | JSONB | NN, default `{}` | 用途→模型名覆盖 |
+| `embedding_api_base` | VARCHAR(255) | ? | Embedding API 地址 |
+| `embedding_api_key_enc` | TEXT | ? | Embedding 密钥 Fernet 密文 |
+| `embedding_model` | VARCHAR(100) | ? | Embedding 模型 |
+| `embedding_dim` | INTEGER | ? | 固定 1024 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- `llm_purpose_models` 仅保存允许用途：`preparation` / `chat` / `minutes` / `extraction`。
+- 未覆盖的用途回退到 `llm_model`；API 地址与密钥统一使用 LLM 配置。
+- 用途模型名最长 100 字符，空值不得保存。
+- 删除用户模型配置时同时清除用途覆盖。
+
+### 3.12 `knowledge_documents` 个人知识库文档
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `document_id` | VARCHAR(40) | PK | `kdoc_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户 |
+| `file_name` | VARCHAR(255) | NN | 原始文件名 |
+| `type` | VARCHAR(30) | NN | `pdf` / `docx` / `txt` |
+| `storage_key` | TEXT | NN | 本地存储相对路径 |
+| `content` | TEXT | ? | 解析文本 |
+| `processing_status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
+| `parse_error` | TEXT | ? | 解析/索引失败原因 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+### 3.13 `knowledge_chunks` 知识库分块
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `chunk_id` | VARCHAR(40) | PK | `kchk_` 前缀 |
+| `document_id` | VARCHAR(40) | FK→knowledge_documents, NN, IDX | 来源文档 |
+| `content` | TEXT | NN | 分块文本 |
+| `chunk_index` | INTEGER | NN | 从 0 开始 |
+| `embedding` | `vector(1024)` | ? | 维度固定 1024 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 唯一约束：`UNIQUE(document_id, chunk_index)`。
+- 删除文档时同步删除分块与向量索引。
+- 知识库与会议资料使用独立表，检索范围不得自动混用。
+
+### 3.14 `user_memories` 用户记忆
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `user_id` | VARCHAR(40) | PK, FK→users | 每个用户最多一行 |
+| `role` | VARCHAR(100) | ? | 职业/角色 |
+| `work_scenarios` | TEXT | ? | 工作场景 |
+| `communication_style` | TEXT | ? | 表达偏好 |
+| `preferred_minutes_template` | VARCHAR(20) | ? | `standard` / `concise` / `task_list` |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 记忆由用户显式维护；不允许自动写入未确认的偏好。
+- 删除记忆只删除该用户画像，不影响会议、纪要或任务数据。
+- 用途筛选在服务层完成，不把全部记忆无条件注入所有 AI 任务。
+
+### 3.15 `meeting_audio` 会议音频
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `audio_id` | VARCHAR(40) | PK | `aud_` 前缀 |
+| `meeting_id` | VARCHAR(40) | FK→meetings, NN, IDX | 所属会议 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户 |
+| `file_name` | VARCHAR(255) | NN | 原始文件名 |
+| `type` | VARCHAR(20) | NN | `mp3` / `wav` / `m4a` / `webm` |
+| `storage_key` | TEXT | NN | 本地存储相对路径 |
+| `transcript` | TEXT | ? | 可编辑转写文本 |
+| `status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
+| `error` | TEXT | ? | 转写失败原因 |
+| `record_id` | VARCHAR(40) | FK→meeting_records, ? | 确认后生成的记录 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 状态：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`。
+- 确认后创建 `record_type=transcript` 的会议记录，并写入 `record_id`。
+- 已确认音频不能重新转写或删除。
+- 删除未确认音频时同步删除文件。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
+- User — UserModelConfig：一对一（`user_model_configs.user_id` 主键）
+- User — UserMemory：一对一（`user_memories.user_id` 主键）
+- User — KnowledgeDocument：一对多
+- KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多
+- Meeting — MeetingAudio：一对多
 - Meeting — MeetingRecord：一对多
+- MeetingAudio — MeetingRecord：0..1 对 0..1（`record_id`）
 - Meeting — Preparation：一对多
 - Meeting — MeetingMinutes：一对多
 - Meeting — ActionItem：一对多
@@ -239,6 +337,7 @@
 
 - Meeting：`scheduled` ↔ `archived`（归档只读，MVP 不提供开始/完成操作）。
 - Material：`uploaded → processing → processed | failed`；重试允许 `failed → processing`。
+- Preparation：`generating → draft → confirmed`；生成失败 `failed`；确认动作幂等（`api.md 5.6`）。
 - ActionItem：`pending_confirmation → confirmed → converted`；可由待确认/已确认进入 `cancelled`；**仅 `confirmed` 可转任务**。
 - PersonalTask：`todo → in_progress → completed`；未完成可 `cancelled`。
 - OpenIssue：`open → resolved | cancelled`。
@@ -268,6 +367,7 @@
   - 若存在**已转换行动项**（`action_items.status = converted`）或**引用该会议的个人任务**（`personal_tasks.meeting_id`），**禁止删除**，业务层返回 `409 BUSINESS_RULE_VIOLATION`。
   - 否则在事务中删除该会议的材料、分块、记录、准备稿、纪要、行动项与问题。
 - 删除材料：删除文件对象、`document_chunks` 与向量；`meeting_records.source_material_id` 引用该材料时置空，不删除原始记录。
+- 删除记录：若被行动项（`source_record_id`）或问题（`source_record_id`）引用，返回 `409 BUSINESS_RULE_VIOLATION`，避免来源失去可追溯性。
 - 删除行动项：已转换为任务的不允许直接删除（应取消状态或保留关联），避免任务失去来源。
 - 用户删除：MVP 不提供。
 - 文件存储不支持事务时，须设计失败补偿/清理机制。

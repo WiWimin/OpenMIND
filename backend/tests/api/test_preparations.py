@@ -1,8 +1,12 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.ai.preparation import PreparationDraft
 from app.core.exceptions import AppError
+from app.models.user import User
+from app.repositories import material_repository
 from app.services import preparation_service
 
 REGISTER = "/api/v1/auth/register"
@@ -13,7 +17,7 @@ PASSWORD = "secret123"
 
 @pytest.fixture()
 def fake_draft(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake(meeting, snippets, user_goal):
+    def fake(meeting, snippets, user_goal, config=None, **kwargs):
         return PreparationDraft(summary="会议摘要", checklist=["确认里程碑", "排查风险"])
 
     monkeypatch.setattr(preparation_service, "generate_draft", fake)
@@ -53,6 +57,50 @@ def test_generate_preparation(client: TestClient, fake_draft: None) -> None:
     assert data["version"] == 1
 
 
+def test_include_history_controls_material_scope(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    current = _create_meeting(client, headers)
+    history = _create_meeting(client, headers)
+    user = db_session.execute(select(User)).scalars().one()
+    for meeting, file_name, content in (
+        (current, "current.txt", "当前会议材料"),
+        (history, "history.txt", "历史会议材料"),
+    ):
+        material = material_repository.create(
+            db_session,
+            material_id=f"mat_{file_name}",
+            meeting_id=meeting["meeting_id"],
+            user_id=user.user_id,
+            file_name=file_name,
+            material_type="txt",
+            source=None,
+            storage_key=f"materials/{file_name}",
+        )
+        material.content = content
+        db_session.commit()
+
+    captured: list[list[str]] = []
+
+    def fake(meeting, snippets, user_goal, config=None, **kwargs):
+        captured.append(snippets)
+        return PreparationDraft(summary="摘要", checklist=[])
+
+    monkeypatch.setattr(preparation_service, "generate_draft", fake)
+
+    for include_history in (False, True):
+        response = client.post(
+            f"/api/v1/meetings/{current['meeting_id']}/prepare",
+            json={"include_history": include_history},
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    assert captured[0] == ["当前会议材料"]
+    assert set(captured[1]) == {"当前会议材料", "历史会议材料"}
+
+
 def test_generate_requires_auth(client: TestClient, fake_draft: None) -> None:
     response = client.post("/api/v1/meetings/mtg_x/prepare", json={})
     assert response.status_code == 401
@@ -79,7 +127,7 @@ def test_generate_cross_user_forbidden(client: TestClient, fake_draft: None) -> 
 def test_generate_ai_failure_propagates(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(meeting, snippets, user_goal):
+    def boom(meeting, snippets, user_goal, config=None, **kwargs):
         raise AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
 
     monkeypatch.setattr(preparation_service, "generate_draft", boom)
@@ -138,3 +186,51 @@ def test_update_preparation_increments_version(client: TestClient, fake_draft: N
     assert data["summary"] == "更新后的摘要"
     assert data["checklist"] == ["仅一项"]
     assert data["version"] == 2
+
+
+def test_confirm_preparation(client: TestClient, fake_draft: None) -> None:
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    preparation = _generate(client, headers, meeting["meeting_id"])
+
+    response = client.post(
+        f"/api/v1/preparations/{preparation['preparation_id']}/confirm", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "confirmed"
+    assert data["version"] == 1
+
+
+def test_confirm_preparation_is_idempotent(client: TestClient, fake_draft: None) -> None:
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    preparation = _generate(client, headers, meeting["meeting_id"])
+    url = f"/api/v1/preparations/{preparation['preparation_id']}/confirm"
+
+    first = client.post(url, headers=headers)
+    assert first.status_code == 200
+    second = client.post(url, headers=headers)
+    assert second.status_code == 200
+    data = second.json()["data"]
+    assert data["status"] == "confirmed"
+    assert data["version"] == 1
+
+
+def test_confirm_preparation_cross_user_forbidden(
+    client: TestClient, fake_draft: None
+) -> None:
+    alice = _auth(client, "alice")
+    meeting = _create_meeting(client, alice)
+    preparation = _generate(client, alice, meeting["meeting_id"])
+    bob = _auth(client, "bob")
+
+    response = client.post(
+        f"/api/v1/preparations/{preparation['preparation_id']}/confirm", headers=bob
+    )
+    assert response.status_code == 404
+
+
+def test_confirm_preparation_requires_auth(client: TestClient, fake_draft: None) -> None:
+    response = client.post("/api/v1/preparations/prep_x/confirm")
+    assert response.status_code == 401

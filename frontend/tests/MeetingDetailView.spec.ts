@@ -2,8 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as actionItemsApi from '@/api/actionItems'
+import * as issuesApi from '@/api/issues'
 import * as meetingsApi from '@/api/meetings'
 import * as materialsApi from '@/api/materials'
+import * as minutesApi from '@/api/minutes'
+import * as preparationsApi from '@/api/preparations'
+import * as recordsApi from '@/api/records'
 import type { Meeting } from '@/types/meeting'
 import MeetingDetailView from '@/views/meetings/MeetingDetailView.vue'
 
@@ -28,6 +33,49 @@ vi.mock('@/api/materials', () => ({
   uploadMaterial: vi.fn(),
   getMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
+}))
+
+vi.mock('@/api/preparations', () => ({
+  generatePreparation: vi.fn(),
+  listPreparations: vi.fn(),
+  getPreparation: vi.fn(),
+  updatePreparation: vi.fn(),
+}))
+
+vi.mock('@/api/minutes', () => ({
+  listMinutes: vi.fn(),
+  generateMinutes: vi.fn(),
+  getMinutes: vi.fn(),
+  updateMinutes: vi.fn(),
+  confirmMinutes: vi.fn(),
+}))
+
+vi.mock('@/api/actionItems', () => ({
+  extractActionItems: vi.fn(),
+  listActionItems: vi.fn(),
+  getActionItem: vi.fn(),
+  updateActionItem: vi.fn(),
+  deleteActionItem: vi.fn(),
+  confirmActionItem: vi.fn(),
+  convertActionItemToTask: vi.fn(),
+}))
+
+vi.mock('@/api/records', () => ({
+  listRecords: vi.fn(),
+  createRecord: vi.fn(),
+  updateRecord: vi.fn(),
+  deleteRecord: vi.fn(),
+}))
+
+vi.mock('@/api/chat', () => ({
+  askMeeting: vi.fn(),
+  organizeRecords: vi.fn(),
+}))
+
+vi.mock('@/api/issues', () => ({
+  extractIssues: vi.fn(),
+  listIssues: vi.fn(),
+  updateIssue: vi.fn(),
 }))
 
 const meeting: Meeting = {
@@ -58,6 +106,26 @@ describe('MeetingDetailView', () => {
       items: [],
       pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
     })
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(actionItemsApi.listActionItems).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(recordsApi.listRecords).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(issuesApi.listIssues).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
+    vi.mocked(preparationsApi.listPreparations).mockResolvedValue({
+      items: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 },
+    })
   })
 
   it('loads and renders the meeting with tab placeholders', async () => {
@@ -67,7 +135,7 @@ describe('MeetingDetailView', () => {
 
     expect(wrapper.text()).toContain('项目周会')
     expect(wrapper.text()).toContain('进度与风险')
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(7)
   })
 
   it('renders the material section on the materials tab', async () => {
@@ -78,6 +146,75 @@ describe('MeetingDetailView', () => {
     expect(wrapper.find('.material-uploader').exists()).toBe(true)
   })
 
+  it('shows only the active section instead of stacking every panel', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.preparation-section').exists()).toBe(false)
+
+    const preparationTab = wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text() === '会前准备')
+    await preparationTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.preparation-section').exists()).toBe(true)
+    expect(wrapper.find('.material-uploader').exists()).toBe(false)
+  })
+
+  it('renders the preparation section on the preparation tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const preparationTab = wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text() === '会前准备')
+    await preparationTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.preparation-section').exists()).toBe(true)
+  })
+
+  it('renders records and chat on the records tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const recordsTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '记录')
+    await recordsTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.record-section').exists()).toBe(true)
+    expect(wrapper.find('.chat-panel').exists()).toBe(true)
+  })
+
+  it('renders minutes and action items on the minutes tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const minutesTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '纪要')
+    await minutesTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.minutes-section').exists()).toBe(true)
+    expect(wrapper.find('.action-section').exists()).toBe(true)
+  })
+
+  it('renders the issues section on the issues tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meeting)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const issuesTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text() === '问题')
+    await issuesTab?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.issues-section').exists()).toBe(true)
+  })
+
   it('disables editing and archiving for an archived meeting', async () => {
     vi.mocked(meetingsApi.getMeeting).mockResolvedValue({ ...meeting, status: 'archived' })
     const wrapper = mountView()
@@ -86,6 +223,30 @@ describe('MeetingDetailView', () => {
     expect(wrapper.text()).toContain('该会议已归档')
     expect(headerButton(wrapper, '编辑')?.attributes('disabled')).toBeDefined()
     expect(headerButton(wrapper, '归档')?.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('上传资料')
+  })
+
+  it('hides mutation controls on every archived meeting tab', async () => {
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue({ ...meeting, status: 'archived' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const controlsByTab: Record<string, string[]> = {
+      会前准备: ['生成会前准备'],
+      记录: ['保存记录', '提问'],
+      纪要: ['生成会议纪要', '提取行动项'],
+      问题: ['提取未解决问题'],
+    }
+    for (const [label, controls] of Object.entries(controlsByTab)) {
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text() === label)
+      await tab?.trigger('click')
+      await flushPromises()
+      for (const control of controls) {
+        expect(headerButton(wrapper, control)).toBeUndefined()
+      }
+    }
+
+    expect(wrapper.find('.meeting-detail__ai-fab').exists()).toBe(false)
   })
 
   it('archives the meeting after confirmation', async () => {

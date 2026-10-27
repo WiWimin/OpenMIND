@@ -38,14 +38,25 @@ withDefaults(
   min-height: 2.5rem;
   padding: var(--space-2) var(--space-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font: inherit;
-  font-weight: 500;
+  font-size: 0.9375rem;
+  font-weight: 600;
   cursor: pointer;
   transition:
     background var(--transition-fast),
     border-color var(--transition-fast),
-    color var(--transition-fast);
+    box-shadow var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.app-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.app-button:not(:disabled):active {
+  transform: translateY(0);
 }
 
 .app-button--block {
@@ -53,41 +64,41 @@ withDefaults(
 }
 
 .app-button--primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-primary-contrast);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.26);
 }
 
 .app-button--primary:hover:not(:disabled) {
-  background: var(--color-primary-strong);
-  border-color: var(--color-primary-strong);
+  box-shadow: 0 12px 26px rgba(59, 111, 212, 0.34);
 }
 
 .app-button--ghost {
-  background: transparent;
+  background: var(--color-surface);
   border-color: var(--color-border);
   color: var(--color-foreground);
 }
 
 .app-button--ghost:hover:not(:disabled) {
-  border-color: var(--color-primary);
+  background: var(--color-surface-strong);
+  border-color: var(--color-border-strong);
   color: var(--color-primary-strong);
 }
 
 .app-button--danger {
-  background: var(--color-down);
-  border-color: var(--color-down);
   color: #ffffff;
+  background: linear-gradient(135deg, #fb7185, #e11d48);
+  box-shadow: 0 8px 20px rgba(225, 29, 72, 0.22);
 }
 
 .app-button--danger:hover:not(:disabled) {
-  background: #991b1b;
-  border-color: #991b1b;
+  box-shadow: 0 12px 26px rgba(225, 29, 72, 0.3);
 }
 
 .app-button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .app-button__spinner {

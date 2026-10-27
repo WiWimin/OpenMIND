@@ -36,6 +36,11 @@ venv/
 storage/*
 !storage/.gitkeep
 
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+frontend/.playwright/
+
 # Coverage / build artifacts
 coverage/
 .coverage

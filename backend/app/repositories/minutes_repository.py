@@ -14,13 +14,17 @@ def create(
     meeting_id: str,
     content: str,
     source_record_ids: list[str],
+    source_material_ids: list[str] | None = None,
+    template: str = "standard",
     status: str = "draft",
 ) -> MeetingMinutes:
     minutes = MeetingMinutes(
         minutes_id=minutes_id,
         meeting_id=meeting_id,
         content=content,
+        template=template,
         source_record_ids=source_record_ids,
+        source_material_ids=source_material_ids or [],
         status=status,
     )
     db.add(minutes)

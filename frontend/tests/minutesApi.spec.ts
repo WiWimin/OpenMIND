@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
   confirmMinutes,
   generateMinutes,
@@ -26,7 +27,9 @@ const minutes: Minutes = {
   content: '会议纪要草稿',
   status: 'draft',
   version: 1,
+  template: 'standard',
   source_record_ids: ['rec_1'],
+  source_material_ids: [],
   created_at: '2026-10-01T10:00:00+08:00',
   updated_at: '2026-10-01T10:00:00+08:00',
 }
@@ -40,7 +43,11 @@ describe('minutes api', () => {
     post.mockResolvedValue(response(minutes))
 
     await expect(generateMinutes('mtg_1', { record_ids: ['rec_1'] })).resolves.toEqual(minutes)
-    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/minutes/generate', { record_ids: ['rec_1'] })
+    expect(post).toHaveBeenCalledWith(
+      '/meetings/mtg_1/minutes/generate',
+      { record_ids: ['rec_1'] },
+      { signal: undefined, timeout: LONG_REQUEST_TIMEOUT_MS },
+    )
   })
 
   it('lists minutes with pagination params', async () => {

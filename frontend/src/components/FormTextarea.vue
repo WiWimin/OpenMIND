@@ -12,6 +12,7 @@
       :rows="rows"
       :placeholder="placeholder"
       :required="required"
+      :readonly="readonly"
       :maxlength="maxlength"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="error ? errorId : undefined"
@@ -31,6 +32,7 @@ const props = withDefaults(
     rows?: number
     placeholder?: string
     required?: boolean
+    readonly?: boolean
     maxlength?: number
     error?: string
   }>(),
@@ -38,6 +40,7 @@ const props = withDefaults(
     rows: 4,
     placeholder: '',
     required: false,
+    readonly: false,
     maxlength: undefined,
     error: '',
   },
@@ -53,12 +56,12 @@ const errorId = computed(() => `${props.id}-error`)
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
 }
 
 .form-field__label {
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-foreground);
 }
 
@@ -71,17 +74,27 @@ const errorId = computed(() => `${props.id}-error`)
   background: var(--color-surface);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font: inherit;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
   resize: vertical;
 }
 
+.form-field__control::placeholder {
+  color: var(--color-muted-foreground);
+}
+
 .form-field__control:focus {
+  outline: none;
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 111, 212, 0.16);
 }
 
 .form-field__control[aria-invalid='true'] {
   border-color: var(--color-down);
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.13);
 }
 
 .form-field__error {

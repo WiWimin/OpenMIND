@@ -35,7 +35,21 @@ describe('MaterialList', () => {
 
   it('re-emits delete from an item', async () => {
     const wrapper = mount(MaterialList, { props: { items: materials } })
-    await wrapper.findAll('.material-item')[1].get('.app-button').trigger('click')
+    const deleteButton = wrapper
+      .findAll('.material-item')[1]
+      .findAll('.app-button')
+      .find((button) => button.text() === '删除')
+    await deleteButton?.trigger('click')
     expect(wrapper.emitted('delete')).toEqual([['mat_2']])
+  })
+
+  it('re-emits view from an item', async () => {
+    const wrapper = mount(MaterialList, { props: { items: materials } })
+    const viewButton = wrapper
+      .findAll('.material-item')[0]
+      .findAll('.app-button')
+      .find((button) => button.text() === '查看详情')
+    await viewButton?.trigger('click')
+    expect(wrapper.emitted('view')).toEqual([['mat_1']])
   })
 })

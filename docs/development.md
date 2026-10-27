@@ -18,6 +18,54 @@ cp docker/.env.example docker/.env          # Windows: copy docker\.env.example 
 
 - Docker Compose 启动时从 `docker/.env` 读取变量做插值；未提供时使用 `docker/compose.dev.yml` 中的默认值。
 - 后端以原生方式运行时，pydantic-settings 会从 `backend/../docker/.env`（即 `docker/.env`）读取配置。
+- 非开发环境必须使用至少 32 字符的随机 `SECRET_KEY`；默认 `change-me` 会被拒绝启动。
+- 默认要求用户配置 BYOK（`ALLOW_GLOBAL_FALLBACK=false`）；仅开发/管理员联调时可显式开启全局 Key 回退。
+- 自建本地模型（HTTP/私有地址）需显式设置 `ALLOW_PRIVATE_MODEL_ENDPOINTS=true`；默认只允许 HTTPS 公网地址。
+- 音频转写需要服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`（OpenAI 兼容 `/audio/transcriptions`）。未配置时音频接口返回 `MODEL_CONFIG_REQUIRED`，前端显示明确错误。
+
+### 本地 FunASR（可选，无需云端 ASR Key）
+
+`docker/asr` 提供基于 FunASR + SenseVoiceSmall 的 OpenAI 兼容服务，默认 CPU，仅通过 Compose profile `asr` 启动：
+
+```powershell
+# 启动/构建 ASR，等待 /health，并用本地 ASR 配置重建 backend
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 up
+
+# 查看状态、日志、冒烟测试、停止
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 status
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 logs
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 smoke
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 down
+```
+
+本地配置（持久化到 `docker/.env`）：
+
+```dotenv
+ASR_API_BASE=http://asr:8000/v1
+ASR_API_KEY=local-dev
+ASR_MODEL=sensevoice
+FUNASR_DEVICE=cpu
+FUNASR_MODEL=sensevoice
+ASR_HOST_PORT=10096
+```
+
+说明：
+
+- `ASR_API_KEY` 是后端要求的占位值，FunASR 不做鉴权；服务默认只绑定 `127.0.0.1:10096`，不要暴露公网。
+- 首次启动会下载 SenseVoice/VAD 模型（约 1GB，缓存卷 `openmind_asr_models`）；镜像约 3.3GB。
+- 若后端直接在宿主机运行，将 `ASR_API_BASE` 改为 `http://127.0.0.1:10096/v1`。
+- 使用外部 OpenAI 兼容 ASR 时无需启动 `asr` profile，按原有三个变量配置即可。
+
+### 轮换 SECRET_KEY
+
+`SECRET_KEY` 同时用于 JWT 和 BYOK 密钥加密。轮换时：
+
+1. 将旧值写入 `SECRET_KEY_PREVIOUS`，将新值写入 `SECRET_KEY`。
+2. 重启后端；旧密文仍可解密，新写入使用新密钥。
+3. 让用户重新保存模型配置，使密文迁移到新密钥。
+4. 确认没有旧密文后移除 `SECRET_KEY_PREVIOUS`。
+
+若丢失旧密钥，读取既有 BYOK 配置会返回 `MODEL_CONFIG_INVALID`；可通过 `DELETE /me/settings/model` 清除后重新配置。
 
 ## 三、方式 A：Docker Compose（推荐）
 

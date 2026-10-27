@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -14,6 +15,16 @@ _BACKOFF_SECONDS = (1, 3)
 _MAX_ATTEMPTS = 3
 _MAX_BATCH_SIZE = 16
 _BATCH_TIMEOUT_S = 30.0
+
+_QUOTA_HINTS = ("quota", "balance", "insufficient", "billing", "免费额度", "额度", "余额")
+
+
+def _is_quota_error(response: httpx.Response) -> bool:
+    try:
+        text = response.text.lower()
+    except Exception:
+        return False
+    return any(hint in text for hint in _QUOTA_HINTS)
 
 
 class EmbeddingClient:
@@ -28,9 +39,11 @@ class EmbeddingClient:
         dim: int | None = None,
     ) -> None:
         settings = get_settings()
-        self.api_base = (api_base or settings.embedding_api_base).rstrip("/")
-        self.api_key = api_key or settings.embedding_api_key
-        self.model = model or settings.embedding_model
+        self.api_base = (
+            settings.embedding_api_base if api_base is None else api_base
+        ).rstrip("/")
+        self.api_key = settings.embedding_api_key if api_key is None else api_key
+        self.model = settings.embedding_model if model is None else model
         self.dim = dim if dim is not None else settings.embedding_dim
         self.batch_size = min(batch_size, _MAX_BATCH_SIZE)
         self._client = httpx.Client(base_url=self.api_base, transport=transport)
@@ -46,7 +59,11 @@ class EmbeddingClient:
         return vectors
 
     def _embed_batch(self, texts: list[str], *, model: str | None) -> list[list[float]]:
-        payload = {"model": model or self.model, "input": list(texts)}
+        payload = {
+            "model": model or self.model,
+            "input": list(texts),
+            "dimensions": self.dim,
+        }
         last_error: AppError | None = None
         for attempt in range(_MAX_ATTEMPTS):
             if attempt:
@@ -58,11 +75,23 @@ class EmbeddingClient:
                     headers=self._headers(),
                     timeout=_BATCH_TIMEOUT_S,
                 )
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    "向量服务超时 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    self.model,
+                    type(exc).__name__,
+                )
                 last_error = AppError(
                     "MODEL_TIMEOUT", "向量服务超时", http_status=504, retryable=True
                 )
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "向量服务网络异常 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    self.model,
+                    type(exc).__name__,
+                )
                 last_error = AppError(
                     "INTERNAL_ERROR",
                     "向量服务网络异常",
@@ -81,7 +110,12 @@ class EmbeddingClient:
 
     def _ensure_configured(self) -> None:
         if not self.api_base or not self.api_key:
-            raise AppError("INTERNAL_ERROR", "向量服务未配置", http_status=500, retryable=False)
+            raise AppError(
+                "MODEL_CONFIG_REQUIRED",
+                "未配置向量模型（Embedding）",
+                http_status=400,
+                retryable=False,
+            )
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -94,8 +128,27 @@ class EmbeddingClient:
         if status_code == 429:
             return AppError("RATE_LIMITED", "向量服务限流", http_status=429, retryable=True)
         if 500 <= status_code < 600:
-            return AppError("INTERNAL_ERROR", "向量服务异常", http_status=500, retryable=True)
-        return AppError("INTERNAL_ERROR", "向量服务调用失败", http_status=500, retryable=False)
+            return AppError("INTERNAL_ERROR", "向量服务暂时不可用", http_status=500, retryable=True)
+        if status_code in (401, 403):
+            return AppError(
+                "MODEL_CONFIG_INVALID",
+                "向量模型密钥无效或已失效",
+                http_status=400,
+                retryable=False,
+            )
+        if status_code == 402 or _is_quota_error(response):
+            return AppError(
+                "MODEL_QUOTA_EXCEEDED",
+                "向量模型额度不足",
+                http_status=402,
+                retryable=False,
+            )
+        return AppError(
+            "MODEL_CONFIG_INVALID",
+            "向量模型调用失败，请检查配置",
+            http_status=400,
+            retryable=False,
+        )
 
     def _parse_embeddings(self, response: httpx.Response, expected: int) -> list[list[float]]:
         try:

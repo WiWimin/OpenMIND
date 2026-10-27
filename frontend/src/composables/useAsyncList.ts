@@ -24,6 +24,7 @@ export interface AsyncList<T> {
   error: Ref<unknown>
   load: (page?: number) => Promise<void>
   setPage: (page: number) => Promise<void>
+  loadMore: () => Promise<void>
 }
 
 export function useAsyncList<T>(options: AsyncListOptions<T>): AsyncList<T> {
@@ -57,5 +58,26 @@ export function useAsyncList<T>(options: AsyncListOptions<T>): AsyncList<T> {
     await load(page)
   }
 
-  return { items, pagination, loading, error, load, setPage }
+  async function loadMore(): Promise<void> {
+    const next = pagination.value.page + 1
+    if (next > pagination.value.total_pages || loading.value) {
+      return
+    }
+    loading.value = true
+    error.value = null
+    try {
+      const result = await options.fetcher({
+        page: next,
+        page_size: pagination.value.page_size,
+      })
+      items.value = [...items.value, ...result.items]
+      pagination.value = result.pagination
+    } catch (caught) {
+      error.value = caught
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { items, pagination, loading, error, load, setPage, loadMore }
 }

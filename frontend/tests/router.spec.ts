@@ -35,6 +35,26 @@ describe('router guard', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/meetings')
   })
 
+  it('protects the tasks route', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/tasks')
+
+    expect(router.currentRoute.value.name).toBe('tasks')
+  })
+
+  it('protects the settings route', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/settings')
+
+    expect(router.currentRoute.value.name).toBe('settings')
+  })
+
   it('redirects authenticated users away from guest-only routes', async () => {
     setToken('token-abc')
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
@@ -42,7 +62,7 @@ describe('router guard', () => {
 
     await router.push('/login')
 
-    expect(router.currentRoute.value.name).toBe('meetings')
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
   it('loads the current user before entering a protected route', async () => {
@@ -70,10 +90,27 @@ describe('router guard', () => {
     expect(auth.isAuthenticated).toBe(false)
   })
 
-  it('redirects unknown routes to the home page', async () => {
+  it('sends unauthenticated visitors from the root path to login', async () => {
+    const router = createAppRouter()
+    await router.push('/')
+
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('sends authenticated visitors from the root path to the dashboard', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/')
+
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('redirects unknown routes to the landing path', async () => {
     const router = createAppRouter()
     await router.push('/does-not-exist')
 
-    expect(router.currentRoute.value.name).toBe('home')
+    expect(router.currentRoute.value.name).toBe('login')
   })
 })

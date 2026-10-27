@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
 import { extractIssues, listIssues, updateIssue } from '@/api/issues'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
+import type { ListData } from '@/types/api'
 import type { OpenIssue } from '@/types/issue'
 import { response } from './support'
 
@@ -35,14 +37,18 @@ describe('issues api', () => {
     await expect(extractIssues('mtg_1', { record_ids: ['rec_1'] })).resolves.toEqual([issue])
     expect(post).toHaveBeenCalledWith('/meetings/mtg_1/issues/extract', {
       record_ids: ['rec_1'],
-    })
+    }, { signal: undefined, timeout: LONG_REQUEST_TIMEOUT_MS })
   })
 
-  it('lists issues from a bare array', async () => {
-    get.mockResolvedValue(response([issue]))
+  it('lists issues with pagination params', async () => {
+    const list: ListData<OpenIssue> = {
+      items: [issue],
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    }
+    get.mockResolvedValue(response(list))
 
-    await expect(listIssues('mtg_1')).resolves.toEqual([issue])
-    expect(get).toHaveBeenCalledWith('/meetings/mtg_1/issues')
+    await expect(listIssues('mtg_1')).resolves.toEqual(list)
+    expect(get).toHaveBeenCalledWith('/meetings/mtg_1/issues', { params: {} })
   })
 
   it('updates an issue', async () => {

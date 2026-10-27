@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
 from app.models.meeting import Meeting
@@ -15,6 +16,7 @@ def create(
     meeting_id: str,
     content: str,
     record_type: str,
+    marker_type: str | None = None,
     source_material_id: str | None = None,
 ) -> MeetingRecord:
     record = MeetingRecord(
@@ -22,6 +24,7 @@ def create(
         meeting_id=meeting_id,
         content=content,
         record_type=record_type,
+        marker_type=marker_type,
         source_material_id=source_material_id,
     )
     db.add(record)
@@ -51,6 +54,18 @@ def list_by_meeting(
         .order_by(MeetingRecord.created_at.asc())
         .limit(limit)
         .offset(offset)
+    )
+    return list(db.execute(statement).scalars().all())
+
+
+def list_recent_by_meeting(
+    db: Session, meeting_id: str, *, limit: int
+) -> list[MeetingRecord]:
+    statement = (
+        select(MeetingRecord)
+        .where(MeetingRecord.meeting_id == meeting_id)
+        .order_by(MeetingRecord.created_at.desc())
+        .limit(limit)
     )
     return list(db.execute(statement).scalars().all())
 
@@ -87,6 +102,14 @@ def update(db: Session, record: MeetingRecord) -> MeetingRecord:
 def delete(db: Session, record: MeetingRecord) -> None:
     db.delete(record)
     db.commit()
+
+
+def clear_source_material(db: Session, material_id: str) -> None:
+    db.execute(
+        sa_update(MeetingRecord)
+        .where(MeetingRecord.source_material_id == material_id)
+        .values(source_material_id=None)
+    )
 
 
 def delete_by_meeting(db: Session, meeting_id: str) -> None:
