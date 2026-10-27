@@ -72,6 +72,13 @@ npm run build
 npm run test:e2e   # 需先启动 docker 服务并配置模型/ASR 环境
 ```
 
+本地 FunASR（可选，Windows）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 up
+powershell -ExecutionPolicy Bypass -File scripts/asr.ps1 smoke
+```
+
 全套依赖：
 
 ```bash

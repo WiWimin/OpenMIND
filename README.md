@@ -258,7 +258,7 @@ main（阶段验收通过后）
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
 - 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 287 个用例、`ruff check` 均通过。
+- pytest 291 个用例、`ruff check` 均通过。
 
 **数据与基础设施**
 - PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline`、`0002_enable_pgvector` 已可在容器内执行并通过校验。
@@ -281,11 +281,12 @@ main（阶段验收通过后）
 - 会前准备、会中记录与问答、纪要、行动项、个人任务、未解决问题。
 - 纪要模板与富文本编辑、DOCX 导出、记录重点/决议/疑问标记。
 - 按用途模型路由、用户记忆中心、个人知识库、本地会议工作区。
-- 音频导入与转写（ASR 服务可配置，需在 `docker/.env` 填入真实 Key 后启用）。
+- 音频导入与转写：支持外部 OpenAI 兼容 ASR，或本地 FunASR（SenseVoice CPU，`--profile asr`）。
 - 后端 API 测试、前端组件测试与 Playwright 浏览器 E2E。
 
 **明确尚未实现 / 待验证（非 MVP 范围）**
-- 真实 ASR 转写需配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL` 后补验；实时流式 ASR 未纳入。
+- 外部 ASR 服务可按原配置接入；本地 FunASR 已在 CPU 上完成真实转写与浏览器 E2E。实时流式 ASR 未纳入。
+- 本地 FunASR 服务无鉴权，只应本地/内网使用；模型权重许可需按模型页面确认。
 - 本地目录授权与真实读写需按人工验收清单执行。
 - PDF 扫描件 OCR、MIME 嗅探、并发编辑乐观锁（见 `docs/design-baseline.md §四`）。
 
@@ -325,6 +326,7 @@ main（阶段验收通过后）
 | 前端 lint | `cd frontend && npm run lint` |
 | 前端测试 | `cd frontend && npm run test` |
 | 浏览器 E2E | `cd frontend && npm run test:e2e`（需先启动服务并配置模型） |
+| 本地 FunASR | `scripts/asr.ps1 up`（Windows）/ `scripts/asr.sh up` |
 | 前端构建 | `cd frontend && npm run build` |
 | 一键测试 | `scripts/test.ps1`（Windows）/ `scripts/test.sh` |
 
