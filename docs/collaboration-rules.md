@@ -93,3 +93,4 @@ feature/<stream>-* · fix/*
 | 日期 | 变更 | 说明 |
 | --- | --- | --- |
 | 2026-10 | 建立协作与分支规则 | 明确三流分工、分支模型、先合 `develop`、定期同步与 `develop → main` 推进 |
+| 2026-10 | 阶段发布 | `develop → main` 合并完成（`main @ 332605e`），包含浏览器 E2E、本地 FunASR 与模型 probe 修复 |

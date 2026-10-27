@@ -2,7 +2,8 @@
 
 > 生成时间：2026-10-27
 > 验收基线：`develop` @ `833e50f`（PR #52 合并后）+ 验收分支 `feature/final-acceptance-e2e`。
-> 执行范围：最新代码 + 真实 PostgreSQL/pgvector + 真实 LLM/Embedding + 真实浏览器 E2E。
+> 发布状态：已合并 `develop → main`，`main @ 332605e`。
+> 执行范围：最新代码 + 真实 PostgreSQL/pgvector + 真实 LLM/Embedding + 本地 FunASR + 真实浏览器 E2E。
 > 结论口径：仅在实际执行并取得证据时标记 PASS；外部能力缺失标记 BLOCKED；未执行标记 SKIPPED。
 
 ## 一、环境信息
@@ -118,7 +119,8 @@ npx playwright test --project=chromium --reporter=line
 | --- | --- | --- |
 | 外部云端 ASR | NOT RUN | 本轮改用本地 FunASR；外部 OpenAI 兼容 ASR 未单独复验，配置契约不变 |
 | 本地目录真实读写 | PENDING（人工） | 需在支持 File System Access API 的 Chromium/Edge 中人工验收，步骤见 `docs/test-reports/local-workspace-manual-acceptance.md` |
-| 生产部署 | SKIPPED | 本次验收基线为 `develop`，尚未执行 `develop → main` 发布 |
+| `develop → main` 合并 | PASS | `main @ 332605e` |
+| 生产部署 | SKIPPED | 未部署到生产服务器/域名；仅完成 `main` 合并与可演示版本 |
 | 实时流式 ASR | SKIPPED | 不在当前产品范围 |
 
 ## 八、验收结论
@@ -132,7 +134,7 @@ npx playwright test --project=chromium --reporter=line
 | 前端构建、组件测试、慢请求超时与模型配置错误语义 | PASS |
 | 本地目录授权与真实读写 | PENDING（人工验收清单已提供） |
 
-**结论：核心闭环、AI 链路、真实本地 ASR 与浏览器 E2E 达到可演示状态。外部云端 ASR 未单独复验；本地目录真实读写需人工验收；该项未完成前不得表述为已通过。**
+**结论：核心闭环、AI 链路、真实本地 ASR 与浏览器 E2E 达到可演示状态，并已发布到 `main @ 332605e`。外部云端 ASR 未单独复验；本地目录真实读写需人工验收；该项未完成前不得表述为已通过。**
 
 ## 九、复验命令
 

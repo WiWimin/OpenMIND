@@ -6,8 +6,8 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」Web 应用，
 
 服务对象是单个参会人，而非团队协作平台；第一版不做多人实时协作、会议主持、共享空间与组织权限体系。
 
-> **当前进度**：MVP 闭环 **M00–M10 已全部实现**——认证、会议管理、资料解析、RAG、会前准备、会中记录与问答、纪要、行动项、个人任务、未解决问题。
-> 阶段发布（`develop → main` 合并与 `m00-m10` tag）及部分历史文档同步仍在收尾（见第 14、15 节）。
+> **当前进度**：MVP 闭环 **M00–M10 已全部实现**，并扩展了 BYOK、按用途模型路由、个人知识库、记忆中心、本地会议工作区与音频转写（本地 FunASR / 外部 OpenAI 兼容 ASR）。
+> `develop → main` 已发布（`main @ 332605e`）；部分历史文档同步仍在收尾（见第 14、15 节）。
 
 ## 2. 项目目标
 
@@ -240,7 +240,7 @@ main（阶段验收通过后）
 4. `git commit` 提交（Conventional Commits）。
 5. 发起 **Pull Request**，**base 必须是 `develop`**（不得合入其他特性分支），按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
 6. 至少一名成员 Code Review 通过、CI 全绿后，用 merge commit 合并到 `develop`；合并后删除工作分支。
-7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本；本轮验收通过后执行 `develop → main` 发布。
+7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本；本轮已执行 `develop → main`（`main @ 332605e`）。
 8. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
 
 > CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）仅做检查，不包含任何自动部署流程。
