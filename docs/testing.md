@@ -52,6 +52,9 @@ npm run test:e2e:headed   # 观察真实交互
 - AI 生成、音频转写、解析/向量化上传的前端超时上限为 240s（`frontend/src/api/timeouts.ts`），避免慢模型被全局 30s 超时误判为失败。
 - 本地目录授权依赖系统原生目录选择框，无法由 Playwright 驱动；按 `docs/test-reports/local-workspace-manual-acceptance.md` 人工验收。
 - E2E 会在开发库中创建唯一后缀的临时账号、会议与资料，不删除账号；仅限本地/开发环境运行，禁止指向生产库。
+- 本地 FunASR：`scripts/asr.ps1 up` 启动 `--profile asr` 并重建 backend；`scripts/asr.ps1 smoke` 做真实转写冒烟；此模式下设置 `E2E_EXPECT_ASR=1` 运行音频 E2E。
+- 推荐 E2E 后端启用 `ALLOW_GLOBAL_FALLBACK=true`，避免每个用例都触发真实 BYOK probe；`prepareModelAccess` 会直接复用全局配置。BYOK 路径由 `model-settings.spec.ts` 单独覆盖（需 `E2E_LLM_*` / `E2E_EMBEDDING_*`）。
+- `prepareModelAccess` 对网络异常/超时/限流重试 3 次；仍失败时用例标记为 `BLOCKED`（外部模型服务不可用），明确的 401/403/维度错误仍按失败处理。
 
 ## 约定
 
