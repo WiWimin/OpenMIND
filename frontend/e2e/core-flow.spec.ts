@@ -22,11 +22,8 @@ test.describe('会议核心闭环（真实后端 + 真实数据库）', () => {
       'OpenMIND 端到端资料：项目里程碑是十月完成集成验收，负责人是产品团队，风险是模型额度。'
 
     await register(page, userName)
-    const modelReady = await prepareModelAccess(page, request)
-    test.skip(
-      !modelReady,
-      '需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_LLM_* / E2E_EMBEDDING_* 自备模型配置',
-    )
+    const modelAccess = await prepareModelAccess(page, request)
+    test.skip(!modelAccess.ready, modelAccess.reason ?? '模型配置不可用')
 
     await createMeeting(page, meetingTitle)
     await openMeeting(page, meetingTitle)

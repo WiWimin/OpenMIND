@@ -45,6 +45,24 @@ interface ProviderSettings {
   model: string
 }
 
+export interface ModelAccessResult {
+  ready: boolean
+  reason?: string
+}
+
+const MAX_CONFIG_ATTEMPTS = 3
+const TRANSIENT_PROBE_MARKERS = ['网络异常', '超时', '限流']
+
+function isTransientProbeFailure(status: number, body: string): boolean {
+  if (status === 429 || status >= 500) {
+    return true
+  }
+  if (body.includes('"retryable":true')) {
+    return true
+  }
+  return TRANSIENT_PROBE_MARKERS.some((marker) => body.includes(marker))
+}
+
 function providerSettings(prefix: string): ProviderSettings {
   return {
     api_base: process.env[`${prefix}_API_BASE`] ?? '',
@@ -59,11 +77,15 @@ function isComplete(settings: ProviderSettings): boolean {
 
 /**
  * 登录用户若尚未拥有可用的 LLM / Embedding 配置：
- * - 后端启用全局回退时，直接返回 true；
+ * - 后端启用全局回退时，直接返回 ready；
  * - 否则尝试使用 E2E_LLM_* / E2E_EMBEDDING_* 环境变量通过 BYOK 接口写入；
- * - 都没有时返回 false，由调用方跳过用例。
+ * - 外部探测瞬断时重试；仍失败则返回 blocked 原因，由调用方跳过用例；
+ * - 明确的配置错误（401/403/维度等）直接抛出，不掩盖产品问题。
  */
-export async function prepareModelAccess(page: Page, request: APIRequestContext): Promise<boolean> {
+export async function prepareModelAccess(
+  page: Page,
+  request: APIRequestContext,
+): Promise<ModelAccessResult> {
   const headers = { Authorization: `Bearer ${await authToken(page)}` }
   const response = await request.get(`${apiBase()}/me/settings/model`, { headers })
   if (!response.ok()) {
@@ -73,16 +95,23 @@ export async function prepareModelAccess(page: Page, request: APIRequestContext)
   const needsLlm = current.llm_source === 'none'
   const needsEmbedding = current.embedding_source === 'none'
   if (!needsLlm && !needsEmbedding) {
-    return true
+    return { ready: true }
   }
 
   const llm = providerSettings('E2E_LLM')
   const embedding = providerSettings('E2E_EMBEDDING')
   if (needsLlm && !isComplete(llm)) {
-    return false
+    return {
+      ready: false,
+      reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_LLM_* 自备配置',
+    }
   }
   if (needsEmbedding && !isComplete(embedding)) {
-    return false
+    return {
+      ready: false,
+      reason:
+        'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_EMBEDDING_* 自备配置',
+    }
   }
 
   const payload: Record<string, string> = {}
@@ -97,14 +126,30 @@ export async function prepareModelAccess(page: Page, request: APIRequestContext)
     payload.embedding_model = embedding.model
   }
 
-  const saved = await request.put(`${apiBase()}/me/settings/model`, {
-    headers,
-    data: payload,
-  })
-  if (!saved.ok()) {
-    throw new Error(`保存模型配置失败：HTTP ${saved.status()} ${await saved.text()}`)
+  let lastStatus = 0
+  let lastBody = ''
+  for (let attempt = 1; attempt <= MAX_CONFIG_ATTEMPTS; attempt += 1) {
+    const saved = await request.put(`${apiBase()}/me/settings/model`, {
+      headers,
+      data: payload,
+    })
+    if (saved.ok()) {
+      return { ready: true }
+    }
+    lastStatus = saved.status()
+    lastBody = await saved.text()
+    if (!isTransientProbeFailure(lastStatus, lastBody)) {
+      throw new Error(`保存模型配置失败：HTTP ${lastStatus} ${lastBody}`)
+    }
+    if (attempt < MAX_CONFIG_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
+    }
   }
-  return true
+
+  return {
+    ready: false,
+    reason: `BLOCKED: 外部模型服务暂不可用（HTTP ${lastStatus}）：${lastBody}`,
+  }
 }
 
 export async function createMeeting(

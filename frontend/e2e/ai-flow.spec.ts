@@ -21,11 +21,8 @@ test.describe('AI 核心链路（真实模型）', () => {
     const openQuestion = '待确认：灰度发布是否按计划在周五开始？需要产品与研发共同确认。'
 
     await register(page, userName)
-    const modelReady = await prepareModelAccess(page, request)
-    test.skip(
-      !modelReady,
-      '需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_LLM_* / E2E_EMBEDDING_* 自备模型配置',
-    )
+    const modelAccess = await prepareModelAccess(page, request)
+    test.skip(!modelAccess.ready, modelAccess.reason ?? '模型配置不可用')
 
     await createMeeting(page, meetingTitle)
     const meetingUrl = await openMeeting(page, meetingTitle)
