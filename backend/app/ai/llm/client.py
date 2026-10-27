@@ -4,6 +4,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -83,9 +84,21 @@ class LLMClient:
                     headers=self._headers(),
                     timeout=timeout_s,
                 )
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    "LLM 调用超时 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    model or self.model,
+                    type(exc).__name__,
+                )
                 last_error = self._timeout_error()
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "LLM 调用网络异常 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    model or self.model,
+                    type(exc).__name__,
+                )
                 last_error = self._network_error()
             else:
                 if response.status_code == httpx.codes.OK:

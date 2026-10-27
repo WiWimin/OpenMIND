@@ -262,6 +262,27 @@ def test_embedding_dim_mismatch_rejected(
     assert response.json()["error_code"] == "MODEL_CONFIG_INVALID"
 
 
+def test_embedding_probe_network_error_returns_retryable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def network_error(*args, **kwargs):
+        raise AppError(
+            "INTERNAL_ERROR",
+            "Embedding 校验失败：向量服务网络异常",
+            http_status=500,
+            retryable=True,
+        )
+
+    monkeypatch.setattr(model_config_service, "_probe_embedding_dim", network_error)
+    headers = _auth(client)
+    response = client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["error_code"] == "INTERNAL_ERROR"
+    assert body["retryable"] is True
+
+
 def test_partial_provider_requires_all_fields(client: TestClient, fake_probes: None) -> None:
     headers = _auth(client)
     response = client.put(

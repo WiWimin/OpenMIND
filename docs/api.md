@@ -246,7 +246,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 规则：
 - 密钥 `Fernet` 加密存库，永不明文返回；`_masked` 仅展示前后缀。
 - `_masked` 仅在来源为 `user` 时返回值；`global` / `none` 返回空字符串，避免向普通用户泄露服务端全局密钥片段。
-- 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成；失败返回 `400 MODEL_CONFIG_INVALID`。
+- 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成。密钥无效、维度不匹配或输出格式错误返回 `400 MODEL_CONFIG_INVALID`；网络异常、超时、限流、服务端 5xx 和额度不足保留原错误码（`INTERNAL_ERROR` / `MODEL_TIMEOUT` / `RATE_LIMITED` / `MODEL_QUOTA_EXCEEDED`）及 `retryable` 语义，避免把外部瞬断误报为配置无效。
 - 保存前校验 `api_base`：默认只允许 HTTPS 公网地址，拒绝本机/私有/保留地址、URL 内嵌凭证和 query/fragment；自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS=true`。
 - 默认 `ALLOW_GLOBAL_FALLBACK=false`：未配置 BYOK 的用户不会自动使用服务端全局 Key；AI 接口返回 `400 MODEL_CONFIG_REQUIRED`。
 - 仅当 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局（`docker/.env`）”回退。
