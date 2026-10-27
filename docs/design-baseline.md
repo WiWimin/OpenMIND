@@ -97,3 +97,8 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 记忆中心 | 用户显式维护角色/场景/表达偏好/默认纪要模板；按用途注入准备/纪要/问答 Prompt；迁移 `0017` |
 | 2026-10 | 本地会议工作区 | 浏览器授权目录后导入资料、导出最新纪要 DOCX；无后端路径访问，无数据库迁移 |
 | 2026-10 | 音频导入与转写 | 音频上传、同步 ASR、转写修订、确认生成记录；迁移 `0018`；实时 ASR 暂不做 |
+| 2026-10 | 长耗时请求超时 | AI 生成、音频转写、解析/向量化上传使用 240s 前端超时（`frontend/src/api/timeouts.ts`），避免慢模型被全局 30s 超时中断；错误仍走统一错误体 |
+| 2026-10 | 浏览器 E2E 验收 | 引入 Playwright（Edge/Chromium）覆盖核心闭环、真实模型 AI 链路、音频失败路径与本地目录降级；本地目录真实读写仍需人工验收 |
+| 2026-10 | 本地 FunASR ASR | `docker/asr` 基于 FunASR `funasr-server`（SenseVoiceSmall + FSMN-VAD，CPU），Compose profile `asr` + `scripts/asr.*`；保持 OpenAI 兼容 `/audio/transcriptions`，外部 ASR 仍可选 |
+| 2026-10 | 模型配置 probe 错误语义 | 网络/超时/限流/额度保留原错误码与 `retryable`；仅 401/403、维度或格式错误映射 `MODEL_CONFIG_INVALID`；补安全日志、前端重试与单测 |
+| 2026-10 | E2E 稳定性 | 推荐 E2E 后端启用 `ALLOW_GLOBAL_FALLBACK=true`；BYOK 由独立用例覆盖；外部探测瞬断重试后标记 BLOCKED，避免把外部依赖问题误报为产品失败 |

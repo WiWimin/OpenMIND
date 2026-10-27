@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -74,11 +75,23 @@ class EmbeddingClient:
                     headers=self._headers(),
                     timeout=_BATCH_TIMEOUT_S,
                 )
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    "向量服务超时 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    self.model,
+                    type(exc).__name__,
+                )
                 last_error = AppError(
                     "MODEL_TIMEOUT", "向量服务超时", http_status=504, retryable=True
                 )
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "向量服务网络异常 host=%s model=%s type=%s",
+                    urlsplit(self.api_base).hostname or "invalid",
+                    self.model,
+                    type(exc).__name__,
+                )
                 last_error = AppError(
                     "INTERNAL_ERROR",
                     "向量服务网络异常",

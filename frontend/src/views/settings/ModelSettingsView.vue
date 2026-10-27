@@ -72,7 +72,12 @@
         </article>
       </div>
 
-      <ErrorMessage v-if="formError" :error="formError" />
+      <ErrorMessage
+        v-if="formError"
+        :error="formError"
+        :retryable="formErrorRetryable"
+        @retry="handleSave"
+      />
 
       <article class="purpose-card">
         <header class="provider-card__head">
@@ -210,6 +215,16 @@ const resetDialogOpen = ref(false)
 const clearDialogOpen = ref(false)
 const clearMessage = ref('')
 const pendingPayload = ref<ModelConfigPayload>({})
+
+const formErrorRetryable = computed(() => {
+  const error = formError.value
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'retryable' in error &&
+    Boolean((error as { retryable?: unknown }).retryable)
+  )
+})
 
 const cards = computed(() => {
   const config = store.config

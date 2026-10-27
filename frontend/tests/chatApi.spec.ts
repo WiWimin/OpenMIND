@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { askMeeting, organizeRecords } from '@/api/chat'
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ChatResult } from '@/types/chat'
 import { response } from './support'
 
@@ -26,7 +27,9 @@ describe('chat api', () => {
     post.mockResolvedValue(response({ status: 'success', data: chatResult }))
 
     await expect(askMeeting('mtg_1', { question: '决定了什么？' })).resolves.toEqual(chatResult)
-    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/chat', { question: '决定了什么？' })
+    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/chat', { question: '决定了什么？' }, {
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
   })
 
   it('organizes records', async () => {
@@ -34,6 +37,8 @@ describe('chat api', () => {
     post.mockResolvedValue(response({ status: 'success', data: organized }))
 
     await expect(organizeRecords('mtg_1', { record_ids: ['rec_1'] })).resolves.toEqual(organized)
-    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/organize', { record_ids: ['rec_1'] })
+    expect(post).toHaveBeenCalledWith('/meetings/mtg_1/organize', { record_ids: ['rec_1'] }, {
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
   })
 })

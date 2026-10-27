@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type {
   KnowledgeDocument,
@@ -25,7 +26,10 @@ export async function uploadDocument(file: File): Promise<KnowledgeDocument> {
   const { data } = await http.post<ApiSuccess<KnowledgeDocument> | KnowledgeDocument>(
     `${PATH}/documents`,
     form,
-    { headers: { 'Content-Type': 'multipart/form-data' } },
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    },
   )
   return unwrapData(data)
 }

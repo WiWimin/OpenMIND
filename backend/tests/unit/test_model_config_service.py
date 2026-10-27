@@ -150,3 +150,54 @@ def test_build_embedding_does_not_fall_back_to_global_when_empty() -> None:
     client = build_embedding_client(_empty_config())
     assert client.api_base == ""
     assert client.api_key == ""
+
+
+def test_probe_embedding_preserves_retryable_network_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(self, texts, *, model=None):
+        raise AppError(
+            "INTERNAL_ERROR", "向量服务网络异常", http_status=500, retryable=True
+        )
+
+    monkeypatch.setattr(model_config_service.EmbeddingClient, "embed", fail)
+    with pytest.raises(AppError) as exc_info:
+        model_config_service._probe_embedding_dim(
+            "https://emb.example.com/v1", "key", "model"
+        )
+
+    assert exc_info.value.error_code == "INTERNAL_ERROR"
+    assert exc_info.value.http_status == 500
+    assert exc_info.value.retryable is True
+
+
+def test_probe_embedding_keeps_invalid_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(self, texts, *, model=None):
+        raise AppError(
+            "MODEL_CONFIG_INVALID", "向量维度必须为 1024", http_status=400
+        )
+
+    monkeypatch.setattr(model_config_service.EmbeddingClient, "embed", fail)
+    with pytest.raises(AppError) as exc_info:
+        model_config_service._probe_embedding_dim(
+            "https://emb.example.com/v1", "key", "model"
+        )
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+    assert exc_info.value.http_status == 400
+    assert exc_info.value.retryable is False
+
+
+def test_probe_llm_preserves_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(self, messages, **kwargs):
+        raise AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
+
+    monkeypatch.setattr(model_config_service.LLMClient, "chat", fail)
+    with pytest.raises(AppError) as exc_info:
+        model_config_service._probe_llm("https://llm.example.com/v1", "key", "model")
+
+    assert exc_info.value.error_code == "MODEL_TIMEOUT"
+    assert exc_info.value.http_status == 504
+    assert exc_info.value.retryable is True

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
   confirmActionItem,
   convertActionItemToTask,
@@ -61,7 +62,7 @@ describe('action items api', () => {
     ])
     expect(post).toHaveBeenCalledWith('/meetings/mtg_1/action-items/extract', {
       record_ids: ['rec_1'],
-    }, { signal: undefined })
+    }, { signal: undefined, timeout: LONG_REQUEST_TIMEOUT_MS })
   })
 
   it('lists action items with pagination params', async () => {

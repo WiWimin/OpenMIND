@@ -7,6 +7,7 @@ import {
   searchKnowledge,
   uploadDocument,
 } from '@/api/knowledge'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ListData } from '@/types/api'
 import type { KnowledgeDocument, KnowledgeSearchResult } from '@/types/knowledge'
 import { response } from './support'
@@ -54,7 +55,10 @@ describe('knowledge api', () => {
     expect(path).toBe('/knowledge/documents')
     expect(body).toBeInstanceOf(FormData)
     expect((body as FormData).get('file')).toBe(file)
-    expect(options).toEqual({ headers: { 'Content-Type': 'multipart/form-data' } })
+    expect(options).toEqual({
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    })
   })
 
   it('searches the knowledge base', async () => {

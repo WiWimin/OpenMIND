@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type { MeetingAudio } from '@/types/audio'
 import type { PageParams } from '@/types/pagination'
@@ -21,7 +22,10 @@ export async function uploadAudio(meetingId: string, file: File): Promise<Meetin
   const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
     `/meetings/${meetingId}/audio`,
     form,
-    { headers: { 'Content-Type': 'multipart/form-data' } },
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    },
   )
   return unwrapData(data)
 }
@@ -40,6 +44,8 @@ export async function updateTranscript(
 export async function retryAudio(audioId: string): Promise<MeetingAudio> {
   const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
     `/audio/${audioId}/retry`,
+    undefined,
+    { timeout: LONG_REQUEST_TIMEOUT_MS },
   )
   return unwrapData(data)
 }

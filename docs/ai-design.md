@@ -228,6 +228,11 @@ failed → processing   （重试）
 
 - 支持 MP3 / WAV / M4A / WEBM，上传后同步调用 OpenAI 兼容 `/audio/transcriptions`。
 - 服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`；未配置返回 `MODEL_CONFIG_REQUIRED`，不伪造转写。
+- **本地 FunASR（可选）**：`docker/asr` 基于 FunASR `funasr-server`，使用 SenseVoiceSmall + FSMN-VAD，CPU 推理；Compose 服务名 `asr`，仅通过 `--profile asr` 启动，宿主机只监听 `127.0.0.1:10096`。
+  - 配置：`ASR_API_BASE=http://asr:8000/v1`、`ASR_API_KEY=local-dev`（占位值，FunASR 不校验）、`ASR_MODEL=sensevoice`。
+  - 启动/停止：`scripts/asr.ps1 up|down|status|logs|smoke`（Windows）或 `scripts/asr.sh`（Linux/macOS）。
+  - 首次启动会下载模型（约 1GB）并加载 SenseVoice；CPU 上短音频通常在数秒内完成，长音频耗时随长度增加。
+  - FunASR 服务本身无鉴权、无上传/限流；只能用于本地或受控内网，不得直接暴露公网。软件为 MIT，模型权重许可以模型页面为准。
 - 状态：`uploaded → processing → transcribed | failed`；确认后 `confirmed`。
 - 失败保留音频文件并记录安全错误摘要，可重试；不覆盖已有成功文本。
 - 用户在确认前可修订转写；确认生成 `record_type=transcript` 的会议记录，确认幂等。

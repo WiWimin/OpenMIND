@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy.orm import Session
@@ -16,6 +18,22 @@ from app.repositories import model_config_repository
 from app.schemas.model_config import ModelConfigRead, ModelConfigWrite, ModelPurpose
 
 EMBEDDING_DIM = 1024
+
+logger = logging.getLogger(__name__)
+
+_PROBE_PRESERVED_CODES = {
+    "MODEL_TIMEOUT",
+    "RATE_LIMITED",
+    "INTERNAL_ERROR",
+    "MODEL_QUOTA_EXCEEDED",
+}
+
+
+def _safe_host(api_base: str) -> str:
+    try:
+        return urlsplit(api_base).hostname or "invalid"
+    except ValueError:
+        return "invalid"
 
 
 @dataclass(frozen=True)
@@ -132,16 +150,31 @@ def _probe_message(exc: AppError) -> str:
     return exc.message
 
 
+def _probe_error(prefix: str, exc: AppError) -> AppError:
+    message = f"{prefix} 校验失败：{_probe_message(exc)}"
+    if exc.error_code in _PROBE_PRESERVED_CODES:
+        return AppError(
+            exc.error_code,
+            message,
+            http_status=exc.http_status,
+            retryable=exc.retryable,
+        )
+    return AppError("MODEL_CONFIG_INVALID", message, http_status=400, retryable=False)
+
+
 def _probe_embedding_dim(api_base: str, api_key: str, model: str) -> None:
     client = EmbeddingClient(api_base=api_base, api_key=api_key, model=model, dim=EMBEDDING_DIM)
     try:
         vectors = client.embed(["OpenMIND 连通性测试"])
     except AppError as exc:
-        raise AppError(
-            "MODEL_CONFIG_INVALID",
-            f"Embedding 校验失败：{_probe_message(exc)}",
-            http_status=400,
-        ) from None
+        logger.warning(
+            "Embedding 校验失败 host=%s model=%s error_code=%s retryable=%s",
+            _safe_host(api_base),
+            model,
+            exc.error_code,
+            exc.retryable,
+        )
+        raise _probe_error("Embedding", exc) from None
     if not vectors:
         raise AppError("MODEL_CONFIG_INVALID", "Embedding 未返回向量", http_status=400)
 
@@ -156,11 +189,14 @@ def _probe_llm(api_base: str, api_key: str, model: str) -> None:
             timeout_s=30,
         )
     except AppError as exc:
-        raise AppError(
-            "MODEL_CONFIG_INVALID",
-            f"LLM 校验失败：{_probe_message(exc)}",
-            http_status=400,
-        ) from None
+        logger.warning(
+            "LLM 校验失败 host=%s model=%s error_code=%s retryable=%s",
+            _safe_host(api_base),
+            model,
+            exc.error_code,
+            exc.retryable,
+        )
+        raise _probe_error("LLM", exc) from None
 
 
 def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> UserModelConfig:
