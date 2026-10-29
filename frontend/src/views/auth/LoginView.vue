@@ -91,7 +91,7 @@ async function submit(): Promise<void> {
   min-height: 100vh;
   /* 品牌背景图：左侧为品牌视觉，右侧留白放置表单 */
   background:
-    url('@/assets/registerbg.jpeg') center / cover no-repeat,
+    url('@/assets/registerbg.jpeg') left center / cover no-repeat,
     #eef2f8;
 }
 
