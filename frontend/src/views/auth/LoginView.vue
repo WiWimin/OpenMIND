@@ -1,32 +1,5 @@
 <template>
   <main class="auth">
-    <aside class="auth__aside">
-      <RouterLink class="auth__brand" :to="{ name: ROUTE_NAMES.login }">
-        <span class="auth__mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <path
-              d="M4 7.5A2.5 2.5 0 0 1 6.5 5h6.2c.4 0 .79.1 1.13.28l4.9 2.6c.78.42 1.27 1.24 1.27 2.13v6.49A2.5 2.5 0 0 1 17.5 19H6.5A2.5 2.5 0 0 1 4 16.5v-9Z"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
-            <path d="m13 9 4.5-2.4v7L13 11.2V9Z" fill="currentColor" opacity="0.9" />
-          </svg>
-        </span>
-        <span class="auth__wordmark">OpenMIND</span>
-      </RouterLink>
-
-      <div class="auth__pitch">
-        <h2 class="auth__pitch-title">把每一场会议<br />变成可执行的任务</h2>
-        <ul class="auth__points">
-          <li>导入材料，快速完成会前准备</li>
-          <li>会中记录，并基于资料进行问答</li>
-          <li>一键生成纪要并提取行动项</li>
-        </ul>
-      </div>
-
-      <p class="auth__aside-foot">AI 会议个人助理 · MVP</p>
-    </aside>
-
     <section class="auth__panel">
       <section class="auth__card">
         <header class="auth__header">
@@ -116,115 +89,15 @@ async function submit(): Promise<void> {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   min-height: 100vh;
+  /* 品牌背景图：左侧为品牌视觉，右侧留白放置表单 */
   background:
-    radial-gradient(80% 60% at 12% 14%, rgba(59, 111, 212, 0.1), transparent 55%),
-    radial-gradient(60% 45% at 88% 90%, rgba(20, 184, 166, 0.06), transparent 55%),
-    linear-gradient(160deg, #eef2f8 0%, #e8edf5 48%, #eef2f8 100%);
-}
-
-/* 全页网格纹理 */
-.auth::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(59, 111, 212, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(59, 111, 212, 0.055) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(130% 110% at 30% 25%, #000 30%, transparent 92%);
-  pointer-events: none;
-}
-
-/* 左侧品牌区 */
-.auth__aside {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-6) var(--space-5);
-  color: var(--color-foreground);
-}
-
-.auth__brand,
-.auth__pitch,
-.auth__aside-foot {
-  position: relative;
-  z-index: 1;
-}
-
-.auth__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-foreground);
-  text-decoration: none;
-}
-
-.auth__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.35);
-}
-
-.auth__wordmark {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.auth__pitch-title {
-  margin: 0;
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.32;
-  color: var(--color-foreground);
-}
-
-.auth__points {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: var(--space-4) 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--color-muted-foreground);
-}
-
-.auth__points li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  font-size: 0.9375rem;
-}
-
-.auth__points li::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  margin-top: 0.55rem;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  box-shadow: 0 0 0 4px rgba(59, 111, 212, 0.14);
-}
-
-.auth__aside-foot {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
-  letter-spacing: 0.04em;
+    url('@/assets/registerbg.jpeg') center / cover no-repeat,
+    #eef2f8;
 }
 
 /* 右侧表单区 */
 .auth__panel {
+  grid-column: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -291,8 +164,8 @@ async function submit(): Promise<void> {
     grid-template-columns: 1fr;
   }
 
-  .auth__aside {
-    display: none;
+  .auth__panel {
+    grid-column: 1;
   }
 }
 </style>
