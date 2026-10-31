@@ -297,7 +297,7 @@ async function exportDocx(): Promise<void> {
 .minutes-section__template select:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 111, 212, 0.16);
+  box-shadow: 0 0 0 3px rgba(21, 94, 239, 0.16);
 }
 
 .minutes-section__materials {
@@ -353,7 +353,7 @@ async function exportDocx(): Promise<void> {
 
 .minutes-section__item--active {
   border-color: var(--color-primary);
-  background: rgba(59, 111, 212, 0.07);
+  background: rgba(21, 94, 239, 0.07);
 }
 
 .minutes-section__item-meta {

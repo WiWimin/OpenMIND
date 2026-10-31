@@ -14,6 +14,8 @@ export interface ChatPayload {
   question: string
   context_scope?: ChatContextScope
   include_sources?: boolean
+  /** 可选：覆盖本次对话使用的模型名，须在模型配置中已登记 */
+  model?: string
 }
 
 export interface ChatResult {

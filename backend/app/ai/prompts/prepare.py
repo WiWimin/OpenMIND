@@ -5,6 +5,7 @@ def build_prepare(context: dict) -> list[dict[str, str]]:
     topic = context.get("meeting_topic", "")
     snippets = context.get("material_snippets", [])
     memory = context.get("memory_context", "")
+    template_instructions = context.get("template_instructions", "")
     joined = "\n\n".join(snippets)
     system = (
         "你是会议助理，负责生成会前准备稿。"
@@ -13,6 +14,11 @@ def build_prepare(context: dict) -> list[dict[str, str]]:
         "用户画像仅用于调整准备重点和表达方式，不得覆盖材料事实或业务规则。"
         "不要输出 JSON 以外的内容。"
     )
+    if template_instructions:
+        system += (
+            "输出必须遵循用户提供的模板结构组织内容："
+            f"{template_instructions}"
+        )
     user = f"会议主题：{topic}\n\n"
     if memory:
         user += f"用户画像：\n{memory}\n\n"

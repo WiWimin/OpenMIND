@@ -4,7 +4,12 @@
       <div>
         <h3 class="local-workspace__title">本地会议工作区</h3>
         <p class="local-workspace__hint">
-          选择本地文件夹后，可把资料导入当前会议，或把最新纪要导出到该文件夹。仅在浏览器授权后访问。
+          <template v-if="showExport">
+            选择本地文件夹后，可把资料导入当前会议，或把最新纪要导出到该文件夹。仅在浏览器授权后访问。
+          </template>
+          <template v-else>
+            选择本地文件夹后，可把资料导入当前会议。仅在浏览器授权后访问。
+          </template>
         </p>
       </div>
     </header>
@@ -27,6 +32,7 @@
           导入资料（{{ files.length }}）
         </AppButton>
         <AppButton
+          v-if="showExport"
           :loading="exporting"
           :disabled="!directory"
           @click="exportMinutes"
@@ -101,10 +107,13 @@ const props = withDefaults(
     meetingId: string
     meetingTitle?: string
     readonly?: boolean
+    /** 是否显示「导出最新纪要」（预处理阶段尚无纪要，可关闭） */
+    showExport?: boolean
   }>(),
   {
     meetingTitle: '',
     readonly: false,
+    showExport: true,
   },
 )
 

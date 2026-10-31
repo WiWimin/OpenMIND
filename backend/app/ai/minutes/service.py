@@ -17,6 +17,7 @@ class MinutesService:
         *,
         template: str = "standard",
         memory_context: str = "",
+        template_instructions: str = "",
     ) -> str:
         messages = build_minutes(
             {
@@ -26,6 +27,7 @@ class MinutesService:
                 "marked_records": marked_records or [],
                 "template": template,
                 "memory_context": memory_context,
+                "template_instructions": template_instructions,
             }
         )
         return self.llm.chat(messages).text

@@ -72,7 +72,9 @@ def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
                 insufficient_evidence=False,
             )
 
-    monkeypatch.setattr(ai_chat_service, "_chat_service", lambda db, user_id: FakeChat())
+    monkeypatch.setattr(
+        ai_chat_service, "_chat_service", lambda db, user_id, model=None: FakeChat()
+    )
 
     headers = _auth(client)
     meeting = _meeting(client, headers)
@@ -106,7 +108,9 @@ def test_chat_include_sources_false(client: TestClient, monkeypatch: pytest.Monk
                 insufficient_evidence=False,
             )
 
-    monkeypatch.setattr(ai_chat_service, "_chat_service", lambda db, user_id: FakeChat())
+    monkeypatch.setattr(
+        ai_chat_service, "_chat_service", lambda db, user_id, model=None: FakeChat()
+    )
     headers = _auth(client)
     meeting = _meeting(client, headers)
     response = client.post(

@@ -21,12 +21,14 @@ class PreparationService:
         material_snippets: list[str],
         *,
         memory_context: str = "",
+        template_instructions: str = "",
     ) -> PreparationDraft:
         messages = build_prepare(
             {
                 "meeting_topic": meeting_topic,
                 "material_snippets": material_snippets,
                 "memory_context": memory_context,
+                "template_instructions": template_instructions,
             }
         )
         return self.llm.chat_json(messages, schema=PreparationDraft)

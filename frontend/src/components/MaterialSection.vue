@@ -1,6 +1,6 @@
 <template>
   <div class="material-section">
-    <MaterialUploader v-if="!readonly" :uploading="uploading" @upload="upload" />
+    <MaterialUploader v-if="!readonly && !hideUploader" :uploading="uploading" @upload="upload" />
 
     <ErrorMessage v-if="uploadError" :error="uploadError" />
 
@@ -97,6 +97,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MaterialList from '@/components/MaterialList.vue'
 import MaterialUploader from '@/components/MaterialUploader.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useToast } from '@/composables/useToast'
 import type { Material, MaterialUploadPayload } from '@/types/material'
 import { formatDateTime } from '@/utils/datetime'
@@ -105,11 +106,12 @@ import { materialStatusMeta } from '@/utils/statusLabels'
 const POLL_INTERVAL_MS = 3000
 
 const props = withDefaults(
-  defineProps<{ meetingId: string; readonly?: boolean }>(),
-  { readonly: false },
+  defineProps<{ meetingId: string; readonly?: boolean; hideUploader?: boolean }>(),
+  { readonly: false, hideUploader: false },
 )
 
 const toast = useToast()
+const { mirrorMeetingFile } = useLocalWorkspace()
 
 const { items, pagination, loading, error, load } = useAsyncList<Material>({
   fetcher: ({ page, page_size }) => materialsApi.listMaterials(props.meetingId, { page, page_size }),
@@ -201,6 +203,12 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
       return
     }
     toast.success('资料已上传')
+    void mirrorMeetingFile({
+      meetingId: props.meetingId,
+      kind: 'materials',
+      fileName: payload.file.name,
+      content: payload.file,
+    })
   } catch (caught) {
     uploadError.value = caught
   } finally {

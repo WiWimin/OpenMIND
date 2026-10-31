@@ -45,14 +45,50 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('tasks')
   })
 
-  it('protects the settings route', async () => {
+  it('protects the new meeting stages', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/new-meeting/preprocess')
+
+    expect(router.currentRoute.value.name).toBe('new-meeting-preprocess')
+    expect(router.currentRoute.value.meta.module).toBe('new-meeting')
+  })
+
+  it('protects the archive route', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/tasks/archive')
+
+    expect(router.currentRoute.value.name).toBe('task-archive')
+  })
+
+  it('redirects legacy system and knowledge paths to the dashboard', async () => {
+    setToken('token-abc')
+    vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
+    const router = createAppRouter()
+
+    await router.push('/system/memory')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+
+    await router.push('/system/model')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+
+    await router.push('/knowledge')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('redirects removed settings pages to the dashboard', async () => {
     setToken('token-abc')
     vi.mocked(authApi.fetchCurrentUser).mockResolvedValue(user)
     const router = createAppRouter()
 
     await router.push('/settings')
 
-    expect(router.currentRoute.value.name).toBe('settings')
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
   it('redirects authenticated users away from guest-only routes', async () => {

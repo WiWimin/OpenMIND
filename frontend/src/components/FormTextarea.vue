@@ -89,7 +89,7 @@ const errorId = computed(() => `${props.id}-error`)
 .form-field__control:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 111, 212, 0.16);
+  box-shadow: var(--focus-ring);
 }
 
 .form-field__control[aria-invalid='true'] {

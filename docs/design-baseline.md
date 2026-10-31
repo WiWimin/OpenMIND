@@ -67,6 +67,9 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-21 | 模型配置安全 | 非开发环境拒绝弱 `SECRET_KEY`；轮换使用 `SECRET_KEY_PREVIOUS`；`api_base` 默认仅允许 HTTPS 公网地址；全局密钥不返回脱敏片段 | `api.md 二.5`、`ai-design.md 三.5`、`docker/.env.example` |
 | D-22 | BYOK 默认不回退全局 | `ALLOW_GLOBAL_FALLBACK=false` 为默认值；未配置用户返回 `MODEL_CONFIG_REQUIRED`，避免团队承担用户 Token 费用 | `api.md 二.5`、`ai-design.md 三.5`、`config.py` |
 | D-23 | 记录检索先受限 | 当前阶段只把当前会议最近记录作为问答受限上下文；完整历史记录检索需独立 schema/检索设计，不宣称已实现 | `api.md 五.7`、`ai-design.md 五/八.2` |
+| D-24 | 请求级模型覆盖 | 会议问答与准备稿接受可选 `model`，仅允许选择已登记模型（基础 `llm_model` + 各用途模型），越权选择返回 `MODEL_NOT_ALLOWED`(422)；API 地址与密钥仍沿用配置 | `api.md 5.2/5.7`、`ai-design.md 三.5` |
+| D-25 | 会议模板 | 内置模板为代码常量（不入库）；自定义模板 `meeting_templates` 按用户隔离（`tpl_` 前缀）；`prepare`/`minutes/generate` 可选 `template_id` 注入结构文本，套用后纪要 `template=custom` | `api.md 5.16a`、`database.md 三.16`、`ai-design.md 八.1/8.4` |
+| D-26 | 新建会议阶段命名 | 三阶段显示名固定为「资料预处理 / 实时录音转写 / 会后智能处理」，仅改显示文案，路由与页面职责不变 | `frontend/src/components/StageShell.vue` |
 
 ## 四、待确认事项
 
@@ -102,3 +105,6 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 本地 FunASR ASR | `docker/asr` 基于 FunASR `funasr-server`（SenseVoiceSmall + FSMN-VAD，CPU），Compose profile `asr` + `scripts/asr.*`；保持 OpenAI 兼容 `/audio/transcriptions`，外部 ASR 仍可选 |
 | 2026-10 | 模型配置 probe 错误语义 | 网络/超时/限流/额度保留原错误码与 `retryable`；仅 401/403、维度或格式错误映射 `MODEL_CONFIG_INVALID`；补安全日志、前端重试与单测 |
 | 2026-10 | E2E 稳定性 | 推荐 E2E 后端启用 `ALLOW_GLOBAL_FALLBACK=true`；BYOK 由独立用例覆盖；外部探测瞬断重试后标记 BLOCKED，避免把外部依赖问题误报为产品失败 |
+| 2026-10 | 资料预处理页改版 | 侧边栏全局可折叠（默认展开、本地记忆）；页头合并为单卡片（标题+会议选择+三步流程，D-26）；资料上传升级拖拽；对话输入框新增模型/模板选择图标与气泡快捷按钮、下方示例区 |
+| 2026-10 | 请求级模型覆盖 | 新增 D-24：`chat`/`prepare` 可选 `model`；新增 `MODEL_NOT_ALLOWED`(422) 错误码 |
+| 2026-10 | 会议模板管理 | 新增 D-25：`meeting_templates` 表（迁移 `0019`）+ `api.md 5.16a` 模板 CRUD + 会议管理「模板管理」页 + 预处理页模板选择器；纪要模板枚举新增 `custom` |

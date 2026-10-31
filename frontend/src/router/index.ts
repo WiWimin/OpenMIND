@@ -7,28 +7,110 @@ declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
     guestOnly?: boolean
+    label?: string
+    module?: string
   }
 }
 
-const routes: RouteRecordRaw[] = [
+const workspaceChildren: RouteRecordRaw[] = [
   {
-    path: ROUTE_PATHS.root,
+    path: '',
     name: ROUTE_NAMES.root,
-    redirect: () => ({
-      name: useAuthStore().isAuthenticated ? ROUTE_NAMES.dashboard : ROUTE_NAMES.login,
-    }),
+    redirect: { name: ROUTE_NAMES.dashboard },
   },
   {
-    path: ROUTE_PATHS.dashboard,
+    path: ROUTE_PATHS.dashboard.slice(1),
+    name: ROUTE_NAMES.dashboard,
+    component: () => import('@/views/DashboardView.vue'),
+    meta: { label: '仪表盘', module: 'home' },
+  },
+  {
+    path: ROUTE_PATHS.newMeeting.slice(1),
+    name: ROUTE_NAMES.newMeeting,
+    component: () => import('@/views/newMeeting/NewMeetingView.vue'),
+    meta: { label: '会议总入口', module: 'new-meeting' },
+  },
+  {
+    path: ROUTE_PATHS.preprocess.slice(1),
+    name: ROUTE_NAMES.preprocess,
+    component: () => import('@/views/newMeeting/PreprocessView.vue'),
+    meta: { label: '资料预处理', module: 'new-meeting' },
+  },
+  {
+    path: ROUTE_PATHS.asr.slice(1),
+    name: ROUTE_NAMES.asr,
+    component: () => import('@/views/newMeeting/AsrView.vue'),
+    meta: { label: '录音转写', module: 'new-meeting' },
+  },
+  {
+    path: ROUTE_PATHS.minutesGenerate.slice(1),
+    name: ROUTE_NAMES.minutesGenerate,
+    component: () => import('@/views/newMeeting/MinutesGenerateView.vue'),
+    meta: { label: '纪要生成', module: 'new-meeting' },
+  },
+  {
+    path: ROUTE_PATHS.meetings.slice(1),
+    name: ROUTE_NAMES.meetings,
+    component: () => import('@/views/meetings/MeetingManageView.vue'),
+    meta: { label: '会议列表', module: 'meetings' },
+  },
+  {
+    path: ROUTE_PATHS.templateManage.slice(1),
+    name: ROUTE_NAMES.templateManage,
+    component: () => import('@/views/meetings/TemplateManageView.vue'),
+    meta: { label: '会议模板管理', module: 'meetings' },
+  },
+  {
+    path: ROUTE_PATHS.meetingDetail.slice(1),
+    name: ROUTE_NAMES.meetingDetail,
+    component: () => import('@/views/meetings/MeetingDetailView.vue'),
+    meta: { label: '会议详情', module: 'meetings' },
+  },
+  {
+    path: ROUTE_PATHS.tasks.slice(1),
+    name: ROUTE_NAMES.tasks,
+    component: () => import('@/views/TasksView.vue'),
+    meta: { label: '任务总览', module: 'tasks' },
+  },
+  {
+    path: ROUTE_PATHS.taskArchive.slice(1),
+    name: ROUTE_NAMES.taskArchive,
+    component: () => import('@/views/tasks/TaskArchiveView.vue'),
+    meta: { label: '已归档任务', module: 'tasks' },
+  },
+  // 旧设置/知识库页面已改为设置菜单中的弹窗，旧地址重定向到仪表盘
+  {
+    path: 'settings',
+    redirect: { name: ROUTE_NAMES.dashboard },
+  },
+  {
+    path: 'memory',
+    redirect: { name: ROUTE_NAMES.dashboard },
+  },
+  {
+    path: 'knowledge',
+    redirect: { name: ROUTE_NAMES.dashboard },
+  },
+  {
+    path: 'knowledge/search',
+    redirect: { name: ROUTE_NAMES.dashboard },
+  },
+  {
+    path: 'system/memory',
+    redirect: { name: ROUTE_NAMES.dashboard },
+  },
+  {
+    path: 'system/model',
+    redirect: { name: ROUTE_NAMES.dashboard },
+  },
+]
+
+const routes: RouteRecordRaw[] = [
+  {
+    path: '/',
     component: () => import('@/layouts/WorkspaceLayout.vue'),
     meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.dashboard,
-        component: () => import('@/views/DashboardView.vue'),
-      },
-    ],
+    children: workspaceChildren,
   },
   {
     path: ROUTE_PATHS.login,
@@ -43,73 +125,8 @@ const routes: RouteRecordRaw[] = [
     meta: { guestOnly: true },
   },
   {
-    path: ROUTE_PATHS.meetings,
-    component: () => import('@/layouts/WorkspaceLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.meetings,
-        component: () => import('@/views/DashboardView.vue'),
-      },
-      {
-        path: ':meetingId',
-        name: ROUTE_NAMES.meetingDetail,
-        component: () => import('@/views/meetings/MeetingDetailView.vue'),
-      },
-    ],
-  },
-  {
-    path: ROUTE_PATHS.tasks,
-    component: () => import('@/layouts/WorkspaceLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.tasks,
-        component: () => import('@/views/TasksView.vue'),
-      },
-    ],
-  },
-  {
-    path: ROUTE_PATHS.knowledge,
-    component: () => import('@/layouts/WorkspaceLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.knowledge,
-        component: () => import('@/views/KnowledgeView.vue'),
-      },
-    ],
-  },
-  {
-    path: ROUTE_PATHS.memory,
-    component: () => import('@/layouts/WorkspaceLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.memory,
-        component: () => import('@/views/MemoryView.vue'),
-      },
-    ],
-  },
-  {
-    path: ROUTE_PATHS.settings,
-    component: () => import('@/layouts/WorkspaceLayout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: '',
-        name: ROUTE_NAMES.settings,
-        component: () => import('@/views/settings/ModelSettingsView.vue'),
-      },
-    ],
-  },
-  {
     path: '/:pathMatch(.*)*',
-    redirect: { name: ROUTE_NAMES.root },
+    redirect: () => ({ path: ROUTE_PATHS.root }),
   },
 ]
 

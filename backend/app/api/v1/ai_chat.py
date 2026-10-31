@@ -30,6 +30,7 @@ def chat(
         question=payload.question,
         context_scope=payload.context_scope.value,
         include_sources=payload.include_sources,
+        model=payload.model,
     )
     sources = (
         [

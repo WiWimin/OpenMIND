@@ -59,7 +59,8 @@ test.describe('会议核心闭环（真实后端 + 真实数据库）', () => {
     await expect(page.locator('.knowledge-hits')).toBeVisible({ timeout: 60_000 })
     await expect(page.locator('.knowledge-hits')).toContainText('里程碑')
 
-    await page.getByRole('link', { name: '记忆中心', exact: true }).click()
+    await page.getByRole('link', { name: '系统设置', exact: true }).click()
+    await page.getByRole('link', { name: '用户记忆中心', exact: true }).click()
     await expect(page.getByRole('heading', { name: '记忆中心', exact: true })).toBeVisible()
     await page.locator('#memory-role').fill('产品经理')
     await page.locator('#memory-scenarios').fill('B2B SaaS 产品规划与跨团队项目推进')

@@ -1,7 +1,7 @@
 <template>
   <button
     class="app-button"
-    :class="[`app-button--${variant}`, { 'app-button--block': block }]"
+    :class="[`app-button--${variant}`, `app-button--${size}`, { 'app-button--block': block }]"
     :type="type"
     :disabled="disabled || loading"
   >
@@ -15,6 +15,7 @@ withDefaults(
   defineProps<{
     type?: 'button' | 'submit' | 'reset'
     variant?: 'primary' | 'ghost' | 'danger'
+    size?: 'sm' | 'md'
     disabled?: boolean
     loading?: boolean
     block?: boolean
@@ -22,6 +23,7 @@ withDefaults(
   {
     type: 'button',
     variant: 'primary',
+    size: 'md',
     disabled: false,
     loading: false,
     block: false,
@@ -35,12 +37,12 @@ withDefaults(
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 2.5rem;
+  min-height: 2.4rem;
   padding: var(--space-2) var(--space-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -63,14 +65,22 @@ withDefaults(
   width: 100%;
 }
 
+.app-button--sm {
+  min-height: 1.9rem;
+  padding: 0 var(--space-3);
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
 .app-button--primary {
   color: var(--color-primary-contrast);
-  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  box-shadow: 0 8px 20px rgba(59, 111, 212, 0.26);
+  background: var(--color-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .app-button--primary:hover:not(:disabled) {
-  box-shadow: 0 12px 26px rgba(59, 111, 212, 0.34);
+  background: var(--color-primary-strong);
+  box-shadow: 0 6px 16px rgba(21, 94, 239, 0.24);
 }
 
 .app-button--ghost {
@@ -87,12 +97,13 @@ withDefaults(
 
 .app-button--danger {
   color: #ffffff;
-  background: linear-gradient(135deg, #fb7185, #e11d48);
-  box-shadow: 0 8px 20px rgba(225, 29, 72, 0.22);
+  background: #dc2626;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .app-button--danger:hover:not(:disabled) {
-  box-shadow: 0 12px 26px rgba(225, 29, 72, 0.3);
+  background: #b91c1c;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.24);
 }
 
 .app-button:disabled {
@@ -113,6 +124,12 @@ withDefaults(
 @keyframes app-button-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .app-button {
+    min-height: 2.75rem;
   }
 }
 </style>
