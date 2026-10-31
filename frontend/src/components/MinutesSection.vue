@@ -89,6 +89,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import RichTextEditor from '@/components/RichTextEditor.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useToast } from '@/composables/useToast'
 import type { Minutes, MinutesTemplate } from '@/types/minutes'
 import { formatDateTime } from '@/utils/datetime'
@@ -115,6 +116,7 @@ const props = withDefaults(
 )
 
 const toast = useToast()
+const { mirrorConfirmedMinutes } = useLocalWorkspace()
 
 const { items, loading, error, load } = useAsyncList<Minutes>({
   fetcher: ({ page, page_size }) => minutesApi.listMinutes(props.meetingId, { page, page_size }),
@@ -230,6 +232,17 @@ async function confirm(): Promise<void> {
     syncSelected(updated)
     await load()
     toast.success('纪要已确认')
+    // 确认后才镜像到本地，草稿不落盘；未连接本地文件夹时静默跳过
+    const mirror = await mirrorConfirmedMinutes(
+      props.meetingId,
+      updated.content,
+      props.meetingTitle,
+    )
+    if (mirror === 'written') {
+      toast.success('纪要已同步到本地文件夹')
+    } else if (mirror === 'failed') {
+      toast.error('本地文件夹同步失败，请检查文件夹授权')
+    }
   } catch (caught) {
     actionError.value = caught
   } finally {
@@ -297,7 +310,7 @@ async function exportDocx(): Promise<void> {
 .minutes-section__template select:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 111, 212, 0.16);
+  box-shadow: 0 0 0 3px rgba(21, 94, 239, 0.16);
 }
 
 .minutes-section__materials {
@@ -353,7 +366,7 @@ async function exportDocx(): Promise<void> {
 
 .minutes-section__item--active {
   border-color: var(--color-primary);
-  background: rgba(59, 111, 212, 0.07);
+  background: rgba(21, 94, 239, 0.07);
 }
 
 .minutes-section__item-meta {

@@ -15,7 +15,7 @@ describe('KnowledgeUploader', () => {
     await selectFile(wrapper, new File(['x'], 'bad.exe'))
 
     expect(wrapper.get('.knowledge-uploader__error').text()).toContain('仅支持')
-    expect(wrapper.get('.app-button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.app-button').exists()).toBe(false)
   })
 
   it('emits the selected file', async () => {

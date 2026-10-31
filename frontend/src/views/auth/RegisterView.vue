@@ -121,7 +121,7 @@ async function submit(): Promise<void> {
   min-height: 100vh;
   /* 品牌背景图：左侧为品牌视觉，右侧留白放置表单 */
   background:
-    url('@/assets/registerbg.jpeg') center / cover no-repeat,
+    url('@/assets/registerbg.jpeg') left center / cover no-repeat,
     #eef2f8;
 }
 
@@ -131,7 +131,8 @@ async function submit(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-5) var(--space-4);
+  /* 顶部留白使表单整体下移，与背景图构图（左上品牌、左下吉祥物）更协调 */
+  padding: 20vh var(--space-4) var(--space-5);
 }
 
 .auth__card {
@@ -196,6 +197,7 @@ async function submit(): Promise<void> {
 
   .auth__panel {
     grid-column: 1;
+    padding: var(--space-5) var(--space-4);
   }
 }
 </style>

@@ -1,15 +1,13 @@
 <template>
-  <section class="memory-view">
-    <PageHeader
-      title="记忆中心"
-      description="维护你的角色、工作场景、表达偏好和默认纪要模板。记忆只用于调整表达与重点，不覆盖事实、来源或业务规则。"
-    />
+  <AppModal :open="open" title="记忆中心" @close="emit('close')">
+    <div class="memory-dialog">
+      <LoadingSpinner v-if="loading" class="memory-dialog__state" />
+      <ErrorMessage v-else-if="loadError" :error="loadError" retryable @retry="load" />
 
-    <LoadingSpinner v-if="loading" class="memory-view__state" />
-    <ErrorMessage v-else-if="loadError" :error="loadError" retryable @retry="load" />
-
-    <template v-else>
-      <form class="memory-form" @submit.prevent="save">
+      <form v-else class="memory-form" @submit.prevent="save">
+        <p class="memory-form__note">
+          记忆只用于调整表达与重点，不覆盖事实、来源或业务规则。
+        </p>
         <FormField id="memory-role" v-model="role" label="职业 / 角色" placeholder="例如：产品经理" />
         <FormTextarea
           id="memory-scenarios"
@@ -35,15 +33,15 @@
         <ErrorMessage v-if="formError" :error="formError" />
 
         <div class="memory-form__actions">
-          <AppButton type="submit" :loading="saving">保存记忆</AppButton>
           <AppButton variant="ghost" :disabled="saving" @click="confirmClearOpen = true">
             清除记忆
           </AppButton>
+          <AppButton type="submit" :loading="saving">保存记忆</AppButton>
         </div>
 
         <p v-if="updatedAt" class="memory-form__updated">上次更新：{{ updatedAt }}</p>
       </form>
-    </template>
+    </div>
 
     <ConfirmDialog
       :open="confirmClearOpen"
@@ -55,25 +53,28 @@
       @confirm="clear"
       @cancel="confirmClearOpen = false"
     />
-  </section>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import * as memoryApi from '@/api/memory'
 import AppButton from '@/components/AppButton.vue'
+import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormField from '@/components/FormField.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import type { MinutesTemplate } from '@/types/minutes'
 import type { UserMemory } from '@/types/memory'
 import { formatDateTime } from '@/utils/datetime'
+
+const props = defineProps<{ open: boolean }>()
+const emit = defineEmits<{ close: [] }>()
 
 const templateOptions = [
   { value: '', label: '使用标准模板' },
@@ -155,17 +156,25 @@ async function clear(): Promise<void> {
   }
 }
 
-onMounted(load)
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      void load()
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
-.memory-view {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+.memory-dialog {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: var(--space-1);
 }
 
-.memory-view__state {
+.memory-dialog__state {
   display: flex;
   justify-content: center;
   padding: var(--space-5);
@@ -174,24 +183,26 @@ onMounted(load)
 .memory-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  max-width: 44rem;
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-3);
+}
+
+.memory-form__note {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.6;
 }
 
 .memory-form__actions {
   display: flex;
-  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
 .memory-form__updated {
   margin: 0;
   color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
+  text-align: right;
 }
 </style>

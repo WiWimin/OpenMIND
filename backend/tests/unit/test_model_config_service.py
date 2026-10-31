@@ -201,3 +201,59 @@ def test_probe_llm_preserves_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.error_code == "MODEL_TIMEOUT"
     assert exc_info.value.http_status == 504
     assert exc_info.value.retryable is True
+
+
+def _make_config_row(db_session: Session) -> None:
+    model_config_repository.upsert(
+        db_session,
+        user_id="usr_a",
+        llm_api_base="https://llm.example.com",
+        llm_api_key_enc=encrypt("user-llm-key"),
+        llm_model="default-model",
+        llm_purpose_models={"minutes": "minutes-model"},
+        embedding_api_base=None,
+        embedding_api_key_enc=None,
+        embedding_model=None,
+        embedding_dim=None,
+    )
+
+
+def test_model_override_accepts_registered_model(db_session: Session) -> None:
+    _make_user(db_session, "usr_a", "alice")
+    _make_config_row(db_session)
+    for model in ("default-model", "minutes-model"):
+        config = resolve_model_config(db_session, "usr_a", model_override=model)
+        assert config.llm_model == model
+
+
+def test_model_override_takes_priority_over_purpose(db_session: Session) -> None:
+    _make_user(db_session, "usr_a", "alice")
+    _make_config_row(db_session)
+    config = resolve_model_config(
+        db_session,
+        "usr_a",
+        purpose=model_config_service.ModelPurpose.minutes,
+        model_override="default-model",
+    )
+    assert config.llm_model == "default-model"
+
+
+def test_model_override_rejects_unregistered_model(db_session: Session) -> None:
+    _make_user(db_session, "usr_a", "alice")
+    _make_config_row(db_session)
+    with pytest.raises(AppError) as exc_info:
+        resolve_model_config(
+            db_session,
+            "usr_a",
+            purpose=model_config_service.ModelPurpose.chat,
+            model_override="other-model",
+        )
+    assert exc_info.value.error_code == "MODEL_NOT_ALLOWED"
+    assert exc_info.value.http_status == 422
+
+
+def test_model_override_rejected_when_nothing_configured(db_session: Session) -> None:
+    _make_user(db_session, "usr_a", "alice")
+    with pytest.raises(AppError) as exc_info:
+        resolve_model_config(db_session, "usr_a", model_override="any-model")
+    assert exc_info.value.error_code == "MODEL_NOT_ALLOWED"

@@ -11,9 +11,12 @@
     </div>
 
     <div class="material-item__actions">
-      <AppButton variant="ghost" @click="emit('view', material.material_id)">查看详情</AppButton>
+      <AppButton size="sm" variant="ghost" @click="emit('view', material.material_id)">
+        查看详情
+      </AppButton>
       <AppButton
         v-if="!readonly"
+        size="sm"
         variant="ghost"
         @click="emit('delete', material.material_id)"
       >
@@ -32,10 +35,9 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import type { Material } from '@/types/material'
 import { materialStatusMeta } from '@/utils/statusLabels'
 
-const props = withDefaults(
-  defineProps<{ material: Material; readonly?: boolean }>(),
-  { readonly: false },
-)
+const props = withDefaults(defineProps<{ material: Material; readonly?: boolean }>(), {
+  readonly: false,
+})
 const emit = defineEmits<{ delete: [materialId: string]; view: [materialId: string] }>()
 
 const status = computed(() => materialStatusMeta[props.material.processing_status])

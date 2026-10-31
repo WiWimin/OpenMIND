@@ -4,7 +4,12 @@
       <div>
         <h3 class="local-workspace__title">本地会议工作区</h3>
         <p class="local-workspace__hint">
-          选择本地文件夹后，可把资料导入当前会议，或把最新纪要导出到该文件夹。仅在浏览器授权后访问。
+          <template v-if="showExport">
+            选择本地文件夹后，可把资料导入当前会议，或把最新纪要导出到该文件夹。仅在浏览器授权后访问。
+          </template>
+          <template v-else>
+            选择本地文件夹后，可把资料导入当前会议。仅在浏览器授权后访问。
+          </template>
         </p>
       </div>
     </header>
@@ -27,6 +32,7 @@
           导入资料（{{ files.length }}）
         </AppButton>
         <AppButton
+          v-if="showExport"
           :loading="exporting"
           :disabled="!directory"
           @click="exportMinutes"
@@ -48,6 +54,16 @@
           <span>{{ formatSize(entry.size) }}</span>
         </li>
       </ul>
+
+      <!-- 新文件提醒：检测到未导入的本地文件，需用户点击确认后才上传 -->
+      <div v-if="newFiles.length" class="local-workspace__reminder" role="status">
+        <span class="local-workspace__reminder-text">
+          检测到 {{ newFiles.length }} 个本地新文件尚未导入该会议
+        </span>
+        <AppButton size="sm" :loading="importing" :disabled="readonly" @click="importNewFiles">
+          仅导入新文件
+        </AppButton>
+      </div>
 
       <p v-if="status" class="local-workspace__status" role="status">{{ status }}</p>
       <p v-if="error" class="local-workspace__error" role="alert">{{ error }}</p>
@@ -101,10 +117,13 @@ const props = withDefaults(
     meetingId: string
     meetingTitle?: string
     readonly?: boolean
+    /** 是否显示「导出最新纪要」（预处理阶段尚无纪要，可关闭） */
+    showExport?: boolean
   }>(),
   {
     meetingTitle: '',
     readonly: false,
+    showExport: true,
   },
 )
 
@@ -118,11 +137,17 @@ const supported = computed(
 
 const directory = shallowRef<LocalDirectoryHandle | null>(null)
 const files = ref<LocalFileEntry[]>([])
+const existingNames = ref<Set<string>>(new Set())
 const picking = ref(false)
 const importing = ref(false)
 const exporting = ref(false)
 const status = ref('')
 const error = ref('')
+
+/** 目录扫描结果中尚未导入到当前会议的文件 */
+const newFiles = computed<LocalFileEntry[]>(() =>
+  files.value.filter((entry) => !existingNames.value.has(entry.name)),
+)
 
 function messageOf(caught: unknown): string {
   if (typeof caught === 'object' && caught !== null && 'message' in caught) {
@@ -168,6 +193,16 @@ async function readFiles(handle: LocalDirectoryHandle): Promise<LocalFileEntry[]
   return result.sort((left, right) => left.name.localeCompare(right.name))
 }
 
+/** 拉取当前会议已有资料文件名，用于识别本地新文件 */
+async function loadExistingMaterials(): Promise<void> {
+  try {
+    const result = await materialsApi.listMaterials(props.meetingId, { page: 1, page_size: 100 })
+    existingNames.value = new Set(result.items.map((item) => item.file_name))
+  } catch {
+    existingNames.value = new Set()
+  }
+}
+
 async function chooseDirectory(): Promise<void> {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker
   if (!picker) {
@@ -181,6 +216,7 @@ async function chooseDirectory(): Promise<void> {
     const handle = await picker()
     directory.value = handle
     files.value = await readFiles(handle)
+    await loadExistingMaterials()
     status.value =
       files.value.length > 0
         ? `已读取 ${files.value.length} 个支持的资料文件`
@@ -194,6 +230,33 @@ async function chooseDirectory(): Promise<void> {
   }
 }
 
+async function uploadEntries(
+  entries: LocalFileEntry[],
+): Promise<{ importedNames: string[]; failures: string[] }> {
+  const importedNames: string[] = []
+  const failures: string[] = []
+  for (const entry of entries) {
+    try {
+      await materialsApi.uploadMaterial(props.meetingId, {
+        file: entry.file,
+        source: '本地工作区',
+      })
+      importedNames.push(entry.name)
+    } catch (caught) {
+      failures.push(`${entry.name}：${messageOf(caught)}`)
+    }
+  }
+  return { importedNames, failures }
+}
+
+function markImported(names: string[]): void {
+  const next = new Set(existingNames.value)
+  for (const name of names) {
+    next.add(name)
+  }
+  existingNames.value = next
+}
+
 async function importFiles(): Promise<void> {
   if (!directory.value || files.value.length === 0 || props.readonly) {
     return
@@ -201,23 +264,36 @@ async function importFiles(): Promise<void> {
   importing.value = true
   error.value = ''
   status.value = ''
-  let imported = 0
-  const failures: string[] = []
   try {
-    for (const entry of files.value) {
-      try {
-        await materialsApi.uploadMaterial(props.meetingId, {
-          file: entry.file,
-          source: '本地工作区',
-        })
-        imported += 1
-      } catch (caught) {
-        failures.push(`${entry.name}：${messageOf(caught)}`)
-      }
-    }
-    if (imported > 0) {
+    const { importedNames, failures } = await uploadEntries(files.value)
+    if (importedNames.length > 0) {
+      markImported(importedNames)
       emit('imported')
-      status.value = `已导入 ${imported} 个文件`
+      status.value = `已导入 ${importedNames.length} 个文件`
+    }
+    if (failures.length > 0) {
+      error.value = failures.join('\n')
+    }
+  } finally {
+    importing.value = false
+  }
+}
+
+/** 只导入检测到的新文件，需用户点击确认后才上传 */
+async function importNewFiles(): Promise<void> {
+  if (!directory.value || newFiles.value.length === 0 || props.readonly) {
+    return
+  }
+  importing.value = true
+  error.value = ''
+  status.value = ''
+  const targets = [...newFiles.value]
+  try {
+    const { importedNames, failures } = await uploadEntries(targets)
+    if (importedNames.length > 0) {
+      markImported(importedNames)
+      emit('imported')
+      status.value = `已导入 ${importedNames.length} 个新文件`
     }
     if (failures.length > 0) {
       error.value = failures.join('\n')
@@ -306,6 +382,23 @@ async function exportMinutes(): Promise<void> {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.local-workspace__reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-primary-soft);
+  border: 1px solid rgba(21, 94, 239, 0.25);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+}
+
+.local-workspace__reminder-text {
+  color: var(--color-primary-strong);
 }
 
 .local-workspace__files {

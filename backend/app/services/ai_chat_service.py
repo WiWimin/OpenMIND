@@ -16,8 +16,10 @@ from app.services.model_config_service import (
 )
 
 
-def _chat_service(db: Session, user_id: str) -> ChatService:
-    config = resolve_model_config(db, user_id, purpose=ModelPurpose.chat)
+def _chat_service(db: Session, user_id: str, model_override: str | None = None) -> ChatService:
+    config = resolve_model_config(
+        db, user_id, purpose=ModelPurpose.chat, model_override=model_override
+    )
     return ChatService(build_llm_client(config), VectorRetriever(db, user_id))
 
 
@@ -54,9 +56,10 @@ def chat(
     question: str,
     context_scope: str,
     include_sources: bool,
+    model: str | None = None,
 ) -> ChatAnswer:
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
-    return _chat_service(db, user_id).answer(
+    return _chat_service(db, user_id, model).answer(
         question,
         user_id=user_id,
         scope=context_scope,

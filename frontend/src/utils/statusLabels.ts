@@ -58,6 +58,7 @@ export const minutesTemplateMeta: Record<MinutesTemplate, StatusMeta> = {
   standard: { label: '标准纪要', tone: 'neutral' },
   concise: { label: '简洁记录', tone: 'info' },
   task_list: { label: '任务清单', tone: 'warning' },
+  custom: { label: '自定义模板', tone: 'info' },
 }
 
 export const recordMarkerMeta: Record<RecordMarkerType, StatusMeta> = {

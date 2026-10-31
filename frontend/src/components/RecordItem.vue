@@ -16,12 +16,7 @@
 
     <template v-else>
       <p class="record-item__content">{{ record.content }}</p>
-      <div
-        v-if="!readonly"
-        class="record-item__marker-controls"
-        role="group"
-        aria-label="记录标记"
-      >
+      <div v-if="!readonly" class="record-item__marker-controls" role="group" aria-label="记录标记">
         <span class="record-item__marker-caption">标记：</span>
         <button
           v-for="option in MARKER_OPTIONS"
@@ -32,15 +27,17 @@
             'record-item__marker-button--active': record.marker_type === option.value,
           }"
           :aria-pressed="record.marker_type === option.value"
-          :title="record.marker_type === option.value ? `取消${option.label}标记` : `设为${option.label}`"
+          :title="
+            record.marker_type === option.value ? `取消${option.label}标记` : `设为${option.label}`
+          "
           @click="toggleMarker(option.value)"
         >
           {{ option.label }}
         </button>
       </div>
       <div v-if="!readonly" class="record-item__actions">
-        <AppButton variant="ghost" @click="startEdit">编辑</AppButton>
-        <AppButton variant="ghost" @click="emit('delete')">删除</AppButton>
+        <AppButton size="sm" variant="ghost" @click="startEdit">编辑</AppButton>
+        <AppButton size="sm" variant="ghost" @click="emit('delete')">删除</AppButton>
       </div>
     </template>
   </div>
@@ -191,8 +188,8 @@ function save(): void {
 }
 
 .record-item__marker-button--active {
-  background: rgba(59, 111, 212, 0.1);
-  border-color: rgba(59, 111, 212, 0.35);
+  background: rgba(21, 94, 239, 0.1);
+  border-color: rgba(21, 94, 239, 0.35);
   color: var(--color-primary-strong);
 }
 

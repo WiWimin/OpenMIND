@@ -60,7 +60,12 @@
           </form>
 
           <div v-else-if="!readonly" class="action-item__actions">
-            <AppButton v-if="item.status !== 'converted'" variant="ghost" @click="startEdit(item)">
+            <AppButton
+              v-if="item.status !== 'converted'"
+              size="sm"
+              variant="ghost"
+              @click="startEdit(item)"
+            >
               编辑
             </AppButton>
             <AppButton
@@ -133,10 +138,9 @@ import { formatDate } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
 import { actionItemStatusMeta } from '@/utils/statusLabels'
 
-const props = withDefaults(
-  defineProps<{ meetingId: string; readonly?: boolean }>(),
-  { readonly: false },
-)
+const props = withDefaults(defineProps<{ meetingId: string; readonly?: boolean }>(), {
+  readonly: false,
+})
 
 const toast = useToast()
 
@@ -229,11 +233,7 @@ async function extract(): Promise<void> {
   const controller = new AbortController()
   extractController = controller
   try {
-    await actionItemsApi.extractActionItems(
-      props.meetingId,
-      { record_ids: [] },
-      controller.signal,
-    )
+    await actionItemsApi.extractActionItems(props.meetingId, { record_ids: [] }, controller.signal)
     await load(1)
     toast.success('已提取行动项')
   } catch (caught) {

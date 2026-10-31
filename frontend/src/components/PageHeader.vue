@@ -52,4 +52,15 @@ withDefaults(
   gap: var(--space-2);
   flex-shrink: 0;
 }
+
+@media (max-width: 640px) {
+  .page-header {
+    flex-wrap: wrap;
+  }
+
+  .page-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
 </style>

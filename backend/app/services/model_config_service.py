@@ -61,7 +61,11 @@ def _decrypt_or_empty(token: str | None) -> str:
 
 
 def resolve_model_config(
-    db: Session, user_id: str, *, purpose: ModelPurpose | None = None
+    db: Session,
+    user_id: str,
+    *,
+    purpose: ModelPurpose | None = None,
+    model_override: str | None = None,
 ) -> ModelConfig:
     row = model_config_repository.get_by_user(db, user_id)
     settings = get_settings()
@@ -83,10 +87,26 @@ def resolve_model_config(
         embedding_api_key = embedding_api_key or settings.embedding_api_key
         embedding_model = embedding_model or settings.embedding_model
 
+    # 请求级模型覆盖的候选集：基础模型 + 用户登记的各用途模型（在用途覆盖前收集）
+    allowed_models = {llm_model}
+    if row is not None:
+        allowed_models.update((row.llm_purpose_models or {}).values())
+
     if purpose is not None and row is not None:
         override = (row.llm_purpose_models or {}).get(purpose.value)
         if override:
             llm_model = override
+
+    # 请求级模型覆盖：仅允许选择已登记的模型
+    if model_override:
+        allowed = {name for name in allowed_models if name}
+        if model_override not in allowed:
+            raise AppError(
+                "MODEL_NOT_ALLOWED",
+                "所选模型不在已配置的模型列表中，请先在模型配置中登记",
+                http_status=422,
+            )
+        llm_model = model_override
 
     return ModelConfig(
         llm_api_base=llm_api_base,

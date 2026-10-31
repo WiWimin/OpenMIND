@@ -57,6 +57,7 @@
 | `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析 | 视情况 |
 | `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/维度不符/额度不足等） | 否 |
 | `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
+| `MODEL_NOT_ALLOWED` | 422 | 请求指定的 `model` 不在已配置的模型列表中 | 否 |
 | `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
 | `RATE_LIMITED` | 429 | 请求频率超过限制 | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
@@ -569,6 +570,10 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 { "include_history": true, "user_goal": "确认本周里程碑和待解决风险" }
 ```
 
+可选字段：
+- `model`（string）：覆盖本次生成使用的模型名，必须已在模型配置中登记（全局模型或任一用途模型），否则 `422 MODEL_NOT_ALLOWED`；
+- `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a 会议模板），模板结构文本将注入生成提示词；不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
+
 响应 `200`：准备稿对象（`status = draft`）。同步完成；超时返回统一错误。`include_history=true` 时在用户授权范围内加入有限历史材料；`false` 时只使用当前会议材料。
 每次生成**新增一条**准备稿记录；对某条记录的编辑原地更新并 `version` 递增（`ai-design.md 八.1`）。
 
@@ -596,6 +601,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```json
 { "question": "上次会议决定了什么？", "context_scope": "current_meeting", "include_sources": true }
 ```
+
+可选字段 `model`（string）：覆盖本次对话使用的模型名，必须已在模型配置中登记，否则 `422 MODEL_NOT_ALLOWED`。
 
 `context_scope`：`current_meeting`（默认）/ `current_and_history` / `knowledge_base`。它只控制检索范围，不授予权限：
 - `current_meeting`：当前会议材料；
@@ -654,7 +661,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```
 
 `status`：`draft` / `confirmed`。
-`template`：`standard` / `concise` / `task_list`。
+`template`：`standard` / `concise` / `task_list` / `custom`（`custom` 表示生成时套用了会议模板，见 5.10 `template_id`）。
 `source_record_ids` 与 `source_material_ids` 记录实际参与生成的记录和材料。
 
 ### 5.10 生成纪要 `POST /api/v1/meetings/{meeting_id}/minutes/generate`
@@ -667,6 +674,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "template": "standard"
 }
 ```
+
+可选字段 `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a），优先于 `template`；模板结构文本注入生成提示词，生成结果的 `template` 字段记为 `custom`。模板不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
 
 - `include_materials` 默认 `true`；为 `true` 时融合当前会议资料（最多 10 份、合计约 12000 字符）和记录标记。
 - `template` 省略时优先使用记忆中心的 `preferred_minutes_template`，未设置则 `standard`：
@@ -741,6 +750,37 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
   }
 }
 ```
+
+### 5.16a 会议模板（M02 扩展，B）
+
+用于会前准备稿与纪要生成的输出模板。内置模板由项目代码提供（不入库），自定义模板按用户隔离存储。
+
+模板对象：
+
+```json
+{
+  "template_id": "tpl_xxx",
+  "name": "产品评审模板",
+  "description": "用于产品评审会",
+  "source": "custom",
+  "file_name": "review.md",
+  "created_at": "2026-10-29T10:00:00+08:00"
+}
+```
+
+- `source`：`builtin`（内置，`created_at`/`file_name` 为 `null`）/ `custom`（本人上传）。
+- 列表响应不包含模板正文；正文通过详情接口获取。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/meeting-templates` | 模板列表（内置 + 本人自定义，内置在前） |
+| POST | `/api/v1/meeting-templates` | 上传模板（multipart：`file` 必填，`name`/`description` 可选） |
+| GET | `/api/v1/meeting-templates/{template_id}` | 模板详情（含 `content_text` 正文） |
+| DELETE | `/api/v1/meeting-templates/{template_id}` | 删除本人自定义模板 |
+
+上传约束：仅支持 `DOCX` / `TXT` / `MD`；大小沿用全局上传限制（20MB）；内容解析失败返回 `422 FILE_PARSE_FAILED`，类型不支持返回 `415 FILE_TYPE_NOT_SUPPORTED`，超限返回 `413 FILE_TOO_LARGE`。
+权限：内置模板人人可读、不可删除；自定义模板仅本人可见/可删，越权统一 `404 RESOURCE_NOT_FOUND`。
+生成联动：`prepare`（5.2）与 `minutes/generate`（5.10）接受可选 `template_id`，模板正文注入提示词；自定义模板不可用或已删除时按原逻辑返回 `404`。
 
 ## 六、行动项与个人任务（M07、M08，A）
 

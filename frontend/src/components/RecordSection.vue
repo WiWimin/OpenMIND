@@ -361,7 +361,7 @@ async function saveOrganized(): Promise<void> {
   gap: var(--space-2);
   padding: var(--space-4);
   background: var(--color-surface);
-  border: 1px solid rgba(59, 111, 212, 0.28);
+  border: 1px solid rgba(21, 94, 239, 0.28);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
@@ -414,7 +414,7 @@ async function saveOrganized(): Promise<void> {
   gap: var(--space-3);
   padding: var(--space-4);
   background: var(--color-surface);
-  border: 1px solid rgba(59, 111, 212, 0.28);
+  border: 1px solid rgba(21, 94, 239, 0.28);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }

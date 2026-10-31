@@ -294,7 +294,7 @@ async function confirm(): Promise<void> {
 
 .preparation-section__item--active {
   border-color: var(--color-primary);
-  background: rgba(59, 111, 212, 0.07);
+  background: rgba(21, 94, 239, 0.07);
 }
 
 .preparation-section__time {

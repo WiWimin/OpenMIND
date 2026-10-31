@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PreparationStatus(StrEnum):
@@ -16,6 +16,10 @@ class PreparationStatus(StrEnum):
 class PreparationGenerateRequest(BaseModel):
     include_history: bool = True
     user_goal: str | None = None
+    # 可选：覆盖本次生成使用的模型名，必须已在模型配置中登记
+    model: str | None = Field(default=None, max_length=100)
+    # 可选：套用输出模板（内置或本人自定义）
+    template_id: str | None = Field(default=None, max_length=40)
 
 
 class PreparationUpdate(BaseModel):

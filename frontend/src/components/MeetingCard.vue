@@ -1,13 +1,23 @@
 <template>
   <button class="meeting-card" type="button" @click="emit('select', meeting.meeting_id)">
+    <span class="meeting-card__icon" aria-hidden="true">
+      <NavIcon name="calendar" :size="16" />
+    </span>
+
     <span class="meeting-card__body">
       <span class="meeting-card__title">{{ meeting.title }}</span>
       <span v-if="meeting.topic" class="meeting-card__topic">{{ meeting.topic }}</span>
-      <span class="meeting-card__time">{{ time }}</span>
     </span>
-    <span class="meeting-card__aside">
+
+    <span class="meeting-card__time">{{ time }}</span>
+
+    <span class="meeting-card__status">
       <StatusBadge :label="status.label" :tone="status.tone" />
-      <span class="meeting-card__enter" aria-hidden="true">进入会议 →</span>
+    </span>
+
+    <span class="meeting-card__enter">
+      查看
+      <NavIcon name="chevron" :size="13" />
     </span>
   </button>
 </template>
@@ -15,6 +25,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import NavIcon from '@/components/NavIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { Meeting } from '@/types/meeting'
 import { formatDateTime } from '@/utils/datetime'
@@ -29,92 +40,98 @@ const time = computed(() => formatDateTime(props.meeting.meeting_time))
 
 <style scoped>
 .meeting-card {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 10rem 7.5rem 4.5rem;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  overflow: hidden;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  color: inherit;
   text-align: left;
   font: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
-}
-
-.meeting-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
-  opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: background var(--transition-fast);
 }
 
 .meeting-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-glow);
+  background: var(--color-surface-muted);
 }
 
-.meeting-card:hover::before {
-  opacity: 1;
+.meeting-card:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.meeting-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+  border-radius: 50%;
 }
 
 .meeting-card__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
-.meeting-card__aside {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-shrink: 0;
-}
-
 .meeting-card__title {
-  font-family: var(--font-display);
-  font-size: 1.0625rem;
-  font-weight: 600;
+  overflow: hidden;
   color: var(--color-foreground);
+  font-size: 0.875rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meeting-card__topic {
+  overflow: hidden;
   color: var(--color-muted-foreground);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meeting-card__time {
   color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meeting-card__status {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .meeting-card__enter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
   color: var(--color-primary-strong);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  opacity: 0;
-  transform: translateX(-4px);
-  transition:
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
 }
 
-.meeting-card:hover .meeting-card__enter,
-.meeting-card:focus-visible .meeting-card__enter {
-  opacity: 1;
-  transform: translateX(0);
+@media (max-width: 720px) {
+  .meeting-card {
+    grid-template-columns: 2.1rem minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .meeting-card__time,
+  .meeting-card__enter {
+    display: none;
+  }
 }
 </style>

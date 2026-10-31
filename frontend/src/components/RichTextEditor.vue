@@ -276,8 +276,8 @@ onBeforeUnmount(() => {
 
 .rich-editor__tool--active {
   color: var(--color-primary-strong);
-  background: rgba(59, 111, 212, 0.1);
-  border-color: rgba(59, 111, 212, 0.4);
+  background: rgba(21, 94, 239, 0.1);
+  border-color: rgba(21, 94, 239, 0.4);
 }
 
 .rich-editor__tool:disabled {

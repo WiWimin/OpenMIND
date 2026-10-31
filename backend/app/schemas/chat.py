@@ -15,6 +15,8 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1)
     context_scope: ChatContextScope = ChatContextScope.current_meeting
     include_sources: bool = True
+    # 可选：覆盖本次对话使用的模型名，必须已在模型配置中登记
+    model: str | None = Field(default=None, max_length=100)
 
 
 class ChatSource(BaseModel):

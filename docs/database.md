@@ -294,11 +294,32 @@
 - 已确认音频不能重新转写或删除。
 - 删除未确认音频时同步删除文件。
 
+### 3.16 `meeting_templates` 会议模板
+
+用户上传的自定义输出模板；内置模板由代码常量提供，不入库（`api.md 5.16a`）。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `template_id` | VARCHAR(40) | PK | `tpl_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户（仅本人可见） |
+| `name` | VARCHAR(100) | NN | 模板名称 |
+| `description` | VARCHAR(255) | ? | 模板描述 |
+| `file_name` | VARCHAR(255) | NN | 原始文件名 |
+| `storage_key` | TEXT | NN | 本地存储相对路径（`templates/` 目录） |
+| `content_text` | TEXT | NN | 解析出的模板结构文本（注入生成提示词，≤20000 字符） |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 支持格式：DOCX / TXT / MD；大小沿用全局上传限制。
+- 仅本人可读/可删；删除时同步删除文件。
+- 生成联动：`prepare` 与 `minutes/generate` 的 `template_id` 引用本表或内置模板 ID。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
 - User — UserModelConfig：一对一（`user_model_configs.user_id` 主键）
 - User — UserMemory：一对一（`user_memories.user_id` 主键）
+- User — MeetingTemplate：一对多（仅自定义模板入库）
 - User — KnowledgeDocument：一对多
 - KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多

@@ -12,9 +12,8 @@
         />
       </div>
       <p v-if="fileError" class="audio-section__error" role="alert">{{ fileError }}</p>
-      <AppButton :loading="uploading" :disabled="!selectedFile" @click="upload">
-        上传并转写
-      </AppButton>
+      <p v-else-if="!selectedFile" class="audio-section__hint">选择音频文件后即可上传转写。</p>
+      <AppButton v-if="selectedFile" :loading="uploading" @click="upload"> 上传并转写 </AppButton>
     </div>
 
     <ErrorMessage v-if="uploadError" :error="uploadError" />
@@ -136,20 +135,21 @@ import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useToast } from '@/composables/useToast'
 import type { MeetingAudio } from '@/types/audio'
 import { validateAudioFile } from '@/utils/audioUpload'
 import { formatDateTime } from '@/utils/datetime'
 import { audioStatusMeta } from '@/utils/statusLabels'
 
-const props = withDefaults(
-  defineProps<{ meetingId: string; readonly?: boolean }>(),
-  { readonly: false },
-)
+const props = withDefaults(defineProps<{ meetingId: string; readonly?: boolean }>(), {
+  readonly: false,
+})
 
 const emit = defineEmits<{ saved: [] }>()
 
 const toast = useToast()
+const { mirrorMeetingFile } = useLocalWorkspace()
 const { items, pagination, loading, error, load } = useAsyncList<MeetingAudio>({
   fetcher: ({ page, page_size }) => audioApi.listAudio(props.meetingId, { page, page_size }),
 })
@@ -216,7 +216,8 @@ async function upload(): Promise<void> {
   uploading.value = true
   uploadError.value = null
   try {
-    const audio = await audioApi.uploadAudio(props.meetingId, selectedFile.value)
+    const file = selectedFile.value
+    const audio = await audioApi.uploadAudio(props.meetingId, file)
     selectedFile.value = null
     await load(1)
     select(audio)
@@ -229,6 +230,12 @@ async function upload(): Promise<void> {
       }
     } else {
       toast.success('音频已转写，请检查文本')
+      void mirrorMeetingFile({
+        meetingId: props.meetingId,
+        kind: 'audio',
+        fileName: file.name,
+        content: file,
+      })
     }
   } catch (caught) {
     uploadError.value = caught
@@ -375,6 +382,12 @@ async function deleteAudio(): Promise<void> {
   font-size: 0.85rem;
 }
 
+.audio-section__hint {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+}
+
 .audio-section__state {
   display: flex;
   justify-content: center;
@@ -407,7 +420,7 @@ async function deleteAudio(): Promise<void> {
 
 .audio-section__item--active {
   border-color: var(--color-primary);
-  background: rgba(59, 111, 212, 0.06);
+  background: rgba(21, 94, 239, 0.06);
 }
 
 .audio-section__item-main {

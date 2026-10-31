@@ -60,7 +60,7 @@ def fake_ai(monkeypatch: pytest.MonkeyPatch) -> None:
             return ChatAnswer(answer="无法确认", sources=[], insufficient_evidence=True)
 
     monkeypatch.setattr(
-        ai_chat_service, "_chat_service", lambda db, user_id: _InsufficientChat()
+        ai_chat_service, "_chat_service", lambda db, user_id, model=None: _InsufficientChat()
     )
 
 

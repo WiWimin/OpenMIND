@@ -5,12 +5,15 @@ export const ROUTE_NAMES = {
   dashboard: 'dashboard',
   login: 'login',
   register: 'register',
+  newMeeting: 'new-meeting',
+  preprocess: 'new-meeting-preprocess',
+  asr: 'new-meeting-asr',
+  minutesGenerate: 'new-meeting-minutes',
   meetings: 'meetings',
   meetingDetail: 'meeting-detail',
+  templateManage: 'meeting-template-manage',
   tasks: 'tasks',
-  knowledge: 'knowledge',
-  memory: 'memory',
-  settings: 'settings',
+  taskArchive: 'task-archive',
 } as const
 
 export const ROUTE_PATHS = {
@@ -18,10 +21,15 @@ export const ROUTE_PATHS = {
   dashboard: '/dashboard',
   login: '/login',
   register: '/register',
+  newMeeting: '/new-meeting',
+  preprocess: '/new-meeting/preprocess',
+  asr: '/new-meeting/asr',
+  minutesGenerate: '/new-meeting/minutes',
   meetings: '/meetings',
   meetingDetail: '/meetings/:meetingId',
+  templateManage: '/meetings/templates',
   tasks: '/tasks',
-  knowledge: '/knowledge',
-  memory: '/memory',
-  settings: '/settings',
+  taskArchive: '/tasks/archive',
 } as const
+
+export type RouteName = (typeof ROUTE_NAMES)[keyof typeof ROUTE_NAMES]

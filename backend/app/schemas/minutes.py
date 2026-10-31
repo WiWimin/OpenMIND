@@ -15,6 +15,8 @@ class MinutesTemplate(StrEnum):
     standard = "standard"
     concise = "concise"
     task_list = "task_list"
+    # 套用会议模板（内置/自定义）生成的纪要，模板内容见会议模板管理
+    custom = "custom"
 
 
 class MinutesGenerateRequest(BaseModel):
@@ -22,6 +24,8 @@ class MinutesGenerateRequest(BaseModel):
     include_action_items: bool = False
     include_materials: bool = True
     template: MinutesTemplate | None = None
+    # 可选：套用输出模板（内置或本人自定义），优先于 template
+    template_id: str | None = Field(default=None, max_length=40)
 
 
 class MinutesUpdate(BaseModel):

@@ -9,7 +9,7 @@ from app.models.minutes import MeetingMinutes
 from app.models.record import MeetingRecord
 from app.repositories import material_repository, minutes_repository, record_repository
 from app.schemas.minutes import MinutesGenerateRequest, MinutesUpdate
-from app.services import meeting_service, memory_service
+from app.services import meeting_service, meeting_template_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -34,6 +34,7 @@ def generate_text(
     marked_records: list[dict[str, str]] | None = None,
     template: str = "standard",
     memory_context: str = "",
+    template_instructions: str = "",
 ) -> str:
     topic_parts = [meeting.title]
     if meeting.topic:
@@ -45,6 +46,7 @@ def generate_text(
         marked_records or [],
         template=template,
         memory_context=memory_context,
+        template_instructions=template_instructions,
     )
 
 
@@ -111,6 +113,13 @@ def generate_minutes(
         if payload.template
         else memory_service.preferred_minutes_template(db, user_id) or "standard"
     )
+    template_instructions = ""
+    if payload.template_id:
+        template_instructions = meeting_template_service.resolve_template_content(
+            db, user_id, payload.template_id
+        )
+        # 套用会议模板时记录为 custom，原始内置枚举不再准确
+        template = "custom"
     memory_context = memory_service.memory_context_for(db, user_id, "minutes")
     content = generate_text(
         meeting,
@@ -120,6 +129,7 @@ def generate_minutes(
         marked_records=marked_records,
         template=template,
         memory_context=memory_context,
+        template_instructions=template_instructions,
     )
     minutes = minutes_repository.create(
         db,

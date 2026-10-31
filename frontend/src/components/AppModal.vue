@@ -1,6 +1,13 @@
 <template>
   <div v-if="open" class="modal" @click.self="emit('close')">
-    <div class="modal__panel" role="dialog" aria-modal="true" :aria-label="title || undefined">
+    <div
+      class="modal__panel"
+      :class="{ 'modal__panel--overflow-visible': overflowVisible }"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="label || title || undefined"
+    >
+      <slot name="top" />
       <header v-if="title" class="modal__header">
         <h2 class="modal__title">{{ title }}</h2>
         <button class="modal__close" type="button" aria-label="关闭" @click="emit('close')">
@@ -26,9 +33,15 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     title?: string
+    /** 无默认头部时的无障碍名称 */
+    label?: string
+    /** 面板不裁剪溢出内容（用于顶部装饰性内容探出面板的场景） */
+    overflowVisible?: boolean
   }>(),
   {
     title: '',
+    label: '',
+    overflowVisible: false,
   },
 )
 
@@ -70,6 +83,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .modal__panel {
+  position: relative;
   width: 100%;
   max-width: 30rem;
   max-height: calc(100vh - 2 * var(--space-4));
@@ -79,6 +93,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   animation: modal-rise var(--transition);
+}
+
+.modal__panel--overflow-visible {
+  overflow: visible;
+  max-height: none;
 }
 
 @keyframes modal-rise {
