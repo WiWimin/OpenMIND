@@ -13,6 +13,14 @@
         >
           {{ item.label }}
         </RouterLink>
+        <button
+          v-else-if="item.onClick && index < items.length - 1"
+          type="button"
+          class="app-breadcrumb__link app-breadcrumb__link--button"
+          @click="item.onClick()"
+        >
+          {{ item.label }}
+        </button>
         <span
           v-else
           class="app-breadcrumb__current"
@@ -32,7 +40,7 @@
 import type { RouteLocationRaw } from 'vue-router'
 
 defineProps<{
-  items: { label: string; to?: RouteLocationRaw }[]
+  items: { label: string; to?: RouteLocationRaw; onClick?: () => void }[]
 }>()
 </script>
 
@@ -64,6 +72,15 @@ defineProps<{
   color: var(--color-muted-foreground);
   text-decoration: none;
   transition: color var(--transition-fast);
+}
+
+.app-breadcrumb__link--button {
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .app-breadcrumb__link:hover {

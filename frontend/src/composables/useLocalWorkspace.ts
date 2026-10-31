@@ -114,6 +114,9 @@ export interface MirrorMeetingFileOptions {
   content: Blob | string
 }
 
+/** skipped：未连接本地文件夹（正常降级）；written：写入成功；failed：已连接但写入失败 */
+export type MirrorResult = 'skipped' | 'written' | 'failed'
+
 const KIND_SUBFOLDER: Record<MirrorMeetingFileOptions['kind'], string> = {
   materials: '资料',
   minutes: '纪要',
@@ -122,11 +125,11 @@ const KIND_SUBFOLDER: Record<MirrorMeetingFileOptions['kind'], string> = {
 
 /**
  * 把会议相关文件镜像写入本地「授权目录/OpenMIND/<分类>/<会议>/<子目录>/」。
- * 未授权或写入失败时静默返回 false，绝不影响主流程。
+ * 未授权时返回 skipped 静默降级，绝不影响主流程。
  */
-async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<boolean> {
+async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<MirrorResult> {
   if (status.value !== 'connected' || !handle.value) {
-    return false
+    return 'skipped'
   }
   try {
     const title = options.meetingTitle ?? (await resolveMeetingTitle(options.meetingId))
@@ -142,11 +145,34 @@ async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<boo
         ? new Blob([options.content], { type: 'text/plain;charset=utf-8' })
         : options.content
     await writeBlobToPath(handle.value, segments, sanitizeFolderName(options.fileName), content)
-    return true
+    return 'written'
   } catch (caught) {
     console.warn('[local-workspace] 本地镜像写入失败', caught)
-    return false
+    return 'failed'
   }
+}
+
+/**
+ * 把用户确认后的纪要写入本地「授权目录/OpenMIND/<分类>/<会议>/纪要/会议纪要_<会议标题>.md」。
+ * 确认版文件名固定：同一版本重复确认覆盖写入，不产生草稿版本残留。
+ * 未连接本地文件夹时直接跳过，不发起会议标题解析请求。
+ */
+async function mirrorConfirmedMinutes(
+  meetingId: string,
+  content: string,
+  meetingTitle?: string,
+): Promise<MirrorResult> {
+  if (status.value !== 'connected' || !handle.value) {
+    return 'skipped'
+  }
+  const title = meetingTitle || (await resolveMeetingTitle(meetingId))
+  return mirrorMeetingFile({
+    meetingId,
+    meetingTitle: title,
+    kind: 'minutes',
+    fileName: `会议纪要_${title}.md`,
+    content,
+  })
 }
 
 export function useLocalWorkspace() {
@@ -158,5 +184,6 @@ export function useLocalWorkspace() {
     restore,
     disconnect,
     mirrorMeetingFile,
+    mirrorConfirmedMinutes,
   }
 }

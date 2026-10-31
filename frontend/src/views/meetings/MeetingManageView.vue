@@ -41,36 +41,40 @@
           <p class="meeting-panel__hint">共 {{ pagination.total }} 场会议</p>
         </div>
         <div class="meeting-panel__tools">
-          <div class="status-chip-row" role="group" aria-label="会议状态筛选">
-            <button
-              v-for="option in statusOptions"
-              :key="option.value"
-              type="button"
-              class="status-chip"
-              :class="{ 'status-chip--active': status === option.value }"
-              @click="setStatus(option.value)"
-            >
-              {{ option.label }}
-            </button>
-          </div>
-          <div class="search-box">
-            <span class="search-box__icon" aria-hidden="true"><NavIcon name="search" :size="15" /></span>
-            <input
-              v-model="searchQuery"
-              class="search-box__input"
-              type="search"
-              placeholder="搜索会议名称或主题"
-              aria-label="搜索会议"
-            />
-          </div>
+          <template v-if="view !== 'meeting'">
+            <div class="status-chip-row" role="group" aria-label="会议状态筛选">
+              <button
+                v-for="option in statusOptions"
+                :key="option.value"
+                type="button"
+                class="status-chip"
+                :class="{ 'status-chip--active': status === option.value }"
+                @click="setStatus(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <div class="search-box">
+              <span class="search-box__icon" aria-hidden="true"><NavIcon name="search" :size="15" /></span>
+              <input
+                v-model="searchQuery"
+                class="search-box__input"
+                type="search"
+                placeholder="搜索会议名称或主题"
+                aria-label="搜索会议"
+              />
+            </div>
+          </template>
           <AppButton @click="openCreate">新建会议</AppButton>
         </div>
       </header>
 
+      <AppBreadcrumb v-if="view !== 'root'" class="meeting-panel__breadcrumb" :items="breadcrumbItems" />
+
       <LoadingSpinner v-if="loading && items.length === 0" class="meeting-panel__state" />
       <ErrorMessage v-else-if="error" :error="error" retryable @retry="load()" />
       <EmptyState
-        v-else-if="items.length === 0"
+        v-else-if="items.length === 0 && view === 'root'"
         title="还没有符合条件的会议"
         description="创建一场会议，开始资料预处理、录音转写与纪要生成。"
       >
@@ -78,97 +82,35 @@
       </EmptyState>
 
       <template v-else>
-        <p v-if="pagination.total > items.length" class="meeting-panel__cap-hint">
+        <p v-if="view === 'root' && pagination.total > items.length" class="meeting-panel__cap-hint">
           当前展示前 {{ items.length }} 场会议（共 {{ pagination.total }} 场）。
         </p>
 
-        <!-- 文件夹式列表 -->
-        <div class="folder-tree">
-          <template v-if="!searchActive && categories.length > 0">
-            <template v-for="group in categoryGroups" :key="group.key">
-              <!-- 分类文件夹 -->
-              <div class="folder-row folder-row--category">
-                <button
-                  type="button"
-                  class="folder-row__expander"
-                  :aria-expanded="isExpanded(group.key)"
-                  @click="toggleExpanded(group.key)"
-                >
-                  <span
-                    class="folder-row__chevron"
-                    :class="{ 'folder-row__chevron--open': isExpanded(group.key) }"
-                    aria-hidden="true"
-                  >
-                    <NavIcon name="chevron" :size="13" />
-                  </span>
-                  <span class="folder-row__icon" aria-hidden="true"><NavIcon name="folder" :size="16" /></span>
-                  <span class="folder-row__name">{{ group.name }}</span>
-                  <span class="folder-row__count">{{ group.meetings.length }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="folder-row__remove"
-                  :title="`删除分类「${group.name}」，会议将归入未分类`"
-                  @click="askDeleteCategory(group)"
-                >
-                  删除分类
-                </button>
-              </div>
+        <!-- 根视图：分类文件夹 + 未分类文件夹 -->
+        <div v-if="view === 'root'" class="folder-tree">
+          <div v-for="folder in categoryFolders" :key="folder.id" class="folder-row">
+            <button type="button" class="folder-row__expander" @click="enterCategory(folder)">
+              <span class="folder-row__icon" aria-hidden="true"><NavIcon name="folder" :size="16" /></span>
+              <span class="folder-row__name">{{ folder.name }}</span>
+              <span class="folder-row__count">{{ folder.meetings.length }}</span>
+            </button>
+            <button
+              type="button"
+              class="folder-row__remove"
+              :title="`删除分类「${folder.name}」，会议将归入未分类`"
+              @click="askDeleteCategory(folder)"
+            >
+              删除分类
+            </button>
+          </div>
 
-              <!-- 分类内的会议文件夹 -->
-              <template v-if="isExpanded(group.key)">
-                <p v-if="group.meetings.length === 0" class="folder-empty-hint">该分类下还没有会议</p>
-                <MeetingRow
-                  v-for="meeting in group.meetings"
-                  :key="meeting.meeting_id"
-                  :meeting="meeting"
-                  nested
-                  @view="openFiles"
-                  @delete="askDeleteMeeting"
-                />
-              </template>
-            </template>
-
-            <!-- 未分类文件夹 -->
-            <div class="folder-row folder-row--category">
-              <button
-                type="button"
-                class="folder-row__expander"
-                :aria-expanded="isExpanded(UNCATEGORIZED_KEY)"
-                @click="toggleExpanded(UNCATEGORIZED_KEY)"
-              >
-                <span
-                  class="folder-row__chevron"
-                  :class="{ 'folder-row__chevron--open': isExpanded(UNCATEGORIZED_KEY) }"
-                  aria-hidden="true"
-                >
-                  <NavIcon name="chevron" :size="13" />
-                </span>
-                <span class="folder-row__icon" aria-hidden="true"><NavIcon name="folder" :size="16" /></span>
-                <span class="folder-row__name">未分类</span>
-                <span class="folder-row__count">{{ uncategorized.length }}</span>
-              </button>
-            </div>
-            <template v-if="isExpanded(UNCATEGORIZED_KEY)">
-              <p v-if="uncategorized.length === 0" class="folder-empty-hint">没有未分类的会议</p>
-              <MeetingRow
-                v-for="meeting in uncategorized"
-                :key="meeting.meeting_id"
-                :meeting="meeting"
-                nested
-                @view="openFiles"
-                @delete="askDeleteMeeting"
-              />
-            </template>
-          </template>
-
-          <!-- 平铺（无分类 / 搜索中） -->
-          <template v-else>
-            <MeetingRow v-for="meeting in visibleMeetings" :key="meeting.meeting_id" :meeting="meeting" @view="openFiles" @delete="askDeleteMeeting" />
-            <p v-if="searchActive && visibleMeetings.length === 0" class="folder-empty-hint">
-              没有匹配「{{ searchQuery.trim() }}」的会议
-            </p>
-          </template>
+          <div class="folder-row">
+            <button type="button" class="folder-row__expander" @click="enterCategory(null)">
+              <span class="folder-row__icon" aria-hidden="true"><NavIcon name="folder" :size="16" /></span>
+              <span class="folder-row__name">未分类</span>
+              <span class="folder-row__count">{{ uncategorized.length }}</span>
+            </button>
+          </div>
 
           <!-- 新建分类 -->
           <div class="category-create">
@@ -191,6 +133,40 @@
             </button>
           </div>
         </div>
+
+        <!-- 分类视图：该分类下的会议文件夹 -->
+        <div v-else-if="view === 'category'" class="folder-tree">
+          <MeetingRow
+            v-for="meeting in activeFolderMeetings"
+            :key="meeting.meeting_id"
+            :meeting="meeting"
+            @open="enterMeeting"
+            @delete="askDeleteMeeting"
+          />
+          <p v-if="activeFolderMeetings.length === 0" class="folder-empty-hint">
+            {{ searchActive ? '没有匹配的会议' : '该分类下还没有会议' }}
+          </p>
+        </div>
+
+        <!-- 会议视图：该会议的文件列表 -->
+        <div v-else class="meeting-files-view">
+          <div class="meeting-files-view__head">
+            <h2 class="meeting-files-view__title">{{ activeMeeting?.title }}</h2>
+            <StatusBadge
+              :label="activeMeeting?.status === 'archived' ? '已归档' : '已安排'"
+              :tone="activeMeeting?.status === 'archived' ? 'neutral' : 'info'"
+            />
+            <AppButton
+              variant="ghost"
+              size="sm"
+              class="meeting-files-view__open"
+              @click="openWorkspace"
+            >
+              打开会议工作台
+            </AppButton>
+          </div>
+          <MeetingFilesPanel v-if="activeMeeting" :meeting-id="activeMeeting.meeting_id" />
+        </div>
       </template>
     </section>
 
@@ -202,13 +178,6 @@
       :categories="categories"
       @submit="createMeeting"
       @cancel="showCreate = false"
-    />
-
-    <!-- 查看会议文件 -->
-    <MeetingFilesDialog
-      :open="filesOpen"
-      :meeting="filesMeeting"
-      @close="filesOpen = false"
     />
 
     <!-- 删除会议确认 -->
@@ -238,15 +207,16 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
+import AppBreadcrumb from '@/components/AppBreadcrumb.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import MeetingFilesDialog from '@/components/MeetingFilesDialog.vue'
+import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
 import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -266,31 +236,28 @@ import {
   type MeetingCategory,
 } from '@/utils/meetingCategories'
 
-/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 查看/删除 */
+/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 打开/删除 */
 const MeetingRow = defineComponent({
   name: 'MeetingRow',
   props: {
     meeting: { type: Object as () => Meeting, required: true },
-    nested: { type: Boolean, default: false },
   },
-  emits: ['view', 'delete'],
+  emits: ['open', 'delete'],
   setup(rowProps, { emit }) {
     return () =>
-      h('div', { class: ['meeting-row', { 'meeting-row--nested': rowProps.nested }] }, [
+      h('div', { class: 'meeting-row' }, [
         h('span', { class: 'meeting-row__icon', 'aria-hidden': 'true' }, [
           h(NavIcon, { name: 'folder', size: 16 }),
         ]),
         h('div', { class: 'meeting-row__main' }, [
           h(
-            RouterLink,
+            'button',
             {
+              type: 'button',
               class: 'meeting-row__name',
-              to: {
-                name: ROUTE_NAMES.meetingDetail,
-                params: { meetingId: rowProps.meeting.meeting_id },
-              },
+              onClick: () => emit('open', rowProps.meeting),
             },
-            () => rowProps.meeting.title,
+            rowProps.meeting.title,
           ),
           h('p', { class: 'meeting-row__meta' }, [
             rowProps.meeting.topic || '未填写会议主题',
@@ -307,7 +274,7 @@ const MeetingRow = defineComponent({
             {
               type: 'button',
               class: 'meeting-row__action',
-              onClick: () => emit('view', rowProps.meeting),
+              onClick: () => emit('open', rowProps.meeting),
             },
             '查看',
           ),
@@ -326,11 +293,10 @@ const MeetingRow = defineComponent({
 })
 
 type StatusFilter = MeetingStatus | ''
+type ExplorerView = 'root' | 'category' | 'meeting'
 
-const UNCATEGORIZED_KEY = '__uncategorized__'
-
-const router = useRouter()
 const toast = useToast()
+const router = useRouter()
 const ws = useLocalWorkspace()
 
 const items = ref<Meeting[]>([])
@@ -340,16 +306,16 @@ const error = ref<unknown>(null)
 const status = ref<StatusFilter>('')
 
 const categories = ref<MeetingCategory[]>([])
-const expanded = ref<Set<string>>(new Set())
+
+const view = ref<ExplorerView>('root')
+const activeCategory = ref<MeetingCategory | null>(null)
+const activeMeeting = ref<Meeting | null>(null)
 
 const searchQuery = ref('')
 
 const showCreate = ref(false)
 const creating = ref(false)
 const createError = ref<unknown>(null)
-
-const filesOpen = ref(false)
-const filesMeeting = ref<Meeting | null>(null)
 
 const showDeleteMeeting = ref(false)
 const deleteMeetingTarget = ref<Meeting | null>(null)
@@ -386,28 +352,74 @@ const uncategorized = computed(() =>
   visibleMeetings.value.filter((meeting) => !categoryOf(meeting.meeting_id)),
 )
 
-const categoryGroups = computed(() =>
+const categoryFolders = computed(() =>
   categories.value.map((category) => ({
-    key: category.id,
-    name: category.name,
+    ...category,
     meetings: visibleMeetings.value.filter(
       (meeting) => categoryOf(meeting.meeting_id) === category.id,
     ),
   })),
 )
 
-function isExpanded(key: string): boolean {
-  return expanded.value.has(key)
+/** 当前所在分类的名称（未分类文件夹为 null） */
+const activeFolderMeetings = computed(() => {
+  if (!activeCategory.value) {
+    return uncategorized.value
+  }
+  return visibleMeetings.value.filter(
+    (meeting) => categoryOf(meeting.meeting_id) === activeCategory.value?.id,
+  )
+})
+
+const activeCategoryLabel = computed(() =>
+  activeCategory.value?.name ?? '未分类',
+)
+
+const breadcrumbItems = computed(() => {
+  if (view.value === 'category') {
+    return [{ label: '会议管理', onClick: () => goRoot() }, { label: activeCategoryLabel.value }]
+  }
+  if (view.value === 'meeting') {
+    return [
+      { label: '会议管理', onClick: () => goRoot() },
+      { label: activeCategoryLabel.value, onClick: () => goCategory() },
+      { label: activeMeeting.value?.title ?? '' },
+    ]
+  }
+  return []
+})
+
+/* ===== 视图导航 ===== */
+function enterCategory(category: MeetingCategory | null): void {
+  activeCategory.value = category
+  activeMeeting.value = null
+  view.value = 'category'
 }
 
-function toggleExpanded(key: string): void {
-  const next = new Set(expanded.value)
-  if (next.has(key)) {
-    next.delete(key)
-  } else {
-    next.add(key)
+function enterMeeting(meeting: Meeting): void {
+  activeMeeting.value = meeting
+  view.value = 'meeting'
+}
+
+function goRoot(): void {
+  view.value = 'root'
+  activeCategory.value = null
+  activeMeeting.value = null
+}
+
+function goCategory(): void {
+  activeMeeting.value = null
+  view.value = 'category'
+}
+
+function openWorkspace(): void {
+  if (!activeMeeting.value) {
+    return
   }
-  expanded.value = next
+  void router.push({
+    name: ROUTE_NAMES.meetingDetail,
+    params: { meetingId: activeMeeting.value.meeting_id },
+  })
 }
 
 async function load(): Promise<void> {
@@ -468,11 +480,6 @@ async function createMeeting(payload: MeetingFormPayload): Promise<void> {
   }
 }
 
-function openFiles(meeting: Meeting): void {
-  filesMeeting.value = meeting
-  filesOpen.value = true
-}
-
 function askDeleteMeeting(meeting: Meeting): void {
   deleteMeetingTarget.value = meeting
   showDeleteMeeting.value = true
@@ -490,6 +497,10 @@ async function confirmDeleteMeeting(): Promise<void> {
     showDeleteMeeting.value = false
     deleteMeetingTarget.value = null
     toast.success('会议已删除')
+    // 若删除的是当前正在查看的会议，退回所在分类视图
+    if (activeMeeting.value?.meeting_id === target.meeting_id) {
+      goCategory()
+    }
     await load()
   } catch (caught) {
     toast.error(caught instanceof Error ? caught.message : '删除失败，请稍后重试')
@@ -498,8 +509,8 @@ async function confirmDeleteMeeting(): Promise<void> {
   }
 }
 
-function askDeleteCategory(group: { key: string; name: string }): void {
-  deleteCategoryTarget.value = { id: group.key, name: group.name, createdAt: '' }
+function askDeleteCategory(folder: { id: string; name: string }): void {
+  deleteCategoryTarget.value = { id: folder.id, name: folder.name, createdAt: '' }
   showDeleteCategory.value = true
 }
 
@@ -509,7 +520,10 @@ function confirmDeleteCategory(): void {
     return
   }
   deleteCategory(target.id)
-  expanded.value = new Set([...expanded.value].filter((key) => key !== target.id))
+  // 若删除的是当前所在分类，退回根视图
+  if (activeCategory.value?.id === target.id) {
+    goRoot()
+  }
   showDeleteCategory.value = false
   deleteCategoryTarget.value = null
   refreshCategories()
@@ -534,7 +548,6 @@ function submitCategory(): void {
   const created = createCategory(name)
   refreshCategories()
   cancelCreateCategory()
-  expanded.value = new Set([...expanded.value, created.id])
   toast.success(`分类「${created.name}」已创建`)
 }
 
@@ -569,7 +582,6 @@ function goTemplates(): void {
 }
 
 onMounted(() => {
-  void ws.init()
   refreshCategories()
   void load()
 })
@@ -782,17 +794,6 @@ onMounted(() => {
   background: var(--color-surface-muted);
 }
 
-.folder-row__chevron {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--color-muted-foreground);
-  transition: transform var(--transition-fast);
-}
-
-.folder-row__chevron--open {
-  transform: rotate(90deg);
-}
-
 .folder-row__icon {
   display: inline-flex;
   flex: 0 0 auto;
@@ -858,8 +859,13 @@ onMounted(() => {
   border-color: var(--color-border-strong);
 }
 
-:deep(.meeting-row--nested) {
-  margin-left: 2.6rem;
+:deep(.meeting-row__name) {
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 :deep(.meeting-row__icon) {
@@ -982,9 +988,33 @@ onMounted(() => {
   .search-box__input {
     width: 100%;
   }
+}
 
-  :deep(.meeting-row--nested) {
-    margin-left: 1.2rem;
-  }
+/* 会议文件视图 */
+.meeting-files-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.meeting-files-view__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.meeting-files-view__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.meeting-files-view__open {
+  margin-left: auto;
+}
+
+.meeting-panel__breadcrumb {
+  margin-bottom: 0;
 }
 </style>

@@ -1,112 +1,104 @@
 <template>
-  <AppModal :open="open" title="会议文件" @close="emit('close')">
-    <div class="meeting-files">
-      <p class="meeting-files__sub">
-        「{{ meeting?.title ?? '会议' }}」的全部文件资料。资料与录音的打开能力将在后端文件服务上线后开放。
-      </p>
+  <div class="meeting-files-panel">
+    <LoadingSpinner v-if="loading" class="meeting-files-panel__state" />
 
-      <LoadingSpinner v-if="loading" class="meeting-files__state" />
-
-      <template v-else>
-        <!-- 会议资料 -->
-        <section class="file-group">
-          <header class="file-group__head">
-            <h3 class="file-group__title">会议资料</h3>
-            <span class="file-group__count">{{ materials.length }} 个</span>
-          </header>
-          <p v-if="materialsError" class="file-group__error">{{ materialsError }}</p>
-          <p v-else-if="materials.length === 0" class="file-group__empty">未上传资料</p>
-          <ul v-else class="file-list">
-            <li v-for="item in materials" :key="item.material_id" class="file-list__row">
-              <span class="file-list__icon" aria-hidden="true"><NavIcon name="file" :size="15" /></span>
-              <span class="file-list__main">
-                <span class="file-list__name">{{ item.file_name }}</span>
-                <span class="file-list__meta">{{ materialStatusOf(item) }} · {{ formatDate(item.created_at) }}</span>
+    <template v-else>
+      <!-- 会议资料 -->
+      <section class="file-group">
+        <header class="file-group__head">
+          <h3 class="file-group__title">会议资料</h3>
+          <span class="file-group__count">{{ materials.length }} 个</span>
+        </header>
+        <p v-if="materialsError" class="file-group__error">{{ materialsError }}</p>
+        <p v-else-if="materials.length === 0" class="file-group__empty">未上传资料</p>
+        <ul v-else class="file-list">
+          <li v-for="item in materials" :key="item.material_id" class="file-list__row">
+            <span class="file-list__icon" aria-hidden="true"><NavIcon name="file" :size="15" /></span>
+            <span class="file-list__main">
+              <span class="file-list__name">{{ item.file_name }}</span>
+              <span class="file-list__meta">
+                {{ materialStatusOf(item) }} · {{ formatDate(item.created_at) }}
               </span>
-              <span class="file-list__pending" title="文件打开服务将在后端上线后可用">待开放</span>
-            </li>
-          </ul>
-        </section>
+            </span>
+            <span class="file-list__pending" title="文件打开服务将在后端上线后可用">待开放</span>
+          </li>
+        </ul>
+      </section>
 
-        <!-- 录音 -->
-        <section class="file-group">
-          <header class="file-group__head">
-            <h3 class="file-group__title">录音</h3>
-            <span class="file-group__count">{{ audios.length }} 个</span>
-          </header>
-          <p v-if="audiosError" class="file-group__error">{{ audiosError }}</p>
-          <p v-else-if="audios.length === 0" class="file-group__empty">未上传录音</p>
-          <ul v-else class="file-list">
-            <li v-for="item in audios" :key="item.audio_id" class="file-list__row">
-              <span class="file-list__icon" aria-hidden="true"><NavIcon name="mic" :size="15" /></span>
-              <span class="file-list__main">
-                <span class="file-list__name">{{ item.file_name }}</span>
-                <span class="file-list__meta">{{ audioStatusOf(item) }} · {{ formatDate(item.created_at) }}</span>
+      <!-- 录音 -->
+      <section class="file-group">
+        <header class="file-group__head">
+          <h3 class="file-group__title">录音</h3>
+          <span class="file-group__count">{{ audios.length }} 个</span>
+        </header>
+        <p v-if="audiosError" class="file-group__error">{{ audiosError }}</p>
+        <p v-else-if="audios.length === 0" class="file-group__empty">未上传录音</p>
+        <ul v-else class="file-list">
+          <li v-for="item in audios" :key="item.audio_id" class="file-list__row">
+            <span class="file-list__icon" aria-hidden="true"><NavIcon name="mic" :size="15" /></span>
+            <span class="file-list__main">
+              <span class="file-list__name">{{ item.file_name }}</span>
+              <span class="file-list__meta">{{ audioStatusOf(item) }} · {{ formatDate(item.created_at) }}</span>
+            </span>
+            <span class="file-list__pending" title="文件打开服务将在后端上线后可用">待开放</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 纪要 -->
+      <section class="file-group">
+        <header class="file-group__head">
+          <h3 class="file-group__title">纪要</h3>
+          <span class="file-group__count">{{ minutesList.length }} 份</span>
+        </header>
+        <p v-if="minutesError" class="file-group__error">{{ minutesError }}</p>
+        <p v-else-if="minutesList.length === 0" class="file-group__empty">尚未生成纪要</p>
+        <ul v-else class="file-list">
+          <li v-for="item in minutesList" :key="item.minutes_id" class="file-list__row">
+            <span class="file-list__icon" aria-hidden="true"><NavIcon name="clipboard" :size="15" /></span>
+            <span class="file-list__main">
+              <span class="file-list__name">{{ minutesName(item) }}</span>
+              <span class="file-list__meta">
+                {{ minutesTemplateMeta[item.template]?.label ?? item.template }} · v{{ item.version }} ·
+                {{ item.status === 'confirmed' ? '已确认' : '草稿' }} · {{ formatDate(item.updated_at) }}
               </span>
-              <span class="file-list__pending" title="文件打开服务将在后端上线后可用">待开放</span>
-            </li>
-          </ul>
-        </section>
+            </span>
+            <button type="button" class="file-list__open" @click="previewMinutes(item)">预览</button>
+          </li>
+        </ul>
+      </section>
 
-        <!-- 纪要 -->
-        <section class="file-group">
-          <header class="file-group__head">
-            <h3 class="file-group__title">纪要</h3>
-            <span class="file-group__count">{{ minutesList.length }} 份</span>
-          </header>
-          <p v-if="minutesError" class="file-group__error">{{ minutesError }}</p>
-          <p v-else-if="minutesList.length === 0" class="file-group__empty">尚未生成纪要</p>
-          <ul v-else class="file-list">
-            <li v-for="item in minutesList" :key="item.minutes_id" class="file-list__row">
-              <span class="file-list__icon" aria-hidden="true"><NavIcon name="clipboard" :size="15" /></span>
-              <span class="file-list__main">
-                <span class="file-list__name">{{ minutesName(item) }}</span>
-                <span class="file-list__meta">
-                  {{ minutesTemplateMeta[item.template]?.label ?? item.template }} · v{{ item.version }} ·
-                  {{ item.status === 'confirmed' ? '已确认' : '草稿' }} · {{ formatDate(item.updated_at) }}
-                </span>
-              </span>
-              <button type="button" class="file-list__open" @click="previewMinutes(item)">预览</button>
-            </li>
-          </ul>
-        </section>
+      <!-- 会议记录 -->
+      <section class="file-group">
+        <header class="file-group__head">
+          <h3 class="file-group__title">会议记录</h3>
+          <span class="file-group__count">{{ records.length }} 条</span>
+        </header>
+        <p v-if="recordsError" class="file-group__error">{{ recordsError }}</p>
+        <p v-else-if="records.length === 0" class="file-group__empty">暂无会议记录</p>
+        <ul v-else class="file-list">
+          <li v-for="item in records" :key="item.record_id" class="file-list__row">
+            <span class="file-list__icon" aria-hidden="true"><NavIcon name="list" :size="15" /></span>
+            <span class="file-list__main">
+              <span class="file-list__name">{{ recordTypeLabel(item.record_type) }}记录</span>
+              <span class="file-list__meta">{{ excerpt(item.content) }}</span>
+            </span>
+            <button type="button" class="file-list__open" @click="previewRecord(item)">预览</button>
+          </li>
+        </ul>
+      </section>
 
-        <!-- 会议记录 -->
-        <section class="file-group">
-          <header class="file-group__head">
-            <h3 class="file-group__title">会议记录</h3>
-            <span class="file-group__count">{{ records.length }} 条</span>
-          </header>
-          <p v-if="recordsError" class="file-group__error">{{ recordsError }}</p>
-          <p v-else-if="records.length === 0" class="file-group__empty">暂无会议记录</p>
-          <ul v-else class="file-list">
-            <li v-for="item in records" :key="item.record_id" class="file-list__row">
-              <span class="file-list__icon" aria-hidden="true"><NavIcon name="list" :size="15" /></span>
-              <span class="file-list__main">
-                <span class="file-list__name">{{ recordTypeLabel(item.record_type) }}记录</span>
-                <span class="file-list__meta">{{ excerpt(item.content) }}</span>
-              </span>
-              <button type="button" class="file-list__open" @click="previewRecord(item)">预览</button>
-            </li>
-          </ul>
-        </section>
-
-        <!-- 文本预览区 -->
-        <section v-if="preview" class="file-preview">
-          <header class="file-preview__head">
-            <h4 class="file-preview__title">{{ preview.title }}</h4>
-            <button type="button" class="file-preview__close" @click="preview = null">关闭预览</button>
-          </header>
-          <MarkdownView v-if="preview.markdown" class="file-preview__body" :content="preview.content" />
-          <pre v-else class="file-preview__body file-preview__body--text">{{ preview.content }}</pre>
-        </section>
-      </template>
-    </div>
-
-    <template #footer>
-      <AppButton variant="ghost" @click="emit('close')">关闭</AppButton>
+      <!-- 文本预览区 -->
+      <section v-if="preview" class="file-preview">
+        <header class="file-preview__head">
+          <h4 class="file-preview__title">{{ preview.title }}</h4>
+          <button type="button" class="file-preview__close" @click="preview = null">关闭预览</button>
+        </header>
+        <MarkdownView v-if="preview.markdown" class="file-preview__body" :content="preview.content" />
+        <pre v-else class="file-preview__body file-preview__body--text">{{ preview.content }}</pre>
+      </section>
     </template>
-  </AppModal>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -116,12 +108,9 @@ import * as audioApi from '@/api/audio'
 import * as materialsApi from '@/api/materials'
 import * as minutesApi from '@/api/minutes'
 import * as recordsApi from '@/api/records'
-import AppButton from '@/components/AppButton.vue'
-import AppModal from '@/components/AppModal.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import NavIcon from '@/components/NavIcon.vue'
-import type { Meeting } from '@/types/meeting'
 import type { MeetingAudio } from '@/types/audio'
 import type { Material } from '@/types/material'
 import type { Minutes } from '@/types/minutes'
@@ -129,12 +118,7 @@ import type { MeetingRecord, RecordType } from '@/types/record'
 import { formatDate } from '@/utils/datetime'
 import { audioStatusMeta, materialStatusMeta, minutesTemplateMeta } from '@/utils/statusLabels'
 
-const props = defineProps<{
-  open: boolean
-  meeting: Meeting | null
-}>()
-
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ meetingId: string }>()
 
 const loading = ref(false)
 const materials = ref<Material[]>([])
@@ -232,9 +216,9 @@ async function load(meetingId: string): Promise<void> {
 }
 
 watch(
-  () => [props.open, props.meeting?.meeting_id] as const,
-  ([open, meetingId]) => {
-    if (open && meetingId) {
+  () => props.meetingId,
+  (meetingId) => {
+    if (meetingId) {
       void load(meetingId)
     }
   },
@@ -243,23 +227,13 @@ watch(
 </script>
 
 <style scoped>
-.meeting-files {
+.meeting-files-panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-height: 60vh;
-  overflow-y: auto;
-  padding-right: var(--space-1);
 }
 
-.meeting-files__sub {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  line-height: 1.6;
-}
-
-.meeting-files__state {
+.meeting-files-panel__state {
   display: flex;
   justify-content: center;
   padding: var(--space-5);

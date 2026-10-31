@@ -71,7 +71,6 @@ import AgentChat from '@/components/AgentChat.vue'
 import ModelPickerPopover from '@/components/ModelPickerPopover.vue'
 import StageShell from '@/components/StageShell.vue'
 import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
-import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useToast } from '@/composables/useToast'
 import type { AgentReply } from '@/types/agent'
 import type { ActionItem } from '@/types/actionItem'
@@ -82,7 +81,6 @@ import { minutesTemplateMeta } from '@/utils/statusLabels'
 
 const route = useRoute()
 const toast = useToast()
-const { mirrorMeetingFile } = useLocalWorkspace()
 
 const meetingId = computed(() => String(route.query.meetingId ?? ''))
 const lastMinutes = ref<Minutes | null>(null)
@@ -211,12 +209,6 @@ async function generateMinutesReply(text: string, signal: AbortSignal): Promise<
     signal,
   )
   lastMinutes.value = minutes
-  void mirrorMeetingFile({
-    meetingId: meetingId.value,
-    kind: 'minutes',
-    fileName: `会议纪要_v${minutes.version}.md`,
-    content: minutes.content,
-  })
   return {
     content: minutes.content,
     note: `已生成${templateLabel(minutes.template)}草稿 v${minutes.version}，可在「会议详情 → 纪要」中编辑与确认。`,
