@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.ai.extraction import ActionItemCandidate
 from app.core.config import get_settings
-from app.services import action_item_service, material_service, meeting_service
+from app.services import action_item_service, audio_service, material_service, meeting_service
 
 REGISTER = "/api/v1/auth/register"
 MEETINGS = "/api/v1/meetings"
@@ -20,6 +20,7 @@ def media_root(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(material_service, "get_settings", fake_settings)
     monkeypatch.setattr(meeting_service, "get_settings", fake_settings)
+    monkeypatch.setattr(audio_service, "get_settings", fake_settings)
     return tmp_path
 
 
@@ -88,6 +89,50 @@ def test_delete_meeting_cascades_children(
         == 404
     )
     assert not material_path.exists()
+
+
+def test_delete_meeting_cascades_audio_files(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        audio_service,
+        "transcribe_file",
+        lambda content, file_name: f"分段{file_name}",
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    meeting_id = meeting["meeting_id"]
+
+    # 实时会话：两片转写，finish 合并主文件
+    started = client.post(
+        f"/api/v1/meetings/{meeting_id}/audio/live/start",
+        json={"file_type": "webm"},
+        headers=headers,
+    )
+    assert started.status_code == 201
+    audio_id = started.json()["data"]["audio_id"]
+    for seq in (1, 2):
+        chunk = client.post(
+            f"/api/v1/audio/{audio_id}/live/chunk",
+            files={"file": (f"chunk-{seq:04d}.webm", b"fake-audio", "audio/webm")},
+            data={"seq": str(seq), "offset_seconds": str((seq - 1) * 30)},
+            headers=headers,
+        )
+        assert chunk.status_code == 200
+    finished = client.post(f"/api/v1/audio/{audio_id}/live/finish", headers=headers)
+    assert finished.status_code == 200
+    merged_path = media_root / "audio" / f"{audio_id}.webm"
+    assert merged_path.exists()
+
+    response = client.delete(f"{MEETINGS}/{meeting_id}", headers=headers)
+    assert response.status_code == 200
+
+    assert (
+        client.get(f"/api/v1/audio/{audio_id}", headers=headers).status_code == 404
+    )
+    assert not merged_path.exists()
+    chunks_dir = media_root / "audio" / audio_id
+    assert not chunks_dir.exists() or not any(chunks_dir.iterdir())
 
 
 def test_delete_meeting_blocked_by_converted_action(

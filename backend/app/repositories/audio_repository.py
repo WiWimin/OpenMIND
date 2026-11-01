@@ -15,6 +15,7 @@ def create(
     file_name: str,
     audio_type: str,
     storage_key: str,
+    status: str = "uploaded",
 ) -> MeetingAudio:
     audio = MeetingAudio(
         audio_id=audio_id,
@@ -23,6 +24,7 @@ def create(
         file_name=file_name,
         type=audio_type,
         storage_key=storage_key,
+        status=status,
     )
     db.add(audio)
     db.commit()
@@ -59,6 +61,18 @@ def count_by_meeting(db: Session, meeting_id: str) -> int:
         .where(MeetingAudio.meeting_id == meeting_id)
     )
     return int(db.execute(statement).scalar_one())
+
+
+def list_all_by_meeting(db: Session, meeting_id: str) -> list[MeetingAudio]:
+    statement = select(MeetingAudio).where(MeetingAudio.meeting_id == meeting_id)
+    return list(db.execute(statement).scalars().all())
+
+
+def delete_by_meeting(db: Session, meeting_id: str) -> None:
+    statement = select(MeetingAudio).where(MeetingAudio.meeting_id == meeting_id)
+    for audio in db.execute(statement).scalars().all():
+        db.delete(audio)
+    db.commit()
 
 
 def update(db: Session, audio: MeetingAudio) -> MeetingAudio:

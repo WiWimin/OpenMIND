@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession
-from app.schemas.audio import AudioDeleteResult, AudioRead, AudioUpdate
+from app.schemas.audio import (
+    AudioDeleteResult,
+    AudioLiveStart,
+    AudioRead,
+    AudioSegmentMarkerUpdate,
+    AudioUpdate,
+)
 from app.schemas.common import Envelope, ListData
 from app.services import audio_service
 from app.utils.pagination import build_pagination
@@ -66,6 +72,87 @@ def get_audio(
 ) -> Envelope[AudioRead]:
     audio = audio_service.get_owned_audio(
         db, audio_id, current_user.user_id
+    )
+    return Envelope(data=AudioRead.model_validate(audio))
+
+
+# ============================ 实时录音：分片边录边转 ============================
+
+
+@router.post(
+    "/meetings/{meeting_id}/audio/live/start",
+    status_code=status.HTTP_201_CREATED,
+    response_model=Envelope[AudioRead],
+)
+def start_live_audio(
+    meeting_id: str,
+    payload: AudioLiveStart,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> Envelope[AudioRead]:
+    audio = audio_service.start_live_session(
+        db,
+        meeting_id=meeting_id,
+        user_id=current_user.user_id,
+        file_type=payload.file_type,
+    )
+    return Envelope(data=AudioRead.model_validate(audio))
+
+
+@router.post("/audio/{audio_id}/live/chunk", response_model=Envelope[AudioRead])
+async def upload_live_chunk(
+    audio_id: str,
+    db: DbSession,
+    current_user: CurrentUser,
+    file: Annotated[UploadFile, File()],
+    seq: Annotated[int, Form(ge=1)],
+    offset_seconds: Annotated[int, Form(ge=0)] = 0,
+) -> Envelope[AudioRead]:
+    content = await file.read()
+    audio, _segment = audio_service.append_live_chunk(
+        db,
+        audio_id,
+        current_user.user_id,
+        seq=seq,
+        offset_seconds=offset_seconds,
+        content=content,
+    )
+    return Envelope(data=AudioRead.model_validate(audio))
+
+
+@router.post("/audio/{audio_id}/live/finish", response_model=Envelope[AudioRead])
+def finish_live_audio(
+    audio_id: str, db: DbSession, current_user: CurrentUser
+) -> Envelope[AudioRead]:
+    audio = audio_service.finish_live_session(
+        db, audio_id, current_user.user_id
+    )
+    return Envelope(data=AudioRead.model_validate(audio))
+
+
+@router.post("/audio/{audio_id}/segments/{seq}/retry", response_model=Envelope[AudioRead])
+def retry_audio_segment(
+    audio_id: str, seq: int, db: DbSession, current_user: CurrentUser
+) -> Envelope[AudioRead]:
+    audio = audio_service.retry_live_segment(
+        db, audio_id, current_user.user_id, seq
+    )
+    return Envelope(data=AudioRead.model_validate(audio))
+
+
+@router.patch("/audio/{audio_id}/segments/marker", response_model=Envelope[AudioRead])
+def mark_audio_segment(
+    audio_id: str,
+    payload: AudioSegmentMarkerUpdate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> Envelope[AudioRead]:
+    audio = audio_service.set_segment_marker(
+        db,
+        audio_id,
+        current_user.user_id,
+        seq=payload.seq,
+        marker_type=payload.marker_type,
     )
     return Envelope(data=AudioRead.model_validate(audio))
 
