@@ -183,7 +183,9 @@ describe('RecordSection', () => {
   it('organizes the selected records and shows an editable result', async () => {
     vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
     vi.mocked(chatApi.organizeRecords).mockResolvedValue({
+      task: 'organize',
       organized_content: '主要议题：进度对齐；待确认：上线时间。',
+      structured: null,
       source_record_ids: ['rec_1'],
     })
     const wrapper = mountSection()
@@ -203,7 +205,9 @@ describe('RecordSection', () => {
   it('saves the edited organize result as a new record', async () => {
     vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([record]))
     vi.mocked(chatApi.organizeRecords).mockResolvedValue({
+      task: 'organize',
       organized_content: '整理稿',
+      structured: null,
       source_record_ids: ['rec_1'],
     })
     vi.mocked(recordsApi.createRecord).mockResolvedValue({ ...record, record_id: 'rec_2' })

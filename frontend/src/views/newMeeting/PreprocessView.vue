@@ -69,16 +69,20 @@
           :disabled="!meetingId"
           placeholder="输入补充要求或调整议程…"
         >
+          <!-- 输入框内：模式 / 模型 / 模板选择 -->
           <template #composer-extra>
-            <TemplatePickerPopover
-              :disabled="!meetingId"
-              :selected="selectedTemplateId"
-              @select="onSelectTemplate"
-            />
+            <ModePicker v-model="chatMode" :disabled="!meetingId" />
             <ModelPickerPopover
               :disabled="!meetingId"
               :selected="selectedModel"
               @select="onSelectModel"
+              @manage="openPanel('model')"
+            />
+            <TemplatePickerPopover
+              :disabled="!meetingId"
+              :selected="selectedTemplateId"
+              :meeting-id="meetingId"
+              return-to="preprocess"
             />
           </template>
 
@@ -89,7 +93,7 @@
               type="button"
               class="preprocess-bubble"
               :disabled="!meetingId"
-              @click="applyPrompt(bubble.prompt)"
+              @click="applyBubble(bubble)"
             >
               <span class="preprocess-bubble__icon" aria-hidden="true" v-html="bubble.icon" />
               {{ bubble.label }}
@@ -113,20 +117,23 @@ import AppButton from '@/components/AppButton.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import MaterialSection from '@/components/MaterialSection.vue'
 import MaterialUploader from '@/components/MaterialUploader.vue'
+import ModePicker from '@/components/ModePicker.vue'
 import ModelPickerPopover from '@/components/ModelPickerPopover.vue'
 import StageShell from '@/components/StageShell.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
+import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
 import type { AgentReply } from '@/types/agent'
-import type { ChatSource } from '@/types/chat'
+import type { ChatMode, ChatSource } from '@/types/chat'
 import type { MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
 import { resolveErrorMessage } from '@/utils/errors'
 
 const route = useRoute()
 const toast = useToast()
+const { openPanel } = useSettingsPanels()
 const { mirrorMeetingFile } = useLocalWorkspace()
 
 const meetingId = computed(() => String(route.query.meetingId ?? ''))
@@ -137,6 +144,13 @@ const actionError = ref<unknown>(null)
 const chatRef = ref<InstanceType<typeof AgentChat> | null>(null)
 const selectedModel = ref('')
 const selectedTemplateId = ref('')
+
+// 支持「模板管理页 → 使用」跳转时通过路由参数预选模板
+const routeTemplateId = String(route.query.templateId ?? '')
+if (routeTemplateId) {
+  selectedTemplateId.value = routeTemplateId
+}
+const chatMode = ref<ChatMode>('build')
 
 const uploading = ref(false)
 const uploadError = ref<unknown>(null)
@@ -189,7 +203,7 @@ const quickBubbles: QuickBubble[] = [
   },
   {
     label: '准备清单',
-    prompt: '请梳理会前需要准备的材料、需要确认的信息和参会人需要提前了解的内容。',
+    prompt: '请生成会前准备清单：梳理需要准备的材料、需要确认的信息和参会人需要提前了解的内容。',
     icon: ICON_CHECKLIST,
   },
 ]
@@ -223,18 +237,14 @@ function excerpt(text: string, limit = 220): string {
   return normalized.length > limit ? `${normalized.slice(0, limit)}…` : normalized
 }
 
-function applyPrompt(prompt: string): void {
-  chatRef.value?.setDraft(prompt)
+function applyBubble(bubble: QuickBubble): void {
+  // 挂载快捷功能标记：发送时自动组合设计好的完整提示词与用户补充
+  chatRef.value?.setPendingQuickAction({ label: bubble.label, prompt: bubble.prompt })
 }
 
 function onSelectModel(model: string): void {
   selectedModel.value = model
   toast.success(model ? `已选择模型：${model}` : '已恢复默认模型路由')
-}
-
-function onSelectTemplate(templateId: string): void {
-  selectedTemplateId.value = templateId
-  toast.success(templateId ? '已选择输出模板，生成准备稿时将套用' : '已恢复默认模板结构')
 }
 
 async function upload(payload: MaterialUploadPayload): Promise<void> {

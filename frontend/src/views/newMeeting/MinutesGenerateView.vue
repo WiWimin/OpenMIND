@@ -9,12 +9,12 @@
         <AgentChat
           ref="chatRef"
           class="minutes-page__chat"
-          agent-name="会后智能助手"
-          welcome-title="你好，我是会后智能处理助手"
-          :greeting="greeting"
+          agent-name="AI智能处理"
+          welcome-title="AI智能处理"
           :on-send="handleSend"
+          :on-task="handleAgentTask"
           :disabled="!meeting.meeting_id"
-          placeholder="生成纪要、拆解待办，或检索会议内容…"
+          placeholder="生成纪要、整理记录、拆解待办，或检索会议内容…"
         >
           <!-- 高频任务卡片（欢迎区内） -->
           <template #welcome-extra>
@@ -25,7 +25,7 @@
                 type="button"
                 class="task-card"
                 :disabled="!meeting.meeting_id"
-                @click="runTask(task.prompt)"
+                @click="runTask(task)"
               >
                 <span
                   class="task-card__icon"
@@ -41,17 +41,20 @@
             </div>
           </template>
 
-          <!-- 输入框内：模板 / 模型快捷选择 -->
+          <!-- 输入框内：模式 / 模型 / 模板选择 -->
           <template #composer-extra>
-            <TemplatePickerPopover
-              :disabled="!meeting.meeting_id"
-              :selected="selectedTemplateId"
-              @select="onSelectTemplate"
-            />
+            <ModePicker v-model="chatMode" :disabled="!meeting.meeting_id" />
             <ModelPickerPopover
               :disabled="!meeting.meeting_id"
               :selected="selectedModel"
               @select="onSelectModel"
+              @manage="openPanel('model')"
+            />
+            <TemplatePickerPopover
+              :disabled="!meeting.meeting_id"
+              :selected="selectedTemplateId"
+              :meeting-id="meeting.meeting_id"
+              return-to="minutes"
             />
           </template>
         </AgentChat>
@@ -68,19 +71,22 @@ import * as actionItemsApi from '@/api/actionItems'
 import * as chatApi from '@/api/chat'
 import * as minutesApi from '@/api/minutes'
 import AgentChat from '@/components/AgentChat.vue'
+import ModePicker from '@/components/ModePicker.vue'
 import ModelPickerPopover from '@/components/ModelPickerPopover.vue'
 import StageShell from '@/components/StageShell.vue'
 import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
+import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
 import type { AgentReply } from '@/types/agent'
 import type { ActionItem } from '@/types/actionItem'
-import type { ChatSource } from '@/types/chat'
+import type { ChatMode, ChatSource, OrganizeTask } from '@/types/chat'
 import type { Minutes, MinutesTemplate } from '@/types/minutes'
 import { resolveErrorMessage } from '@/utils/errors'
 import { minutesTemplateMeta } from '@/utils/statusLabels'
 
 const route = useRoute()
 const toast = useToast()
+const { openPanel } = useSettingsPanels()
 
 const meetingId = computed(() => String(route.query.meetingId ?? ''))
 const lastMinutes = ref<Minutes | null>(null)
@@ -88,13 +94,18 @@ const chatRef = ref<InstanceType<typeof AgentChat> | null>(null)
 const selectedModel = ref('')
 const selectedTemplateId = ref('')
 
-const greeting =
-  '我会读取会前准备、转写文稿、用户标记和会议资料，帮你生成纪要、整理议程、拆解待办或检索内容。点击下方高频任务卡片快速开始，也可以在输入框左侧选择输出模板与对话模型。'
+// 支持「模板管理页 → 使用」跳转时通过路由参数预选模板
+const routeTemplateId = String(route.query.templateId ?? '')
+if (routeTemplateId) {
+  selectedTemplateId.value = routeTemplateId
+}
+
+const chatMode = ref<ChatMode>('build')
 
 const ICON_MINUTES =
   '<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><rect x="4.5" y="3.5" width="15" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
-const ICON_AGENDA =
-  '<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><rect x="4.5" y="4.5" width="15" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M4.5 9.5h15M8.5 3v3.5M15.5 3v3.5M8.5 13h2M13.5 13h2M8.5 16.5h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
+const ICON_RECORDS =
+  '<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><path d="M5 4.5h11.5L19.5 8v11.5h-15V4.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 9.5h7M8.5 13h7M8.5 16.5h4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
 const ICON_TASKS =
   '<svg viewBox="0 0 24 24" width="20" height="20" fill="none"><path d="m4.5 7 1.8 1.8L9.5 5.6M4.5 16.5l1.8 1.8 3.2-3.2M12.5 8h7M12.5 17h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 const ICON_SEARCH =
@@ -105,6 +116,8 @@ interface TaskCard {
   title: string
   desc: string
   prompt: string
+  /** 走后端 organize 链的快捷任务（如整理记录）；缺省时按 prompt 走对话意图路由 */
+  task?: string
   tone: 'primary' | 'accent' | 'warning' | 'violet'
   icon: string
 }
@@ -113,24 +126,24 @@ const taskCards: TaskCard[] = [
   {
     key: 'minutes',
     title: '会议纪要',
-    desc: '生成结构化的正式会议纪要',
+    desc: '生成结构化纪要草稿，可在会议详情编辑确认',
     prompt: '请生成会议纪要，并拆解待办任务。',
     tone: 'primary',
     icon: ICON_MINUTES,
   },
   {
-    key: 'agenda',
-    title: '会议议程',
-    desc: '整理本次会议的议程与要点',
-    prompt:
-      '请基于会议记录整理本次会议的议程，按议题列出讨论要点与结论，并标注未讨论完的事项。',
+    key: 'records',
+    title: '会议记录',
+    desc: '整理最近的会议记录：去口语冗余、逻辑清晰（仅展示，不覆盖原文）',
+    task: 'organize',
+    prompt: '请整理本次会议的会议记录，去除口语冗余，使逻辑清晰。',
     tone: 'accent',
-    icon: ICON_AGENDA,
+    icon: ICON_RECORDS,
   },
   {
     key: 'tasks',
     title: '待办任务',
-    desc: '提取行动项、责任人与截止时间',
+    desc: '提取行动项草稿，可确认转为个人任务',
     prompt: '请从会议记录中提取待办任务与行动项，标注责任人和截止时间。',
     tone: 'warning',
     icon: ICON_TASKS,
@@ -138,7 +151,7 @@ const taskCards: TaskCard[] = [
   {
     key: 'search',
     title: '会议检索',
-    desc: '检索会议内容，回答附带来源',
+    desc: '检索会议资料与记录，回答附来源',
     prompt: '请检索本次会议的记录与资料，总结其中的关键信息，并给出对应来源。',
     tone: 'violet',
     icon: ICON_SEARCH,
@@ -147,6 +160,7 @@ const taskCards: TaskCard[] = [
 
 const minutesIntent = /纪要/
 const actionsIntent = /待办|行动项/
+const organizeIntent = /整理/
 const searchIntent = /检索|搜索|来源|出处|引用/
 
 function templateLabel(value: MinutesTemplate): string {
@@ -171,13 +185,9 @@ function onSelectModel(model: string): void {
   toast.success(model ? `已选择模型：${model}` : '已恢复默认模型路由')
 }
 
-function onSelectTemplate(templateId: string): void {
-  selectedTemplateId.value = templateId
-  toast.success(templateId ? '已选择输出模板，生成纪要时将套用' : '已恢复默认纪要结构')
-}
-
-function runTask(prompt: string): void {
-  void chatRef.value?.sendPrompt(prompt)
+function runTask(card: TaskCard): void {
+  // 统一挂载快捷功能标记：发送时任务卡走专用链、其余卡走意图路由
+  chatRef.value?.setPendingQuickAction({ label: card.title, task: card.task, prompt: card.prompt })
 }
 
 function sourceLabel(source: ChatSource): string {
@@ -263,6 +273,56 @@ async function askReply(
   }
 }
 
+async function organizeReply(signal: AbortSignal): Promise<AgentReply> {
+  const result = await chatApi.organizeRecords(
+    meetingId.value,
+    { task: 'organize', model: selectedModel.value || undefined },
+    signal,
+  )
+  return {
+    content: result.organized_content,
+    note: '整理稿仅作展示，不会覆盖原始记录。',
+  }
+}
+
+async function handleAgentTask(
+  task: string,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<AgentReply> {
+  if (!meetingId.value) {
+    throw new Error('请先选择一场会议。')
+  }
+  try {
+    const result = await chatApi.organizeRecords(
+      meetingId.value,
+      {
+        task: task as OrganizeTask,
+        model: selectedModel.value || undefined,
+        ...(prompt.trim() ? { instruction: prompt.trim().slice(0, 2000) } : {}),
+      },
+      signal,
+    )
+    if (result.task === 'summary' && result.structured && !Array.isArray(result.structured)) {
+      return { content: '', kind: 'summary', structured: result.structured }
+    }
+    if (result.task === 'polish' && Array.isArray(result.structured)) {
+      return {
+        content: '',
+        kind: 'polish',
+        structured: result.structured,
+        note: '请逐条确认修改建议（当前页面仅支持只读预览）。',
+      }
+    }
+    return { content: result.organized_content, note: '整理稿仅作展示，不会覆盖原始记录。' }
+  } catch (caught) {
+    if (signal.aborted) {
+      throw new Error('已取消本次请求。')
+    }
+    throw new Error(resolveErrorMessage(caught, '处理失败，请稍后重试。'))
+  }
+}
+
 async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply> {
   if (!meetingId.value) {
     throw new Error('请先选择一场会议。')
@@ -273,6 +333,9 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
     }
     if (actionsIntent.test(text)) {
       return await extractActionsReply()
+    }
+    if (organizeIntent.test(text)) {
+      return await organizeReply(signal)
     }
     return await askReply(text, signal, searchIntent.test(text))
   } catch (caught) {

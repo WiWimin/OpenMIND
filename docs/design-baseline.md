@@ -63,13 +63,14 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-17 | 会议列表筛选 | MVP 支持 `page`/`page_size`/`status`；`keyword`/`start_time`/`end_time` 为后续增强 | `api.md 三.1` |
 | D-18 | 错误详情 | 可选 `details` 用于字段校验错误与 `FILE_PARSE_FAILED.reason` | `api.md 一.2/1.3` |
 | D-19 | 登录落点与外壳 | 认证后默认落点 `/meetings`；全局外壳（顶栏/导航）归 M02；根路径按登录态重定向到登录页或 `/meetings` | `module-development-spec.md M02`、`frontend/src/router` |
-| D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 LLM/Embedding 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.10` |
+| D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 **LLM** 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 收归服务端统一配置（见 D-27），维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.11` |
 | D-21 | 模型配置安全 | 非开发环境拒绝弱 `SECRET_KEY`；轮换使用 `SECRET_KEY_PREVIOUS`；`api_base` 默认仅允许 HTTPS 公网地址；全局密钥不返回脱敏片段 | `api.md 二.5`、`ai-design.md 三.5`、`docker/.env.example` |
 | D-22 | BYOK 默认不回退全局 | `ALLOW_GLOBAL_FALLBACK=false` 为默认值；未配置用户返回 `MODEL_CONFIG_REQUIRED`，避免团队承担用户 Token 费用 | `api.md 二.5`、`ai-design.md 三.5`、`config.py` |
 | D-23 | 记录检索先受限 | 当前阶段只把当前会议最近记录作为问答受限上下文；完整历史记录检索需独立 schema/检索设计，不宣称已实现 | `api.md 五.7`、`ai-design.md 五/八.2` |
-| D-24 | 请求级模型覆盖 | 会议问答与准备稿接受可选 `model`，仅允许选择已登记模型（基础 `llm_model` + 各用途模型），越权选择返回 `MODEL_NOT_ALLOWED`(422)；API 地址与密钥仍沿用配置 | `api.md 5.2/5.7`、`ai-design.md 三.5` |
+| D-24 | 请求级模型覆盖 | 会议问答与准备稿接受可选 `model`，取值来自服务商预设的常用模型清单；后端不再校验登记列表（`MODEL_NOT_ALLOWED` 已移除），模型有效性由服务商 API 判定；API 地址与密钥仍沿用配置 | `api.md 5.2/5.7`、`ai-design.md 三.5` |
 | D-25 | 会议模板 | 内置模板为代码常量（不入库）；自定义模板 `meeting_templates` 按用户隔离（`tpl_` 前缀）；`prepare`/`minutes/generate` 可选 `template_id` 注入结构文本，套用后纪要 `template=custom` | `api.md 5.16a`、`database.md 三.16`、`ai-design.md 八.1/8.4` |
 | D-26 | 新建会议阶段命名 | 三阶段显示名固定为「资料预处理 / 实时录音转写 / 会后智能处理」，仅改显示文案，路由与页面职责不变 | `frontend/src/components/StageShell.vue` |
+| D-27 | Embedding 收归服务端 + LLM probe 放行限流 | 向量模型不支持用户自备，始终使用 `docker/.env` 的 `EMBEDDING_*`；`user_model_configs` 删除 embedding 四字段（迁移 `0020`）；`ALLOW_GLOBAL_FALLBACK` 仅作用于 LLM；保存 probe 改为单次连通性校验（HTTP 200 且 `choices` 非空即通过，兼容思考型模型），遇 429 视为密钥有效放行保存并返回 `llm_probe_verified: false` | `api.md 二.5`、`ai-design.md 三.5/四.1`、`database.md 三.11`、`docker/.env.example` |
 
 ## 四、待确认事项
 
@@ -108,3 +109,10 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 资料预处理页改版 | 侧边栏全局可折叠（默认展开、本地记忆）；页头合并为单卡片（标题+会议选择+三步流程，D-26）；资料上传升级拖拽；对话输入框新增模型/模板选择图标与气泡快捷按钮、下方示例区 |
 | 2026-10 | 请求级模型覆盖 | 新增 D-24：`chat`/`prepare` 可选 `model`；新增 `MODEL_NOT_ALLOWED`(422) 错误码 |
 | 2026-10 | 会议模板管理 | 新增 D-25：`meeting_templates` 表（迁移 `0019`）+ `api.md 5.16a` 模板 CRUD + 会议管理「模板管理」页 + 预处理页模板选择器；纪要模板枚举新增 `custom` |
+| 2026-10 | 向量模型收归服务端 + 保存 probe 修复 | 新增 D-27：Embedding 不再支持用户自备（迁移 `0020` 删除用户表 embedding 字段）；LLM probe 改为单次连通性校验，429 限流放行保存（`llm_probe_verified=false`）；模型配置弹窗新增模型下拉框 |
+| 2026-10 | 模型选择简化 | 配置弹窗移除模型下拉框（自动采用预设第一个模型）；会话模型选择器从输入框内图标改为输入框下方选择框（显示当前模型、上拉选项，选项来自服务商预设清单）；修订 D-24：取消已登记模型校验，移除 `MODEL_NOT_ALLOWED`(422) |
+| 2026-10 | 模型选择窗口化 | 选择器移回输入框内与图标对齐；选项面板升级为窗口：顶部搜索框 + 「添加模型配置」图标（跳转模型配置弹窗），列表 = 项目预设 + 服务商 `GET /models` 实时清单（新增 `GET /me/settings/model/provider-models`，失败回退预设）；配置弹窗移除大模型状态框 |
+| 2026-10 | 模型清单收敛 + 对话模式选择 | 模型选择窗口仅保留服务商 `GET /models` 实时清单（移除「默认」项与「项目预设」组）；输入框新增 Plan/Build 对话模式选择框（`ModePicker`，会话级 UI 状态，位于模型选择框左侧） |
+| 2026-10 | 选择体验打磨 | 模型选择框默认选中「全部模型」第一个并同步请求参数；模式选项文案精简（去「模式」后缀与小字描述，后续新组件亦不加小字描述）；会议管理页本地文件夹按钮按状态切换文案、移除状态条与连接成功 toast；知识库窗口重构：工具栏（上传直达文件选择 + 关键词输入即查、去抖 400ms）+ 检索结果 + 常驻文件列表 |
+| 2026-10 | 模板管理页重构 | 页面改为卡片网格（缩略图/标签/预览/使用/另存为/设为默认）+ 搜索与全部/内置/我的筛选；内置模板重组为 6 个（会前摘要/会议议程/发言稿/会议纪要/会议记录/会议简报，含 `category`）；新增 `POST /meeting-templates/text`（文本创建，支撑新建与另存为）与 `POST /meeting-templates/generate`（AI 生成草稿，候选不入库）；迁移 `0021`：模板加 `category`、`file_name`/`storage_key` 放宽、记忆默认模板放宽为 64 字符支持模板 id；`preferred_minutes_template` 支持模板 id，纪要生成自动注入；「使用」跳预处理页 `?templateId=` 预选；模板选择器按分类分组 |
+| 2026-10 | 模板选择跳转化 | AI 输入框工具栏顺序调整为 模式→模型→模板；模板图标改为导航入口（点击跳模板管理页并携带 `returnTo`/`meetingId`），不再弹出模板列表；管理页「使用」按来源原路返回并经 `?templateId=` 预选；纪要生成页支持 query 预选；默认结构取消选项随列表移除，换模板通过点其他卡片「使用」 |

@@ -1,6 +1,10 @@
+import type { OrganizeStructured } from './chat'
+
 export interface AgentQuickAction {
   label: string
   prompt: string
+  /** 快捷任务：走 onTask 专用实现链（后端 prompt 模块），而非普通对话 */
+  task?: string
 }
 
 export interface AgentSource {
@@ -12,9 +16,19 @@ export interface AgentReply {
   content: string
   sources?: AgentSource[]
   note?: string
+  /** 结构化回复：summary（要点卡片）/ polish（口误修改建议） */
+  kind?: 'summary' | 'polish'
+  structured?: OrganizeStructured
 }
 
 export type AgentSendHandler = (text: string, signal: AbortSignal) => Promise<AgentReply | string>
+
+/** 快捷任务处理器：task 对应后端 organize 链的任务类型 */
+export type AgentTaskHandler = (
+  task: string,
+  prompt: string,
+  signal: AbortSignal,
+) => Promise<AgentReply | string>
 
 export interface AgentChatMessage {
   id: number
@@ -27,4 +41,7 @@ export interface AgentChatMessage {
   note?: string
   error?: boolean
   regenerateText?: string
+  task?: string
+  kind?: 'summary' | 'polish'
+  structured?: OrganizeStructured
 }

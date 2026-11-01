@@ -20,11 +20,12 @@ export async function askMeeting(
 export async function organizeRecords(
   meetingId: string,
   payload: OrganizePayload,
+  signal?: AbortSignal,
 ): Promise<OrganizeResult> {
   const { data } = await http.post<ApiSuccess<OrganizeResult> | OrganizeResult>(
     `/meetings/${meetingId}/organize`,
     payload,
-    { timeout: LONG_REQUEST_TIMEOUT_MS },
+    { timeout: LONG_REQUEST_TIMEOUT_MS, ...(signal ? { signal } : {}) },
   )
   return unwrapData(data)
 }

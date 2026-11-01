@@ -49,7 +49,7 @@
           type="button"
           class="agent-starter"
           :disabled="disabled"
-          @click="sendPrompt(action.prompt)"
+          @click="runStarter(action)"
         >
           <span class="agent-starter__head">
             <span class="agent-starter__label">{{ action.label }}</span>
@@ -102,7 +102,7 @@
                   {{ copiedId === message.id ? '已复制' : '复制' }}
                 </button>
                 <button
-                  v-if="message.regenerateText"
+                  v-if="message.regenerateText !== undefined && message.regenerateText !== null"
                   type="button"
                   class="agent-message__action"
                   :disabled="isBusy"
@@ -115,13 +115,26 @@
             </header>
 
             <div
-              v-if="!message.content && message.streaming"
+              v-if="message.streaming && !message.content"
               class="agent-typing"
               aria-label="Agent 正在思考"
             >
               <span />
               <span />
               <span />
+            </div>
+            <div v-else-if="message.structured" class="agent-message__structured">
+              <slot name="structured" :message="message">
+                <SummaryCard
+                  v-if="message.kind === 'summary' && isSummaryStructured(message.structured)"
+                  :data="message.structured"
+                />
+                <PolishDiffPanel
+                  v-else-if="message.kind === 'polish' && isPolishSuggestions(message.structured)"
+                  :suggestions="message.structured"
+                  readonly
+                />
+              </slot>
             </div>
             <MarkdownView v-else class="agent-message__content" :content="message.content" />
 
@@ -168,18 +181,46 @@
       </div>
 
       <div class="agent-composer">
-        <textarea
-          :id="inputId"
-          ref="textareaEl"
-          v-model="draft"
-          class="agent-composer__input"
-          rows="1"
-          :placeholder="disabled ? '当前会议不可用' : placeholder"
-          :disabled="disabled"
-          :aria-label="`向 ${agentName} 发送消息`"
-          @keydown="onKeydown"
-          @input="adjustTextarea"
+        <img
+          v-if="showMascot"
+          :src="assistantParrotUrl"
+          class="agent-composer__mascot"
+          alt=""
+          aria-hidden="true"
+          draggable="false"
         />
+        <div class="agent-composer__field">
+          <span v-if="pendingAction" ref="taskChipEl" class="agent-task-chip">
+            <span class="agent-task-chip__tag">#{{ pendingAction.label }}</span>
+            <button
+              type="button"
+              class="agent-task-chip__remove"
+              aria-label="取消快捷任务"
+              @click="pendingAction = null"
+            >
+              ×
+            </button>
+          </span>
+          <textarea
+            :id="inputId"
+            ref="textareaEl"
+            v-model="draft"
+            class="agent-composer__input"
+            rows="1"
+            :placeholder="
+              disabled
+                ? '当前会议不可用'
+                : pendingAction
+                  ? '可补充要求后发送，或直接发送…'
+                  : placeholder
+            "
+            :disabled="disabled"
+            :style="chipIndentStyle"
+            :aria-label="`向 ${agentName} 发送消息`"
+            @keydown="onKeydown"
+            @input="adjustTextarea"
+          />
+        </div>
 
         <div class="agent-composer__bar">
           <div v-if="$slots['composer-extra']" class="agent-composer__tools">
@@ -211,7 +252,7 @@
               class="agent-composer__send"
               title="发送（Enter）"
               aria-label="发送消息"
-              :disabled="disabled || !draft.trim()"
+              :disabled="disabled || (!draft.trim() && !pendingAction)"
             >
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true">
                 <path
@@ -234,14 +275,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import assistantParrotUrl from '@/assets/ip/assistant-parrot.png'
 import MarkdownView from '@/components/MarkdownView.vue'
+import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
+import SummaryCard from '@/components/SummaryCard.vue'
+import type { PolishSuggestion, SummaryStructured } from '@/types/chat'
 import type {
   AgentChatMessage,
   AgentQuickAction,
   AgentReply,
   AgentSendHandler,
+  AgentTaskHandler,
 } from '@/types/agent'
 
 const props = withDefaults(
@@ -252,6 +298,8 @@ const props = withDefaults(
     greeting?: string
     quickActions?: AgentQuickAction[]
     onSend: AgentSendHandler
+    /** 快捷任务处理器：quickAction 带 task 时调用，走后端专用实现链 */
+    onTask?: AgentTaskHandler
     placeholder?: string
     disabled?: boolean
     compact?: boolean
@@ -265,6 +313,7 @@ const props = withDefaults(
     welcomeTitle: '',
     greeting: '',
     quickActions: () => [],
+    onTask: undefined,
     placeholder: '描述目标，或选中内容后提问…',
     disabled: false,
     compact: false,
@@ -284,6 +333,25 @@ const copiedId = ref<number | null>(null)
 const listEl = ref<HTMLElement | null>(null)
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
 const stickToBottom = ref(true)
+/** 待发送的快捷功能标记：点击快捷卡后挂到输入框，随用户输入一起发送 */
+const pendingAction = ref<{ label: string; task?: string; prompt: string } | null>(null)
+
+/* ---------- 输入框装饰：鹦鹉 IP 与快捷任务标记 ---------- */
+
+// 未输入且对话未开始时显示；发送后隐藏，清空对话后恢复
+const showMascot = computed(() => messages.value.length === 0 && !draft.value.trim())
+
+const taskChipEl = ref<HTMLElement | null>(null)
+const chipIndent = ref(0)
+const chipIndentStyle = computed(() =>
+  pendingAction.value ? { textIndent: `${chipIndent.value}px` } : undefined,
+)
+
+watch(pendingAction, async () => {
+  await nextTick()
+  // 首行文字按芯片实测宽度让位
+  chipIndent.value = taskChipEl.value ? taskChipEl.value.offsetWidth + 6 : 0
+})
 
 let messageId = 0
 let typingTarget: { message: AgentChatMessage; full: string } | null = null
@@ -294,6 +362,15 @@ let cancelled = false
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 const isBusy = computed(() => pending.value || messages.value.some((message) => message.streaming))
+
+// 组织化回复的类型守卫：kind 与 structured 独立存储，需要显式收窄
+function isSummaryStructured(data: AgentChatMessage['structured']): data is SummaryStructured {
+  return data !== undefined && !Array.isArray(data)
+}
+
+function isPolishSuggestions(data: AgentChatMessage['structured']): data is PolishSuggestion[] {
+  return Array.isArray(data)
+}
 const displayWelcomeTitle = computed(
   () => props.welcomeTitle || `使用${props.agentName}处理这场会议`,
 )
@@ -340,6 +417,10 @@ function adjustTextarea(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && pendingAction.value) {
+    pendingAction.value = null
+    return
+  }
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
     return
   }
@@ -463,9 +544,11 @@ async function runTurn(
   text: string,
   context: string | undefined,
   pushUser: boolean,
+  options?: { task?: string; displayText?: string },
 ): Promise<void> {
   const value = text.trim()
-  if (!value || props.disabled || isBusy.value) {
+  // 快捷任务允许空输入（仅按设计好的提示词执行）
+  if ((!value && !options?.task) || props.disabled || isBusy.value) {
     return
   }
 
@@ -476,7 +559,7 @@ async function runTurn(
     messages.value.push({
       id: nextMessageId(),
       role: 'user',
-      content: value,
+      content: options?.displayText ?? value,
       context: context || undefined,
       streaming: false,
       createdAt: Date.now(),
@@ -491,6 +574,7 @@ async function runTurn(
     content: '',
     streaming: true,
     regenerateText: value,
+    task: options?.task,
     createdAt: Date.now(),
   })
   const assistant = messages.value[messages.value.length - 1] as AgentChatMessage
@@ -503,7 +587,9 @@ async function runTurn(
   activeController = controller
 
   try {
-    const reply: AgentReply | string = await props.onSend(composed, controller.signal)
+    const reply: AgentReply | string = await (options?.task && props.onTask
+      ? props.onTask(options.task, value, controller.signal)
+      : props.onSend(composed, controller.signal))
     const normalized: AgentReply = typeof reply === 'string' ? { content: reply } : reply
     pending.value = false
     if (cancelled) {
@@ -511,7 +597,16 @@ async function runTurn(
       assistant.content = '已停止生成。'
       return
     }
-    await typeReply(assistant, normalized.content)
+    if (normalized.structured) {
+      // 结构化回复不做逐字动画，直接渲染卡片
+      assistant.kind = normalized.kind
+      assistant.structured = normalized.structured
+      assistant.content = normalized.content
+      assistant.streaming = false
+      scrollToBottom()
+    } else {
+      await typeReply(assistant, normalized.content)
+    }
     if (cancelled) {
       return
     }
@@ -536,8 +631,33 @@ async function runTurn(
 }
 
 async function send(): Promise<void> {
+  if (props.disabled || isBusy.value) {
+    return
+  }
   const text = draft.value.trim()
-  if (!text || isBusy.value || props.disabled) {
+
+  // 有快捷功能标记：任务模式走 onTask（用户补充作为 instruction）；
+  // 提示词模式把设计好的完整提示词与用户补充自动组合后发送（允许空输入）
+  if (pendingAction.value) {
+    const action = pendingAction.value
+    pendingAction.value = null
+    draft.value = ''
+    await nextTick(adjustTextarea)
+    const context = props.contextText?.trim() || undefined
+    if (context) {
+      emit('clear-context')
+    }
+    const displayText = text ? `#${action.label} ${text}` : `#${action.label}`
+    if (action.task && props.onTask) {
+      await runTurn(text, context, true, { task: action.task, displayText })
+    } else {
+      const composed = text ? `${action.prompt}\n\n用户补充：${text}` : action.prompt
+      await runTurn(composed, context, true, { displayText })
+    }
+    return
+  }
+
+  if (!text) {
     return
   }
   const context = props.contextText?.trim() || undefined
@@ -560,26 +680,53 @@ async function sendPrompt(prompt: string): Promise<void> {
   await runTurn(prompt, context, true)
 }
 
+async function sendTask(task: string, prompt: string, displayText?: string): Promise<void> {
+  if (isBusy.value || props.disabled) {
+    return
+  }
+  const context = props.contextText?.trim() || undefined
+  if (context) {
+    emit('clear-context')
+  }
+  await runTurn(prompt, context, true, { task, displayText })
+}
+
+function runStarter(action: AgentQuickAction): void {
+  if (action.task && props.onTask) {
+    // 挂载任务标记到输入框，待用户补充/确认后随发送一起执行
+    pendingAction.value = action
+    focusInput()
+  } else {
+    void sendPrompt(action.prompt)
+  }
+}
+
 async function regenerate(index: number): Promise<void> {
   if (isBusy.value || props.disabled) {
     return
   }
   const target = messages.value[index]
-  if (!target?.regenerateText) {
+  if (target?.regenerateText === undefined || target?.regenerateText === null) {
     return
   }
   const previousUser = [...messages.value.slice(0, index)]
     .reverse()
     .find((message) => message.role === 'user')
   messages.value.splice(index, 1)
-  await runTurn(target.regenerateText, previousUser?.context, false)
+  await runTurn(target.regenerateText, previousUser?.context, false, { task: target.task })
 }
 
 onMounted(() => {
   adjustTextarea()
 })
 
-defineExpose({ sendPrompt, setDraft, focusInput, clear })
+/** 挂载快捷功能标记（供外部快捷按钮调用）：task 模式走 onTask 专用链，否则按设计好的提示词组合发送 */
+function setPendingQuickAction(action: { label: string; task?: string; prompt: string }): void {
+  pendingAction.value = action
+  focusInput()
+}
+
+defineExpose({ sendPrompt, sendTask, setPendingQuickAction, setDraft, focusInput, clear })
 </script>
 
 <style scoped>
@@ -917,6 +1064,10 @@ defineExpose({ sendPrompt, setDraft, focusInput, clear })
   color: var(--color-foreground);
 }
 
+.agent-message__structured {
+  min-width: 0;
+}
+
 .agent-message__body--error :deep(.markdown-view) {
   color: var(--color-down);
 }
@@ -1042,6 +1193,67 @@ defineExpose({ sendPrompt, setDraft, focusInput, clear })
   margin-top: var(--space-2);
 }
 
+/* 快捷任务标记：黄色短框，置于输入框内首行文字前 */
+.agent-composer__field {
+  position: relative;
+  min-width: 0;
+}
+
+.agent-task-chip {
+  position: absolute;
+  top: 0.55rem;
+  left: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.3rem;
+  padding: 0 3px 0 8px;
+  background: rgba(250, 204, 21, 0.26);
+  border: 1px solid rgba(202, 138, 4, 0.42);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.agent-task-chip__tag {
+  color: #854d0e;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.agent-task-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: #854d0e;
+  font-size: 0.8rem;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.agent-task-chip__remove:hover {
+  background: rgba(202, 138, 4, 0.2);
+}
+
+/* 鹦鹉 IP：趴在输入框上边框中央，未输入时显示 */
+.agent-composer__mascot {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 4.5rem;
+  width: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
 .agent-context {
   display: flex;
   align-items: center;
@@ -1088,6 +1300,7 @@ defineExpose({ sendPrompt, setDraft, focusInput, clear })
 }
 
 .agent-composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   padding: 6px 8px 6px 12px;
