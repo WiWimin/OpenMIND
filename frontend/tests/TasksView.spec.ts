@@ -7,6 +7,10 @@ import type { ListData } from '@/types/api'
 import type { PersonalTask } from '@/types/task'
 import TasksView from '@/views/TasksView.vue'
 
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
   getTask: vi.fn(),

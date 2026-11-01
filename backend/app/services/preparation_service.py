@@ -8,7 +8,7 @@ from app.models.meeting import Meeting
 from app.models.preparation import Preparation
 from app.repositories import material_repository, preparation_repository
 from app.schemas.preparation import PreparationUpdate
-from app.services import meeting_service, memory_service
+from app.services import meeting_service, meeting_template_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -28,6 +28,7 @@ def generate_draft(
     config: ModelConfig,
     *,
     memory_context: str = "",
+    template_instructions: str = "",
 ) -> PreparationDraft:
     topic_parts = [meeting.title]
     if meeting.topic:
@@ -36,7 +37,10 @@ def generate_draft(
         topic_parts.append(f"关注点：{user_goal}")
     service = PreparationService(build_llm_client(config))
     return service.generate(
-        " / ".join(topic_parts), snippets, memory_context=memory_context
+        " / ".join(topic_parts),
+        snippets,
+        memory_context=memory_context,
+        template_instructions=template_instructions,
     )
 
 
@@ -70,6 +74,8 @@ def generate_preparation(
     user_id: str,
     user_goal: str | None,
     include_history: bool = True,
+    model: str | None = None,
+    template_id: str | None = None,
 ) -> Preparation:
     meeting = meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     snippets = (
@@ -77,10 +83,22 @@ def generate_preparation(
         if include_history
         else material_repository.list_contents(db, meeting_id)
     )
-    config = resolve_model_config(db, user_id, purpose=ModelPurpose.preparation)
+    config = resolve_model_config(
+        db, user_id, purpose=ModelPurpose.preparation, model_override=model
+    )
+    template_instructions = (
+        meeting_template_service.resolve_template_content(db, user_id, template_id)
+        if template_id
+        else ""
+    )
     memory_context = memory_service.memory_context_for(db, user_id, "preparation")
     draft = generate_draft(
-        meeting, snippets, user_goal, config, memory_context=memory_context
+        meeting,
+        snippets,
+        user_goal,
+        config,
+        memory_context=memory_context,
+        template_instructions=template_instructions,
     )
     return preparation_repository.create(
         db,

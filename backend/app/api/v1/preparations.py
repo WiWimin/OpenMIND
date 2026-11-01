@@ -33,6 +33,8 @@ def generate_preparation(
         user_id=current_user.user_id,
         user_goal=payload.user_goal,
         include_history=payload.include_history,
+        model=payload.model,
+        template_id=payload.template_id,
     )
     return Envelope(data=PreparationRead.model_validate(preparation))
 

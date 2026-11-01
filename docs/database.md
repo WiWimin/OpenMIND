@@ -214,13 +214,10 @@
 | `llm_api_key_enc` | TEXT | ? | LLM 密钥 Fernet 密文 |
 | `llm_model` | VARCHAR(100) | ? | 默认 LLM 模型 |
 | `llm_purpose_models` | JSONB | NN, default `{}` | 用途→模型名覆盖 |
-| `embedding_api_base` | VARCHAR(255) | ? | Embedding API 地址 |
-| `embedding_api_key_enc` | TEXT | ? | Embedding 密钥 Fernet 密文 |
-| `embedding_model` | VARCHAR(100) | ? | Embedding 模型 |
-| `embedding_dim` | INTEGER | ? | 固定 1024 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
+- 仅保存用户自备的 **LLM** 配置；向量模型（Embedding）收归服务端 `docker/.env` 统一配置，用户侧无对应字段（迁移 `0020_drop_user_embedding` 已删除原 embedding 四字段）。
 - `llm_purpose_models` 仅保存允许用途：`preparation` / `chat` / `minutes` / `extraction`。
 - 未覆盖的用途回退到 `llm_model`；API 地址与密钥统一使用 LLM 配置。
 - 用途模型名最长 100 字符，空值不得保存。
@@ -282,23 +279,46 @@
 | `file_name` | VARCHAR(255) | NN | 原始文件名 |
 | `type` | VARCHAR(20) | NN | `mp3` / `wav` / `m4a` / `webm` |
 | `storage_key` | TEXT | NN | 本地存储相对路径 |
-| `transcript` | TEXT | ? | 可编辑转写文本 |
+| `transcript` | TEXT | ? | 可编辑转写文本（实时分段按 `\n` 拼接） |
+| `segments` | JSONB | ? | 转写分段：`[{seq, offset_seconds, text, marker_type, error}]`，`seq` 从 1 连续递增 |
 | `status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
 | `error` | TEXT | ? | 转写失败原因 |
 | `record_id` | VARCHAR(40) | FK→meeting_records, ? | 确认后生成的记录 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
-- 状态：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`。
+- 状态：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`；实时录音会话期间保持 `processing`，`live/finish` 后落定。
+- `segments` 由后端维护：分片转写追加、全文修订后按行重拆（沿用原相对时间与标记）；`marker_type` 取值与记录标记一致（`highlight` / `decision` / `question`）。
 - 确认后创建 `record_type=transcript` 的会议记录，并写入 `record_id`。
 - 已确认音频不能重新转写或删除。
-- 删除未确认音频时同步删除文件。
+- 删除未确认音频时同步删除文件（含实时会话的分片文件）。
+
+### 3.16 `meeting_templates` 会议模板
+
+用户上传的自定义输出模板；内置模板由代码常量提供，不入库（`api.md 5.16a`）。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `template_id` | VARCHAR(40) | PK | `tpl_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户（仅本人可见） |
+| `name` | VARCHAR(100) | NN | 模板名称 |
+| `description` | VARCHAR(255) | ? | 模板描述 |
+| `file_name` | VARCHAR(255) | NN | 原始文件名 |
+| `storage_key` | TEXT | NN | 本地存储相对路径（`templates/` 目录） |
+| `content_text` | TEXT | NN | 解析出的模板结构文本（注入生成提示词，≤20000 字符） |
+| `created_at` | TIMESTAMPTZ | NN, default now() | |
+| `updated_at` | TIMESTAMPTZ | NN, default now() | |
+
+- 支持格式：DOCX / TXT / MD；大小沿用全局上传限制。
+- 仅本人可读/可删；删除时同步删除文件。
+- 生成联动：`prepare` 与 `minutes/generate` 的 `template_id` 引用本表或内置模板 ID。
 
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
 - User — UserModelConfig：一对一（`user_model_configs.user_id` 主键）
 - User — UserMemory：一对一（`user_memories.user_id` 主键）
+- User — MeetingTemplate：一对多（仅自定义模板入库）
 - User — KnowledgeDocument：一对多
 - KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多

@@ -11,14 +11,13 @@
       />
     </div>
 
-    <p v-if="selected" class="knowledge-uploader__selected">
-      已选择：{{ selected.name }}
-    </p>
+    <p v-if="selected" class="knowledge-uploader__selected">已选择：{{ selected.name }}</p>
     <p v-if="error" class="knowledge-uploader__error" role="alert">{{ error }}</p>
+    <p v-else-if="!selected" class="knowledge-uploader__hint">
+      支持 PDF、Word、TXT，选择文件后即可上传。
+    </p>
 
-    <AppButton :loading="uploading" :disabled="!selected" @click="submit">
-      上传到知识库
-    </AppButton>
+    <AppButton v-if="selected" :loading="uploading" @click="submit"> 上传到知识库 </AppButton>
   </div>
 </template>
 
@@ -116,5 +115,11 @@ function submit(): void {
   margin: 0;
   color: var(--color-down);
   font-size: 0.875rem;
+}
+
+.knowledge-uploader__hint {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
 }
 </style>

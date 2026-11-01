@@ -37,8 +37,8 @@ const emit = defineEmits<{ 'go-to-chat': [] }>()
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
-  background: linear-gradient(135deg, rgba(59, 111, 212, 0.07), rgba(20, 184, 166, 0.07));
-  border: 1px solid rgba(59, 111, 212, 0.18);
+  background: linear-gradient(135deg, rgba(21, 94, 239, 0.07), rgba(20, 184, 166, 0.07));
+  border: 1px solid rgba(21, 94, 239, 0.18);
   border-radius: var(--radius-md);
 }
 

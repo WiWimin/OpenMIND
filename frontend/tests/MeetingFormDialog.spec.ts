@@ -18,7 +18,8 @@ const meeting: Meeting = {
 describe('MeetingFormDialog', () => {
   it('titles the create dialog and requires a title', async () => {
     const wrapper = mount(MeetingFormDialog, { props: { open: true } })
-    expect(wrapper.get('.modal__title').text()).toBe('新建会议')
+    expect(wrapper.get('.meeting-form__title').text()).toBe('新建会议')
+    expect(wrapper.text()).toContain('我来帮你记录会议')
 
     await wrapper.get('form').trigger('submit')
 
@@ -41,7 +42,8 @@ describe('MeetingFormDialog', () => {
   it('prefills and titles the edit dialog', () => {
     const wrapper = mount(MeetingFormDialog, { props: { open: true, meeting } })
 
-    expect(wrapper.get('.modal__title').text()).toBe('编辑会议')
+    expect(wrapper.get('.meeting-form__title').text()).toBe('编辑会议')
+    expect(wrapper.text()).toContain('需要调整会议信息吗')
     expect((wrapper.get('#meeting-title').element as HTMLInputElement).value).toBe('项目周会')
     expect((wrapper.get('#meeting-topic').element as HTMLInputElement).value).toBe('进度与风险')
     expect((wrapper.get('#meeting-time').element as HTMLInputElement).value).toMatch(
@@ -55,7 +57,7 @@ describe('MeetingFormDialog', () => {
     })
     expect(wrapper.get('[role="alert"]').text()).toContain('标题重复')
 
-    await wrapper.get('.modal__close').trigger('click')
+    await wrapper.get('.meeting-form__close').trigger('click')
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 })

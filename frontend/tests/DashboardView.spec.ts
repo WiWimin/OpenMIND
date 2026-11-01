@@ -64,6 +64,7 @@ function listOf<T>(items: T[], total = items.length): ListData<T> {
   return { items, pagination: { page: 1, page_size: 20, total, total_pages: 1 } }
 }
 
+// 首页同时拉取：统计数（page_size=1）与会议列表（page_size=20）
 function mockMeetings(items: Meeting[], total = items.length) {
   vi.mocked(meetingsApi.listMeetings).mockImplementation(async (params = {}) => {
     if (params.status === 'scheduled') {
@@ -78,11 +79,7 @@ function mockTasks(items: PersonalTask[], total = items.length) {
   vi.mocked(tasksApi.listTasks).mockImplementation(async (params = {}) => {
     if (params.status === 'todo') {
       const todo = items.filter((item) => item.status === 'todo')
-      return listOf(todo, todo.length)
-    }
-    if (params.status === 'completed') {
-      const completed = items.filter((item) => item.status === 'completed')
-      return listOf(completed, completed.length)
+      return listOf(todo, total)
     }
     return listOf(items, total)
   })
@@ -111,65 +108,36 @@ describe('DashboardView', () => {
     routeState.query = {}
   })
 
-  it('renders the hero, stats and meeting list without the task section', async () => {
+  it('renders the hero, intro card, meeting list and todo list', async () => {
     mockMeetings([meeting], 5)
     mockTasks([task], 4)
 
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('OpenMIND')
-    expect(wrapper.text()).toContain('智能会议记录、纪要生成与任务跟踪')
+    expect(wrapper.text()).toContain('OpenMIND 智能会议助手')
+    expect(wrapper.text()).toContain('基于 AI 的会议纪要、日程与任务协作平台')
+    expect(wrapper.find('.home__summary').text()).toMatch(/今天有\s+1\s+场会议和\s+4\s+项待办任务/)
+    expect(wrapper.find('img.home__mascot').exists()).toBe(true)
 
-    const values = wrapper.findAll('.stat-card__value').map((node) => node.text())
-    expect(values).toEqual(['5', '1', '1', '0'])
-
+    const panels = wrapper.findAll('.home__panel')
+    expect(panels).toHaveLength(2)
     expect(wrapper.text()).toContain('项目周会')
-    expect(wrapper.text()).toContain('已安排 1 · 已归档 4')
-    expect(wrapper.find('.meeting-card').exists()).toBe(true)
-
-    expect(wrapper.find('#section-tasks').exists()).toBe(false)
-    expect(wrapper.find('.task-section').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('整理周会议程')
-    expect(wrapper.find('#task-status-filter').exists()).toBe(false)
+    expect(wrapper.findAll('.home__meeting')).toHaveLength(1)
+    expect(wrapper.text()).toContain('整理周会议程')
+    expect(wrapper.findAll('.home__task')).toHaveLength(1)
   })
 
-  it('navigates to the tasks page from the hero button', async () => {
-    mockMeetings([])
-    mockTasks([])
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    const tasksButton = wrapper.findAll('button').find((button) => button.text() === '我的任务')
-    await tasksButton?.trigger('click')
-
-    expect(pushMock).toHaveBeenCalledWith({ name: 'tasks' })
-  })
-
-  it('shows the empty state when there are no meetings', async () => {
-    mockMeetings([])
-    mockTasks([])
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('还没有会议')
-    expect(wrapper.find('.stat-card__value').text()).toBe('0')
-  })
-
-  it('opens the create dialog from the hero button and creates a meeting', async () => {
-    mockMeetings([])
-    mockTasks([])
+  it('opens the create dialog from the intro CTA and creates a meeting', async () => {
+    mockMeetings([meeting])
+    mockTasks([task])
     vi.mocked(meetingsApi.createMeeting).mockResolvedValue(meeting)
 
     const wrapper = mountView()
     await flushPromises()
 
-    const heroCreate = wrapper
-      .findAll('button')
-      .find((button) => button.text() === '新建会议')
-    await heroCreate?.trigger('click')
+    const cta = wrapper.get('.home__cta')
+    await cta.trigger('click')
     expect(wrapper.find('.meeting-form').exists()).toBe(true)
 
     await wrapper.get('#meeting-title').setValue('项目周会')
@@ -180,6 +148,10 @@ describe('DashboardView', () => {
       title: '项目周会',
       topic: undefined,
       meeting_time: undefined,
+    })
+    expect(pushMock).toHaveBeenCalledWith({
+      name: 'new-meeting',
+      query: { meetingId: 'mtg_1' },
     })
     expect(wrapper.find('.meeting-form').exists()).toBe(false)
   })
@@ -196,14 +168,14 @@ describe('DashboardView', () => {
     expect(replaceMock).toHaveBeenCalledWith({ query: {} })
   })
 
-  it('navigates to the meeting detail when a card is clicked', async () => {
+  it('navigates to the meeting detail when a meeting row is clicked', async () => {
     mockMeetings([meeting])
     mockTasks([task])
 
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('.meeting-card').trigger('click')
+    await wrapper.get('.home__meeting').trigger('click')
 
     expect(pushMock).toHaveBeenCalledWith({
       name: 'meeting-detail',
@@ -211,46 +183,58 @@ describe('DashboardView', () => {
     })
   })
 
-  it('filters the meeting list by status', async () => {
-    mockMeetings([meeting], 5)
-    mockTasks([task], 4)
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('#meeting-status-filter').setValue('archived')
-    await flushPromises()
-
-    expect(meetingsApi.listMeetings).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'archived' }),
-    )
-  })
-
-  it('surfaces a list load error and retries', async () => {
-    vi.mocked(meetingsApi.listMeetings)
-      .mockRejectedValueOnce({ error_code: 'INTERNAL_ERROR', message: '服务异常' })
-      .mockImplementation(async (params = {}) => {
-        if (params.page_size === 1) {
-          return { items: [], pagination: { page: 1, page_size: 1, total: 0, total_pages: 0 } }
-        }
-        return listOf([], 0)
-      })
+  it('shows the empty state when there are no meetings', async () => {
+    mockMeetings([])
     mockTasks([])
 
     const wrapper = mountView()
     await flushPromises()
 
-    const retryButton = wrapper.find('.error-message button')
-    expect(retryButton.exists()).toBe(true)
+    expect(wrapper.text()).toContain('还没有会议')
+    expect(wrapper.text()).toContain('保持当前的会议节奏')
+  })
 
+  it('completes a task from the checklist', async () => {
+    mockMeetings([meeting])
+    mockTasks([task])
+    vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, status: 'completed' })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.home__task-check').setValue(true)
+    await flushPromises()
+
+    expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
+    expect(wrapper.findAll('.home__task')).toHaveLength(0)
+  })
+
+  it('surfaces a meeting list error and retries', async () => {
+    let listCalls = 0
+    vi.mocked(meetingsApi.listMeetings).mockImplementation(async (params = {}) => {
+      if (params.page_size === 1) {
+        return { items: [], pagination: { page: 1, page_size: 1, total: 0, total_pages: 0 } }
+      }
+      listCalls += 1
+      if (listCalls === 1) {
+        throw { error_code: 'INTERNAL_ERROR', message: '服务异常' }
+      }
+      return listOf([], 0)
+    })
+    mockTasks([])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const retryButton = wrapper.get('.error-message button')
     await retryButton.trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.meeting-card').exists()).toBe(false)
+    expect(wrapper.find('.error-message').exists()).toBe(false)
     expect(wrapper.text()).toContain('还没有会议')
   })
 
-  it('surfaces a stats load error and retries', async () => {
+  it('surfaces a stats error and retries', async () => {
     mockMeetings([])
     vi.mocked(tasksApi.listTasks)
       .mockRejectedValueOnce({ error_code: 'INTERNAL_ERROR', message: '服务异常' })
@@ -266,37 +250,5 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('服务异常')
-  })
-
-  it('appends more meetings through the load-more button', async () => {
-    vi.mocked(meetingsApi.listMeetings).mockImplementation(async (params = {}) => {
-      if (params.page_size === 1) {
-        return listOf([], 0)
-      }
-      if (params.page === 2) {
-        return {
-          items: [{ ...meeting, meeting_id: 'mtg_2', title: '评审会' }],
-          pagination: { page: 2, page_size: 20, total: 2, total_pages: 2 },
-        }
-      }
-      return {
-        items: [meeting],
-        pagination: { page: 1, page_size: 20, total: 2, total_pages: 2 },
-      }
-    })
-    mockTasks([])
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('项目周会')
-    const more = wrapper.findAll('button').find((item) => item.text() === '加载更多')
-    expect(more).toBeDefined()
-
-    await more?.trigger('click')
-    await flushPromises()
-
-    expect(meetingsApi.listMeetings).toHaveBeenLastCalledWith({ page: 2, page_size: 20 })
-    expect(wrapper.text()).toContain('评审会')
   })
 })

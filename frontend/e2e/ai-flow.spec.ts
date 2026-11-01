@@ -69,7 +69,7 @@ test.describe('AI 核心链路（真实模型）', () => {
     await expect(convertDialog).toBeHidden()
     await expect(firstAction.locator('.action-item__done')).toHaveText('已转任务')
 
-    await page.getByRole('link', { name: '个人任务', exact: true }).click()
+    await page.getByRole('link', { name: '任务管理', exact: true }).click()
     await expect(page.getByRole('heading', { name: '我的任务', exact: true })).toBeVisible()
     await expect(
       page.locator('.task-item').filter({ hasText: '完成灰度发布检查清单' }),

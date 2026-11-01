@@ -7,6 +7,7 @@ from app.models.knowledge_chunk import KnowledgeChunk
 from app.models.knowledge_document import KnowledgeDocument
 from app.models.material import MeetingMaterial
 from app.models.meeting import Meeting
+from app.models.meeting_template import MeetingTemplate
 from app.models.minutes import MeetingMinutes
 from app.models.model_config import UserModelConfig
 from app.models.preparation import Preparation
@@ -26,6 +27,7 @@ __all__ = [
     "MeetingMaterial",
     "MeetingMinutes",
     "MeetingRecord",
+    "MeetingTemplate",
     "OpenIssue",
     "PersonalTask",
     "Preparation",

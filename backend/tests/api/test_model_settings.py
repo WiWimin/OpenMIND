@@ -14,7 +14,6 @@ REGISTER = "/api/v1/auth/register"
 PASSWORD = "secret123"
 
 LLM_KEY = "sk-llm-secret-key"
-EMB_KEY = "sk-emb-secret-key"
 
 
 @pytest.fixture(autouse=True)
@@ -27,9 +26,8 @@ def _public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture()
-def fake_probes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(model_config_service, "_probe_embedding_dim", lambda *a, **k: None)
-    monkeypatch.setattr(model_config_service, "_probe_llm", lambda *a, **k: None)
+def fake_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_config_service.LLMClient, "probe", lambda self, **k: None)
 
 
 def _auth(client: TestClient, name: str = "alice") -> dict[str, str]:
@@ -44,13 +42,10 @@ def _payload() -> dict:
         "llm_api_base": "https://llm.example.com/v1",
         "llm_api_key": LLM_KEY,
         "llm_model": "custom-model",
-        "embedding_api_base": "https://emb.example.com/v1",
-        "embedding_api_key": EMB_KEY,
-        "embedding_model": "text-embedding-1024",
     }
 
 
-def test_put_and_get_masks_keys(client: TestClient, fake_probes: None) -> None:
+def test_put_and_get_masks_keys(client: TestClient, fake_probe: None) -> None:
     headers = _auth(client)
     response = client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
     assert response.status_code == 200, response.text
@@ -60,27 +55,26 @@ def test_put_and_get_masks_keys(client: TestClient, fake_probes: None) -> None:
     assert data["llm_api_key_masked"].endswith("-key")
     assert data["llm_model"] == "custom-model"
     assert data["llm_source"] == "user"
-    assert data["embedding_source"] == "user"
-    assert data["embedding_dim"] == 1024
+    assert data["llm_probe_verified"] is True
+    # 向量模型不支持用户自备，来源只能是服务端配置或未配置
+    assert data["embedding_source"] in ("global", "none")
 
     got = client.get("/api/v1/me/settings/model", headers=headers)
     assert got.status_code == 200
     assert LLM_KEY not in got.text
-    assert EMB_KEY not in got.text
 
 
 def test_keys_encrypted_at_rest(
-    client: TestClient, db_session: Session, fake_probes: None
+    client: TestClient, db_session: Session, fake_probe: None
 ) -> None:
     headers = _auth(client)
     client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
     row = db_session.execute(select(UserModelConfig)).scalars().one()
     assert row.llm_api_key_enc != LLM_KEY
     assert LLM_KEY not in row.llm_api_key_enc
-    assert EMB_KEY not in row.embedding_api_key_enc
 
 
-def test_config_isolated_per_user(client: TestClient, fake_probes: None) -> None:
+def test_config_isolated_per_user(client: TestClient, fake_probe: None) -> None:
     alice = _auth(client, "alice")
     bob = _auth(client, "bob")
     client.put("/api/v1/me/settings/model", json=_payload(), headers=alice)
@@ -93,7 +87,7 @@ def test_config_isolated_per_user(client: TestClient, fake_probes: None) -> None
 
 
 def test_global_keys_are_not_masked_or_returned(
-    client: TestClient, fake_probes: None, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, fake_probe: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     base = get_settings()
     monkeypatch.setattr(
@@ -123,7 +117,7 @@ def test_global_keys_are_not_masked_or_returned(
 
 
 def test_put_purpose_models_and_read(
-    client: TestClient, fake_probes: None
+    client: TestClient, fake_probe: None
 ) -> None:
     headers = _auth(client)
     client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
@@ -145,7 +139,7 @@ def test_put_purpose_models_and_read(
 
 
 def test_purpose_models_require_configured_llm(
-    client: TestClient, fake_probes: None
+    client: TestClient, fake_probe: None
 ) -> None:
     headers = _auth(client)
 
@@ -160,7 +154,7 @@ def test_purpose_models_require_configured_llm(
 
 
 def test_unknown_purpose_model_rejected(
-    client: TestClient, fake_probes: None
+    client: TestClient, fake_probe: None
 ) -> None:
     headers = _auth(client)
     client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
@@ -175,7 +169,7 @@ def test_unknown_purpose_model_rejected(
 
 
 def test_empty_purpose_models_clear_overrides(
-    client: TestClient, fake_probes: None
+    client: TestClient, fake_probe: None
 ) -> None:
     headers = _auth(client)
     client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
@@ -196,7 +190,7 @@ def test_empty_purpose_models_clear_overrides(
 
 
 def test_base_config_save_preserves_purpose_models(
-    client: TestClient, fake_probes: None
+    client: TestClient, fake_probe: None
 ) -> None:
     headers = _auth(client)
     client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
@@ -212,7 +206,7 @@ def test_base_config_save_preserves_purpose_models(
     assert got["llm_purpose_models"] == {"minutes": "minutes-model"}
 
 
-def test_private_api_base_rejected(client: TestClient, fake_probes: None) -> None:
+def test_private_api_base_rejected(client: TestClient, fake_probe: None) -> None:
     headers = _auth(client)
     payload = _payload()
     payload["llm_api_base"] = "https://127.0.0.1:8000/v1"
@@ -247,43 +241,55 @@ def test_undecryptable_key_returns_model_config_invalid(
     assert client.get("/api/v1/me/settings/model", headers=headers).status_code == 200
 
 
-def test_embedding_dim_mismatch_rejected(
+def test_llm_probe_rate_limited_still_saves(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def bad_dim(*args, **kwargs):
-        raise AppError(
-            "MODEL_CONFIG_INVALID", "Embedding 校验失败：向量维度必须为 1024", http_status=400
-        )
+    """probe 遇 429 限流视为密钥有效，放行保存并返回未验证标志。"""
 
-    monkeypatch.setattr(model_config_service, "_probe_embedding_dim", bad_dim)
+    def rate_limited(self, **kwargs):
+        raise AppError("RATE_LIMITED", "模型服务限流", http_status=429, retryable=True)
+
+    monkeypatch.setattr(model_config_service.LLMClient, "probe", rate_limited)
     headers = _auth(client)
     response = client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["llm_source"] == "user"
+    assert data["llm_probe_verified"] is False
+
+
+def test_llm_probe_failure_blocks_save(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def timeout(self, **kwargs):
+        raise AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
+
+    monkeypatch.setattr(model_config_service.LLMClient, "probe", timeout)
+    headers = _auth(client)
+    response = client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    assert response.status_code == 504
+    body = response.json()
+    assert body["error_code"] == "MODEL_TIMEOUT"
+    assert body["retryable"] is True
+
+
+def test_llm_probe_invalid_key_blocks_save(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def invalid_key(self, **kwargs):
+        raise AppError("MODEL_CONFIG_INVALID", "模型密钥无效或已失效", http_status=400)
+
+    monkeypatch.setattr(model_config_service.LLMClient, "probe", invalid_key)
+    headers = _auth(client)
+    response = client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
     assert response.status_code == 400
     assert response.json()["error_code"] == "MODEL_CONFIG_INVALID"
 
 
-def test_embedding_probe_network_error_returns_retryable(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def network_error(*args, **kwargs):
-        raise AppError(
-            "INTERNAL_ERROR",
-            "Embedding 校验失败：向量服务网络异常",
-            http_status=500,
-            retryable=True,
-        )
-
-    monkeypatch.setattr(model_config_service, "_probe_embedding_dim", network_error)
-    headers = _auth(client)
-    response = client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
-
-    assert response.status_code == 500
-    body = response.json()
-    assert body["error_code"] == "INTERNAL_ERROR"
-    assert body["retryable"] is True
-
-
-def test_partial_provider_requires_all_fields(client: TestClient, fake_probes: None) -> None:
+def test_partial_provider_requires_all_fields(client: TestClient, fake_probe: None) -> None:
     headers = _auth(client)
     response = client.put(
         "/api/v1/me/settings/model",
@@ -294,7 +300,7 @@ def test_partial_provider_requires_all_fields(client: TestClient, fake_probes: N
     assert response.json()["error_code"] == "MODEL_CONFIG_INVALID"
 
 
-def test_delete_clears_config(client: TestClient, fake_probes: None) -> None:
+def test_delete_clears_config(client: TestClient, fake_probe: None) -> None:
     headers = _auth(client)
     client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
 
@@ -306,7 +312,31 @@ def test_delete_clears_config(client: TestClient, fake_probes: None) -> None:
     assert after["llm_model"] == ""
     assert after["llm_model"] != "custom-model"
     assert after["llm_source"] == "none"
-    assert after["embedding_source"] == "none"
+
+
+def test_provider_models_requires_configured_llm(client: TestClient) -> None:
+    headers = _auth(client)
+    response = client.get("/api/v1/me/settings/model/provider-models", headers=headers)
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "MODEL_CONFIG_REQUIRED"
+
+
+def test_provider_models_returns_list(
+    client: TestClient, fake_probe: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        model_config_service.LLMClient,
+        "list_models",
+        lambda self, **k: ["model-a", "model-b"],
+    )
+    headers = _auth(client)
+    client.put("/api/v1/me/settings/model", json=_payload(), headers=headers)
+
+    response = client.get("/api/v1/me/settings/model/provider-models", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["llm_model"] == "custom-model"
+    assert data["models"] == ["model-a", "model-b"]
 
 
 def test_requires_auth(client: TestClient) -> None:

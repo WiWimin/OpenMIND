@@ -23,7 +23,7 @@ export async function register(page: Page, name: string): Promise<void> {
   await page.locator('#register-confirm').fill(E2E_PASSWORD)
   await page.getByRole('button', { name: '注册', exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard$/)
-  await expect(page.getByRole('heading', { name: 'OpenMIND', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '会议工作台', exact: true })).toBeVisible()
 }
 
 async function authToken(page: Page): Promise<string> {
@@ -109,8 +109,7 @@ export async function prepareModelAccess(
   if (needsEmbedding && !isComplete(embedding)) {
     return {
       ready: false,
-      reason:
-        'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_EMBEDDING_* 自备配置',
+      reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_EMBEDDING_* 自备配置',
     }
   }
 

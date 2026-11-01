@@ -27,7 +27,8 @@ test.describe('模型设置（BYOK）', () => {
     )
 
     await register(page, uniqueName('e2e-byok'))
-    await page.getByRole('link', { name: '模型设置', exact: true }).click()
+    await page.getByRole('link', { name: '系统设置', exact: true }).click()
+    await page.getByRole('link', { name: '模型配置', exact: true }).click()
     await expect(page.getByRole('heading', { name: '模型设置', exact: true })).toBeVisible()
 
     await page.locator('#llm-api-base').fill(llm.apiBase)

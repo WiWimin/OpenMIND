@@ -1,6 +1,10 @@
 <template>
   <div class="task-section">
-    <div class="task-section__toolbar">
+    <div v-if="showFilter" class="task-section__toolbar">
+      <div class="task-section__toolbar-title">
+        <strong>任务列表</strong>
+        <span>共 {{ store.pagination.total }} 项</span>
+      </div>
       <FormSelect
         id="task-status-filter"
         label="状态"
@@ -12,7 +16,12 @@
 
     <LoadingSpinner v-if="store.loading && store.items.length === 0" class="task-section__state" />
 
-    <ErrorMessage v-else-if="store.error" :error="store.error" retryable @retry="store.fetchList()" />
+    <ErrorMessage
+      v-else-if="store.error"
+      :error="store.error"
+      retryable
+      @retry="store.fetchList()"
+    />
 
     <EmptyState
       v-else-if="store.items.length === 0"
@@ -21,69 +30,88 @@
     />
 
     <template v-else>
-      <ul class="task-section__list">
-        <li v-for="task in store.items" :key="task.task_id" class="task-item">
-          <div class="task-item__head">
-            <span class="task-item__title">{{ task.title }}</span>
-            <StatusBadge :label="metaOf(task).label" :tone="metaOf(task).tone" />
-          </div>
+      <div class="task-section__table">
+        <div class="task-section__head" aria-hidden="true">
+          <span>任务</span>
+          <span>截止时间与状态</span>
+          <span>操作</span>
+        </div>
 
-          <form
-            v-if="editId === task.task_id"
-            class="task-item__edit"
-            @submit.prevent="saveEdit"
-          >
-            <FormField
-              :id="`task-edit-title-${task.task_id}`"
-              v-model="editTitle"
-              label="任务标题"
-              required
-              :error="editFormError"
-            />
-            <FormField
-              :id="`task-edit-due-${task.task_id}`"
-              v-model="editDue"
-              label="截止日期"
-              type="date"
-            />
-            <ErrorMessage v-if="editError" :error="editError" />
-            <div class="task-item__edit-actions">
-              <AppButton type="button" variant="ghost" :disabled="editSaving" @click="cancelEdit">
-                取消
-              </AppButton>
-              <AppButton type="submit" :loading="editSaving">保存修改</AppButton>
-            </div>
-          </form>
-
-          <template v-else>
-            <div class="task-item__controls">
-              <FormSelect
-                :id="`task-status-${task.task_id}`"
-                label="状态"
-                :model-value="task.status"
-                :options="statusOptions"
-                @update:model-value="(value) => changeStatus(task, value)"
+        <ul class="task-section__list">
+          <li v-for="task in store.items" :key="task.task_id" class="task-item">
+            <form v-if="editId === task.task_id" class="task-item__edit" @submit.prevent="saveEdit">
+              <FormField
+                :id="`task-edit-title-${task.task_id}`"
+                v-model="editTitle"
+                label="任务标题"
+                required
+                :error="editFormError"
               />
-              <span v-if="task.due_date" class="task-item__due">
-                截止 {{ dueOf(task) }}
-                <StatusBadge v-if="isOverdue(task)" class="task-item__overdue" label="已逾期" tone="danger" />
-              </span>
-            </div>
+              <FormField
+                :id="`task-edit-due-${task.task_id}`"
+                v-model="editDue"
+                label="截止日期"
+                type="date"
+              />
+              <ErrorMessage v-if="editError" :error="editError" />
+              <div class="task-item__edit-actions">
+                <AppButton type="button" variant="ghost" :disabled="editSaving" @click="cancelEdit">
+                  取消
+                </AppButton>
+                <AppButton type="submit" :loading="editSaving">保存修改</AppButton>
+              </div>
+            </form>
 
-            <div class="task-item__actions">
-              <AppButton variant="ghost" @click="openDetail(task)">查看详情</AppButton>
-              <AppButton variant="ghost" @click="startEdit(task)">编辑任务</AppButton>
-              <AppButton
-                v-if="task.status !== 'cancelled' && task.status !== 'completed'"
-                variant="ghost"
-                @click="askCancel(task.task_id)"
-              >
-                取消任务
-              </AppButton>
-            </div>
-          </template>
-        </li>
-      </ul>
+            <template v-else>
+              <div class="task-item__head">
+                <span class="task-item__title">{{ task.title }}</span>
+              </div>
+
+              <div class="task-item__controls">
+                <select
+                  v-if="!readonly"
+                  :id="`task-status-${task.task_id}`"
+                  class="task-item__status-select"
+                  :value="task.status"
+                  aria-label="任务状态"
+                  @change="onStatusChange(task, $event)"
+                >
+                  <option v-for="option in statusOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+                <StatusBadge v-else :label="metaOf(task).label" :tone="metaOf(task).tone" />
+
+                <span v-if="task.due_date" class="task-item__due">
+                  截止 {{ dueOf(task) }}
+                  <StatusBadge
+                    v-if="isOverdue(task)"
+                    class="task-item__overdue"
+                    label="已逾期"
+                    tone="danger"
+                  />
+                </span>
+                <span v-else class="task-item__due">未设置截止时间</span>
+              </div>
+
+              <div class="task-item__actions">
+                <AppButton size="sm" variant="ghost" @click="openDetail(task)">查看详情</AppButton>
+                <template v-if="!readonly">
+                  <AppButton size="sm" variant="ghost" @click="startEdit(task)">编辑任务</AppButton>
+                  <AppButton
+                    v-if="task.status !== 'cancelled' && task.status !== 'completed'"
+                    size="sm"
+                    variant="ghost"
+                    @click="askCancel(task.task_id)"
+                  >
+                    取消任务
+                  </AppButton>
+                </template>
+              </div>
+            </template>
+          </li>
+        </ul>
+      </div>
 
       <AppButton
         v-if="hasMore"
@@ -126,7 +154,7 @@
         <AppButton v-if="detailTask?.meeting_id" variant="ghost" @click="goToMeeting">
           跳转来源会议
         </AppButton>
-        <AppButton v-if="detailTask" @click="editFromDetail">编辑任务</AppButton>
+        <AppButton v-if="detailTask && !readonly" @click="editFromDetail">编辑任务</AppButton>
         <AppButton variant="ghost" @click="detailTask = null">关闭</AppButton>
       </template>
     </AppModal>
@@ -168,6 +196,23 @@ import { taskStatusMeta } from '@/utils/statusLabels'
 
 const store = useTasksStore()
 const router = useRouter()
+const props = withDefaults(
+  defineProps<{
+    defaultStatus?: TaskStatusFilter
+    showFilter?: boolean
+    autoLoad?: boolean
+    readonly?: boolean
+  }>(),
+  {
+    defaultStatus: '',
+    showFilter: true,
+    autoLoad: true,
+    readonly: false,
+  },
+)
+
+store.filters.status = props.defaultStatus
+
 const toast = useToast()
 
 const filterOptions: SelectOption[] = [
@@ -197,9 +242,7 @@ const editFormError = ref('')
 const editError = ref<unknown>(null)
 const editSaving = ref(false)
 
-const hasMore = computed(
-  () => store.pagination.page < store.pagination.total_pages,
-)
+const hasMore = computed(() => store.pagination.page < store.pagination.total_pages)
 
 function metaOf(task: PersonalTask) {
   return taskStatusMeta[task.status]
@@ -283,11 +326,18 @@ function goToMeeting(): void {
 }
 
 onMounted(() => {
-  void store.fetchList()
+  if (props.autoLoad) {
+    void store.fetchList()
+  }
 })
 
 function onFilter(value: string): void {
   void store.setStatusFilter(value as TaskStatusFilter)
+}
+
+function onStatusChange(task: PersonalTask, event: Event): void {
+  const target = event.target as HTMLSelectElement
+  void changeStatus(task, target.value)
 }
 
 async function changeStatus(task: PersonalTask, value: string): Promise<void> {
@@ -336,7 +386,31 @@ async function confirmCancel(): Promise<void> {
 }
 
 .task-section__toolbar {
-  max-width: 12rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.task-section__toolbar-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.task-section__toolbar-title strong {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.task-section__toolbar-title span {
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+}
+
+.task-section__toolbar :deep(.form-field) {
+  min-width: 11rem;
 }
 
 .task-section__state {
@@ -345,10 +419,32 @@ async function confirmCancel(): Promise<void> {
   padding: var(--space-5);
 }
 
+.task-section__table {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.task-section__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem auto;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-surface-strong);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.task-section__head span:last-child {
+  text-align: right;
+}
+
 .task-section__list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -359,56 +455,80 @@ async function confirmCancel(): Promise<void> {
 }
 
 .task-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  transition: border-color var(--transition-fast);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition-fast);
+}
+
+.task-item:last-child {
+  border-bottom: 0;
 }
 
 .task-item:hover {
-  border-color: var(--color-border-strong);
+  background: var(--color-surface-muted);
 }
 
 .task-item__head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .task-item__title {
-  font-weight: 600;
+  color: var(--color-foreground);
+  font-size: 0.875rem;
+  font-weight: 650;
   overflow-wrap: anywhere;
 }
 
 .task-item__controls {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-.task-item__controls :deep(.form-field) {
-  min-width: 8rem;
+.task-item__status-select {
+  min-height: 1.9rem;
+  padding: 0 1.5rem 0 8px;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.task-item__status-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
 .task-item__due {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
-  padding-bottom: var(--space-2);
+  font-size: 0.75rem;
 }
 
 .task-item__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .task-item__edit {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -422,6 +542,27 @@ async function confirmCancel(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+@media (max-width: 900px) {
+  .task-section__head {
+    display: none;
+  }
+
+  .task-item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .task-item__controls {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .task-item__actions {
+    justify-content: flex-start;
+  }
 }
 
 .task-detail {

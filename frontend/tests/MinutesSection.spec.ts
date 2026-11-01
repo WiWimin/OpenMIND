@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as minutesApi from '@/api/minutes'
 import MinutesSection from '@/components/MinutesSection.vue'
+import { useToast } from '@/composables/useToast'
 import type { ListData } from '@/types/api'
 import type { Minutes } from '@/types/minutes'
 import * as minutesDocx from '@/utils/minutesDocx'
@@ -13,6 +14,12 @@ vi.mock('@/api/minutes', () => ({
   getMinutes: vi.fn(),
   updateMinutes: vi.fn(),
   confirmMinutes: vi.fn(),
+}))
+
+const { mirrorConfirmedMinutes } = vi.hoisted(() => ({ mirrorConfirmedMinutes: vi.fn() }))
+
+vi.mock('@/composables/useLocalWorkspace', () => ({
+  useLocalWorkspace: () => ({ mirrorConfirmedMinutes }),
 }))
 
 vi.mock('@/components/RichTextEditor.vue', () => ({
@@ -60,6 +67,11 @@ function button(wrapper: VueWrapper, text: string) {
 describe('MinutesSection', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    mirrorConfirmedMinutes.mockResolvedValue('skipped')
+    // toast 是模块级单例，清掉上一个用例遗留的提示，避免断言互相污染
+    for (const toast of [...useToast().toasts.value]) {
+      useToast().dismiss(toast.id)
+    }
   })
 
   it('shows the empty state', async () => {
@@ -175,6 +187,60 @@ describe('MinutesSection', () => {
 
     expect(minutesApi.confirmMinutes).toHaveBeenCalledWith('min_1')
     expect(wrapper.text()).toContain('已确认')
+  })
+
+  it('mirrors confirmed minutes to the local folder and reports success', async () => {
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
+    const confirmed = { ...minutes, status: 'confirmed' as const, content: '确认后的纪要' }
+    vi.mocked(minutesApi.confirmMinutes).mockResolvedValue(confirmed)
+    mirrorConfirmedMinutes.mockResolvedValue('written')
+    const wrapper = mount(MinutesSection, {
+      props: { meetingId: 'mtg_1', meetingTitle: '项目周会' },
+    })
+    await flushPromises()
+
+    await wrapper.get('.minutes-section__item').trigger('click')
+    await button(wrapper, '确认')?.trigger('click')
+    await flushPromises()
+
+    expect(mirrorConfirmedMinutes).toHaveBeenCalledWith('mtg_1', '确认后的纪要', '项目周会')
+    expect(useToast().toasts.value.some((toast) => toast.message.includes('已同步到本地文件夹'))).toBe(
+      true,
+    )
+  })
+
+  it('warns when the local folder sync fails', async () => {
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
+    vi.mocked(minutesApi.confirmMinutes).mockResolvedValue({ ...minutes, status: 'confirmed' })
+    mirrorConfirmedMinutes.mockResolvedValue('failed')
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('.minutes-section__item').trigger('click')
+    await button(wrapper, '确认')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已确认')
+    expect(useToast().toasts.value.some((toast) => toast.message.includes('本地文件夹同步失败'))).toBe(
+      true,
+    )
+  })
+
+  it('stays silent when the local workspace is not connected', async () => {
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
+    vi.mocked(minutesApi.confirmMinutes).mockResolvedValue({ ...minutes, status: 'confirmed' })
+    mirrorConfirmedMinutes.mockResolvedValue('skipped')
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('.minutes-section__item').trigger('click')
+    await button(wrapper, '确认')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已确认')
+    expect(
+      useToast().toasts.value.some((toast) => toast.message.includes('已同步到本地文件夹')),
+    ).toBe(false)
   })
 
   it('exports the selected draft as docx', async () => {

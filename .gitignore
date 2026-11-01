@@ -35,6 +35,8 @@ venv/
 # Runtime storage (never commit real meeting data)
 storage/*
 !storage/.gitkeep
+backend/storage/
+frontend.zip
 
 # Playwright
 frontend/playwright-report/

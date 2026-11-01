@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 
@@ -22,3 +23,10 @@ def delete_object(storage_dir: str, relative_key: str) -> None:
         _resolve(storage_dir, relative_key).unlink()
     except FileNotFoundError:
         pass
+
+
+def remove_tree(storage_dir: str, relative_key: str) -> None:
+    """删除相对键对应的目录（若存在）；用于清理实时会话的分片目录。"""
+    path = _resolve(storage_dir, relative_key)
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)

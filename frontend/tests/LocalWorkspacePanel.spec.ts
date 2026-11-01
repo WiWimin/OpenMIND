@@ -4,10 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as materialsApi from '@/api/materials'
 import * as minutesApi from '@/api/minutes'
 import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
+import type { ListData } from '@/types/api'
+import type { Material } from '@/types/material'
 import * as minutesDocx from '@/utils/minutesDocx'
 
 vi.mock('@/api/materials', () => ({
   uploadMaterial: vi.fn(),
+  listMaterials: vi.fn(),
 }))
 
 vi.mock('@/api/minutes', () => ({
@@ -66,9 +69,30 @@ function button(wrapper: VueWrapper, text: string) {
   return wrapper.findAll('button').find((item) => item.text().includes(text))
 }
 
+function materialOf(fileName: string): Material {
+  return {
+    material_id: `mat_${fileName}`,
+    meeting_id: 'mtg_1',
+    file_name: fileName,
+    type: 'txt',
+    source: '本地工作区',
+    processing_status: 'processed',
+    parse_error: null,
+    created_at: '2026-10-01T09:00:00+08:00',
+  }
+}
+
+function materialList(items: Material[]): ListData<Material> {
+  return {
+    items,
+    pagination: { page: 1, page_size: 100, total: items.length, total_pages: 1 },
+  }
+}
+
 describe('LocalWorkspacePanel', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue(materialList([]))
     Object.defineProperty(window, 'showDirectoryPicker', {
       value: undefined,
       configurable: true,
@@ -128,6 +152,53 @@ describe('LocalWorkspacePanel', () => {
       source: '本地工作区',
     })
     expect(wrapper.emitted('imported')).toHaveLength(1)
+  })
+
+  it('shows a reminder for local files not yet imported', async () => {
+    const directory = createDirectory([
+      { name: 'old.txt', file: new File(['old'], 'old.txt') },
+      { name: 'plan.txt', file: new File(['plan'], 'plan.txt') },
+    ])
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      value: vi.fn().mockResolvedValue(directory),
+      configurable: true,
+    })
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue(materialList([materialOf('old.txt')]))
+    const wrapper = mountPanel()
+
+    await button(wrapper, '选择本地文件夹')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('检测到 1 个本地新文件尚未导入该会议')
+  })
+
+  it('imports only the new files from the reminder', async () => {
+    const newFile = new File(['plan'], 'plan.txt')
+    const directory = createDirectory([
+      { name: 'old.txt', file: new File(['old'], 'old.txt') },
+      { name: 'plan.txt', file: newFile },
+    ])
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      value: vi.fn().mockResolvedValue(directory),
+      configurable: true,
+    })
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue(materialList([materialOf('old.txt')]))
+    vi.mocked(materialsApi.uploadMaterial).mockResolvedValue(materialOf('plan.txt'))
+    const wrapper = mountPanel()
+
+    await button(wrapper, '选择本地文件夹')?.trigger('click')
+    await flushPromises()
+    await button(wrapper, '仅导入新文件')?.trigger('click')
+    await flushPromises()
+
+    expect(materialsApi.uploadMaterial).toHaveBeenCalledTimes(1)
+    expect(materialsApi.uploadMaterial).toHaveBeenCalledWith('mtg_1', {
+      file: newFile,
+      source: '本地工作区',
+    })
+    expect(wrapper.emitted('imported')).toHaveLength(1)
+    expect(wrapper.text()).toContain('已导入 1 个新文件')
+    expect(wrapper.text()).not.toContain('检测到')
   })
 
   it('exports the latest minutes to the selected directory', async () => {

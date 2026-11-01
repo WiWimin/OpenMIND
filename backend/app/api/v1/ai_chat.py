@@ -30,6 +30,7 @@ def chat(
         question=payload.question,
         context_scope=payload.context_scope.value,
         include_sources=payload.include_sources,
+        model=payload.model,
     )
     sources = (
         [
@@ -60,16 +61,23 @@ def organize(
     db: DbSession,
     current_user: CurrentUser,
 ) -> Envelope[OrganizeResponse]:
-    organized_content, source_record_ids = ai_chat_service.organize(
+    outcome = ai_chat_service.organize(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
         record_ids=payload.record_ids,
         style=payload.style,
+        task=payload.task,
+        text=payload.text,
+        instruction=payload.instruction,
+        audio_id=payload.audio_id,
+        model=payload.model,
     )
     return Envelope(
         data=OrganizeResponse(
-            organized_content=organized_content,
-            source_record_ids=source_record_ids,
+            task=outcome.task,
+            organized_content=outcome.content,
+            structured=outcome.structured,
+            source_record_ids=outcome.source_record_ids,
         )
     )

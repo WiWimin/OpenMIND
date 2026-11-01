@@ -109,6 +109,74 @@ class LLMClient:
                 raise last_error
         raise last_error or self._network_error()
 
+    def probe(self, *, timeout_s: float = 15) -> None:
+        """保存配置时的连通性校验：单次请求，不重试。
+
+        通过标准：HTTP 200 且 `choices` 非空；不要求 `content` 非空，
+        以兼容思考型模型在小 `max_tokens` 下只输出思考内容的情况。
+        """
+        self._ensure_configured()
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "请只回复：正常"}],
+            "temperature": 0,
+            "max_tokens": 32,
+        }
+        response = self._client.post(
+            "/chat/completions",
+            json=payload,
+            headers=self._headers(),
+            timeout=timeout_s,
+        )
+        if response.status_code != httpx.codes.OK:
+            raise self._http_error(response)
+        try:
+            data = response.json()
+        except ValueError:
+            raise AppError(
+                "MODEL_OUTPUT_INVALID",
+                "模型输出无法解析",
+                http_status=502,
+                retryable=False,
+            ) from None
+        if not (data.get("choices") or []):
+            raise AppError(
+                "MODEL_OUTPUT_INVALID",
+                "模型输出为空",
+                http_status=502,
+                retryable=False,
+            )
+
+    def list_models(self, *, timeout_s: float = 10) -> list[str]:
+        """拉取服务商可用模型清单（OpenAI 兼容 `GET /models`），单次请求不重试。"""
+        self._ensure_configured()
+        host = urlsplit(self.api_base).hostname or "invalid"
+        try:
+            response = self._client.get("/models", headers=self._headers(), timeout=timeout_s)
+        except httpx.TimeoutException:
+            logger.warning("模型列表拉取超时 host=%s", host)
+            raise self._timeout_error() from None
+        except httpx.HTTPError:
+            logger.warning("模型列表拉取网络异常 host=%s", host)
+            raise self._network_error() from None
+        if response.status_code != httpx.codes.OK:
+            raise self._http_error(response)
+        try:
+            data = response.json()
+        except ValueError:
+            raise AppError(
+                "MODEL_OUTPUT_INVALID",
+                "模型列表无法解析",
+                http_status=502,
+                retryable=False,
+            ) from None
+        items = data.get("data") or []
+        models: list[str] = []
+        for item in items:
+            if isinstance(item, dict) and item.get("id"):
+                models.append(str(item["id"]))
+        return sorted(models)
+
     def chat_json(
         self,
         messages: list[dict[str, str]],

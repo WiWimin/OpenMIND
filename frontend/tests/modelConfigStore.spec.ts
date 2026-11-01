@@ -20,8 +20,8 @@ const config: ModelConfig = {
   llm_purpose_models: {},
   embedding_api_base: 'https://emb.example.com/v1',
   embedding_model: 'text-embedding-1024',
-  embedding_api_key_masked: 'sk-...-key',
-  embedding_source: 'user',
+  embedding_api_key_masked: '',
+  embedding_source: 'global',
   embedding_dim: 1024,
 }
 

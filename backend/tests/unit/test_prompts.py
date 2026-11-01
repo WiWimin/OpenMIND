@@ -65,6 +65,51 @@ def test_build_organize() -> None:
     assert "记录2" in messages[-1]["content"]
 
 
+def test_build_organize_task_organize_uses_style() -> None:
+    messages = build_organize({**CONTEXT, "task": "organize", "style": "分点输出"})
+    assert "整理风格要求：分点输出" in messages[0]["content"]
+    assert "不要输出 JSON" in messages[0]["content"]
+
+
+def test_build_organize_task_summary_outputs_contract_json() -> None:
+    messages = build_organize({**CONTEXT, "task": "summary"})
+    system = messages[0]["content"]
+    assert "严格输出 JSON" in system
+    for key in ("conclusion", "key_discussions", "action_items", "open_questions"):
+        assert key in system
+    assert "禁止臆造" in system
+    assert "记录1" in messages[-1]["content"]
+
+
+def test_build_organize_task_brief() -> None:
+    messages = build_organize({**CONTEXT, "task": "brief", "style": "面向项目经理"})
+    assert "3-5 句" in messages[0]["content"]
+    assert "风格要求：面向项目经理" in messages[0]["content"]
+    assert "记录1" in messages[-1]["content"]
+
+
+def test_build_organize_task_polish_contract() -> None:
+    messages = build_organize({**CONTEXT, "task": "polish"})
+    system = messages[0]["content"]
+    assert "严格输出 JSON 数组" in system
+    for field in ("location", "original", "suggested", "reason", "confidence"):
+        assert field in system
+    assert "宁可少改不要错改" in system
+    assert "同一行内" in system
+
+
+def test_build_organize_instruction_injected_into_user_message() -> None:
+    messages = build_organize({**CONTEXT, "task": "summary", "instruction": "重点看排期问题"})
+    assert "用户补充要求：重点看排期问题" in messages[-1]["content"]
+    # system 提示词不受用户补充影响
+    assert "用户补充要求" not in messages[0]["content"]
+
+
+def test_build_organize_empty_instruction_not_appended() -> None:
+    messages = build_organize({**CONTEXT, "task": "summary", "instruction": "   "})
+    assert "用户补充要求" not in messages[-1]["content"]
+
+
 def test_prompts_include_memory_context_without_overriding_rules() -> None:
     context = {**CONTEXT, "memory_context": "表达偏好：结论先行"}
 

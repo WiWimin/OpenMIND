@@ -185,7 +185,7 @@ function refill(): void {
   margin: 0;
   max-width: 88%;
   padding: var(--space-2) var(--space-3);
-  background: linear-gradient(135deg, var(--color-primary), #4f83e0);
+  background: linear-gradient(135deg, var(--color-primary), #155eef);
   border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
   color: #ffffff;
   font-size: 0.9rem;

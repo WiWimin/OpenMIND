@@ -232,7 +232,23 @@ const tabs: TabItem[] = [
   { value: 'issues', label: '问题' },
   { value: 'checklist', label: '收尾' },
 ]
-const activeTab = ref('materials')
+
+function tabFromQuery(): string {
+  const tab = route.query?.tab
+  return typeof tab === 'string' && tabs.some((item) => item.value === tab) ? tab : 'materials'
+}
+
+const activeTab = ref(tabFromQuery())
+
+watch(
+  () => route.query?.tab,
+  () => {
+    const next = tabFromQuery()
+    if (next !== activeTab.value) {
+      activeTab.value = next
+    }
+  },
+)
 
 const isArchived = computed(() => store.current?.status === 'archived')
 
@@ -384,7 +400,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .meeting-detail__anchor:hover {
-  background: rgba(59, 111, 212, 0.07);
+  background: rgba(21, 94, 239, 0.07);
   color: var(--color-foreground);
 }
 
@@ -392,7 +408,7 @@ async function confirmDelete(): Promise<void> {
   color: #ffffff;
   font-weight: 600;
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  box-shadow: 0 6px 16px rgba(59, 111, 212, 0.28);
+  box-shadow: 0 6px 16px rgba(21, 94, 239, 0.28);
 }
 
 .meeting-detail__panel {
@@ -460,7 +476,7 @@ async function confirmDelete(): Promise<void> {
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   border: none;
   border-radius: var(--radius-pill);
-  box-shadow: 0 8px 24px rgba(59, 111, 212, 0.35);
+  box-shadow: 0 8px 24px rgba(21, 94, 239, 0.35);
   cursor: pointer;
   transition:
     transform var(--transition-fast),
@@ -469,7 +485,7 @@ async function confirmDelete(): Promise<void> {
 
 .meeting-detail__ai-fab:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(59, 111, 212, 0.45);
+  box-shadow: 0 10px 28px rgba(21, 94, 239, 0.45);
 }
 
 @media (max-width: 900px) {

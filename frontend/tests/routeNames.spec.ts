@@ -22,18 +22,19 @@ describe('route constants', () => {
     expect(ROUTE_PATHS.meetingDetail).toBe('/meetings/:meetingId')
   })
 
-  it('exposes the knowledge base route', () => {
-    expect(ROUTE_NAMES.knowledge).toBe('knowledge')
-    expect(ROUTE_PATHS.knowledge).toBe('/knowledge')
+  it('exposes the new meeting stage routes', () => {
+    expect(ROUTE_NAMES.newMeeting).toBe('new-meeting')
+    expect(ROUTE_PATHS.newMeeting).toBe('/new-meeting')
+    expect(ROUTE_NAMES.preprocess).toBe('new-meeting-preprocess')
+    expect(ROUTE_PATHS.preprocess).toBe('/new-meeting/preprocess')
+    expect(ROUTE_NAMES.asr).toBe('new-meeting-asr')
+    expect(ROUTE_PATHS.asr).toBe('/new-meeting/asr')
+    expect(ROUTE_NAMES.minutesGenerate).toBe('new-meeting-minutes')
+    expect(ROUTE_PATHS.minutesGenerate).toBe('/new-meeting/minutes')
   })
 
-  it('exposes the memory center route', () => {
-    expect(ROUTE_NAMES.memory).toBe('memory')
-    expect(ROUTE_PATHS.memory).toBe('/memory')
-  })
-
-  it('exposes the model settings route', () => {
-    expect(ROUTE_NAMES.settings).toBe('settings')
-    expect(ROUTE_PATHS.settings).toBe('/settings')
+  it('exposes the meeting and task sub-page routes', () => {
+    expect(ROUTE_NAMES.taskArchive).toBe('task-archive')
+    expect(ROUTE_PATHS.taskArchive).toBe('/tasks/archive')
   })
 })

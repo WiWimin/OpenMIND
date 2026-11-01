@@ -402,8 +402,8 @@ async function saveDraft(): Promise<void> {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
-  background: linear-gradient(135deg, rgba(59, 111, 212, 0.07), rgba(20, 184, 166, 0.07));
-  border: 1px solid rgba(59, 111, 212, 0.18);
+  background: linear-gradient(135deg, rgba(21, 94, 239, 0.07), rgba(20, 184, 166, 0.07));
+  border: 1px solid rgba(21, 94, 239, 0.18);
   border-radius: var(--radius-md);
 }
 
@@ -415,7 +415,7 @@ async function saveDraft(): Promise<void> {
   font-weight: 600;
   font: inherit;
   background: #ffffff;
-  border: 1px solid rgba(59, 111, 212, 0.28);
+  border: 1px solid rgba(21, 94, 239, 0.28);
   border-radius: var(--radius-pill);
   cursor: pointer;
   transition:
@@ -424,7 +424,7 @@ async function saveDraft(): Promise<void> {
 }
 
 .ai-drawer__chip:hover:not(:disabled) {
-  background: rgba(59, 111, 212, 0.08);
+  background: rgba(21, 94, 239, 0.08);
 }
 
 .ai-drawer__chip:disabled {
@@ -471,7 +471,7 @@ async function saveDraft(): Promise<void> {
 .ai-drawer-message--user .ai-drawer-message__text {
   max-width: 88%;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--color-primary), #4f83e0);
+  background: linear-gradient(135deg, var(--color-primary), #155eef);
   border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
   font-weight: 500;
 }

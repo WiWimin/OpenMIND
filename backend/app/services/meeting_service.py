@@ -8,6 +8,7 @@ from app.models.meeting import Meeting
 from app.models.user import utc_now
 from app.repositories import (
     action_item_repository,
+    audio_repository,
     chunk_repository,
     issue_repository,
     material_repository,
@@ -112,6 +113,20 @@ def delete_meeting(db: Session, meeting_id: str, user_id: str) -> None:
     settings = get_settings()
     for material in material_repository.list_all_by_meeting(db, meeting_id):
         storage.delete_object(settings.storage_dir, material.storage_key)
+
+    # 音频必须先于记录删除（audio.record_id 引用 meeting_records）；
+    # 同时清理主文件与实时会话的分片目录。
+    for audio in audio_repository.list_all_by_meeting(db, meeting_id):
+        storage.delete_object(settings.storage_dir, audio.storage_key)
+        for segment in audio.segments or []:
+            seq = segment.get("seq")
+            if seq is not None:
+                storage.delete_object(
+                    settings.storage_dir,
+                    f"audio/{audio.audio_id}/chunks/{seq:04d}.{audio.type}",
+                )
+        storage.remove_tree(settings.storage_dir, f"audio/{audio.audio_id}")
+    audio_repository.delete_by_meeting(db, meeting_id)
 
     action_item_repository.delete_by_meeting(db, meeting_id)
     minutes_repository.delete_by_meeting(db, meeting_id)

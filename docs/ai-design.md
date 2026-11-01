@@ -14,7 +14,7 @@
 2. **原始数据不被覆盖**：解析文本、记录、材料原文件分别存储。
 3. **权限先行**：检索必须先按当前用户限定范围，禁止全库相似度检索后再过滤。
 4. **可追溯**：生成结果须能追溯到来源记录/分块（`source_record_ids`、`sources`、`source_record_id`）。
-5. **密钥服务端化**：LLM/Embedding 密钥来自「用户自带配置」（`/me/settings/model`，Fernet 加密存库，永不明文返回前端）或「服务端环境变量」，绝不下发明文。
+5. **密钥服务端化**：LLM 密钥来自「用户自带配置」（`/me/settings/model`，Fernet 加密存库，永不明文返回前端）或「服务端环境变量」；Embedding 密钥仅来自「服务端环境变量」，绝不下发明文。
 
 ## 二、能力层结构
 
@@ -83,18 +83,19 @@ class LLMClient:
 
 - 每次调用记录：模型名、`usage`、`latency_ms`、成功/失败（日志或后续 `ai_call_logs`）。
 
-### 3.5 模型配置来源（用户自带 BYOK）
+### 3.5 模型配置来源（LLM 用户自带 BYOK，Embedding 服务端统一）
 
-- 每个用户可通过 `PUT /api/v1/me/settings/model` 自备 LLM / Embedding 配置（`api_base` + `api_key` + `model`）。
+- 每个用户可通过 `PUT /api/v1/me/settings/model` 自备 **LLM** 配置（`api_base` + `api_key` + `model`）。向量模型（Embedding）不支持用户自备，始终使用服务端 `docker/.env` 的 `EMBEDDING_*` 全局配置。
 - 密钥 `Fernet` 加密存库（`user_model_configs`），密钥由服务端 `SECRET_KEY` 派生；`GET` 仅返回脱敏值，绝不回显明文。来源为 `global`/`none` 时 `_masked` 为空，不向用户泄露全局密钥片段。
-- 保存时 probe 实测校验：Embedding 必须返回 **1024** 维向量；LLM 需能正常生成；失败返回 `MODEL_CONFIG_INVALID`（400）。
+- 保存时 probe 实测校验 LLM 连通性：单次请求、不重试、15s 超时；HTTP 200 且返回 `choices` 即通过，不要求正文非空（兼容思考型模型在小 `max_tokens` 下只输出思考内容）。失败返回 `MODEL_CONFIG_INVALID`（400）；遇 `429 RATE_LIMITED` 视为密钥认证已通过，放行保存并在响应中带 `llm_probe_verified: false`。
 - `api_base` 默认只允许 HTTPS 公网地址；拒绝本机、私有/保留 IP、URL 内嵌凭证及 query/fragment。自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS`，该开关会扩大 SSRF 面，仅限可信部署。应用层校验不能完全消除 DNS rebinding，部署侧仍应限制出站访问。
 - `SECRET_KEY` 在非开发环境必须为至少 32 字符的随机值；轮换时通过 `SECRET_KEY_PREVIOUS` 保留旧密钥解密既有密文，新加密始终使用当前 `SECRET_KEY`。解密失败返回 `MODEL_CONFIG_INVALID`，用户可清除并重新保存配置。
-- 默认要求用户配置 BYOK；`ALLOW_GLOBAL_FALLBACK=false` 时未配置用户返回 `MODEL_CONFIG_REQUIRED`（400），不会静默使用服务端全局 Key。仅显式开启 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局”回退。
+- 默认要求用户配置 BYOK LLM；`ALLOW_GLOBAL_FALLBACK=false` 时未配置用户返回 `MODEL_CONFIG_REQUIRED`（400），不会静默使用服务端全局 Key。仅显式开启 `ALLOW_GLOBAL_FALLBACK=true` 时 LLM 按“用户配置 > 服务端全局”回退；该开关不影响 Embedding。
 - 按用途模型：`user_model_configs.llm_purpose_models` 保存 `preparation` / `chat` / `minutes` / `extraction` 的模型名覆盖；仅覆盖模型名，API 地址与密钥沿用 LLM 基础配置。未覆盖或未设置时使用默认 `llm_model`。
-- 调用方必须显式传入用途：会前准备、会议问答/整理、纪要生成、行动项/问题提取分别使用对应用途；Embedding 仍使用独立 Embedding 配置。
+- 请求级模型覆盖：会议问答（`chat`）与会前准备（`prepare`）接受可选 `model` 参数（`api.md 5.7 / 5.2`），取值来自服务商预设的常用模型清单（前端 `modelProviders.ts`），后端不校验登记列表，模型名是否有效由服务商 API 判定。API 地址与密钥仍沿用配置，不因请求切换提供方。
+- 调用方必须显式传入用途：会前准备、会议问答/整理、纪要生成、行动项/问题提取分别使用对应用途；Embedding 使用服务端统一配置。
 - 模型额度不足返回 `MODEL_QUOTA_EXCEEDED`（402）；密钥无效返回 `MODEL_CONFIG_INVALID`（400）。
-- Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），用户自备模型也必须为 1024 维。
+- Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），由服务端 `EMBEDDING_DIM` 决定，更换模型或维度需重建 pgvector 列。
 
 ## 四、Embedding 与文本切分（`ai/embeddings/`）
 
@@ -105,7 +106,7 @@ class EmbeddingClient:
     def embed(self, texts: list[str], *, model: str | None = None) -> list[list[float]]: ...
 ```
 
-- 模型：`settings.embedding_model`（阿里百炼 `text-embedding-v3`）；维度：`settings.embedding_dim = 1024`。用户可自备，但维度必须为 1024（§3.5）。
+- 模型：`settings.embedding_model`（阿里百炼 `text-embedding-v3`）；维度：`settings.embedding_dim = 1024`。向量模型为服务端统一配置（`docker/.env`），用户不可自备；未配置时 RAG 链路返回 `MODEL_CONFIG_REQUIRED`。
 - 批量：每批 ≤ 16 条；单批超时 30s；失败重试 2 次（退避 1s/3s）。
 - 维度校验：返回向量长度必须等于 `settings.embedding_dim`，否则报 `INTERNAL_ERROR` 并记录。
 
@@ -233,11 +234,15 @@ failed → processing   （重试）
   - 启动/停止：`scripts/asr.ps1 up|down|status|logs|smoke`（Windows）或 `scripts/asr.sh`（Linux/macOS）。
   - 首次启动会下载模型（约 1GB）并加载 SenseVoice；CPU 上短音频通常在数秒内完成，长音频耗时随长度增加。
   - FunASR 服务本身无鉴权、无上传/限流；只能用于本地或受控内网，不得直接暴露公网。软件为 MIT，模型权重许可以模型页面为准。
-- 状态：`uploaded → processing → transcribed | failed`；确认后 `confirmed`。
+- 状态：`uploaded → processing → transcribed | failed`；确认后 `confirmed`；实时录音会话期间保持 `processing`。
 - 失败保留音频文件并记录安全错误摘要，可重试；不覆盖已有成功文本。
 - 用户在确认前可修订转写；确认生成 `record_type=transcript` 的会议记录，确认幂等。
 - 已确认音频不能重新转写或删除；删除未确认音频同步删除文件。
-- 实时流式 ASR 不在当前范围；音频原文件不进入 RAG。
+- **实时录音（分片边录边转）**：前端每约 30 秒产出一段完整可解码的分片（周期性 stop/start `MediaRecorder`，保证单片可解码），按 `seq` 串行上传；后端逐片转写并追加分段（`segments` JSONB）与全文（`\n` 拼接），页面实时滚动出字（延迟约一个分片周期）。
+  - 单片转写/上传失败仅在该分段写入 `error` 占位，可单片重试，不阻塞后续分片。
+  - 结束时 `live/finish` 按 `seq` 合并分片为单一音频文件（供再次转写/存档），删除分片文件，落定 `transcribed`/`failed`；调用幂等。
+  - 该方案为分片近实时转写，非 WebSocket 逐字流式；音频原文件不进入 RAG。
+- 用户修订全文后按行重拆 `segments`，沿用原分段的相对时间与标记。
 
 ## 七、Prompt 管理（`ai/prompts/`）
 
@@ -252,6 +257,8 @@ failed → processing   （重试）
 ### 8.1 会前准备 `POST /meetings/{id}/prepare`
 - 输入：会议信息 + 材料内容（当前会议；`include_history=true` 时加入有限历史材料）。
 - 输出（结构化）：`{ summary: str, checklist: list[str] }`。
+- 模板：可选 `template_id`（内置或本人自定义，见 `api.md 5.16a`），模板结构文本注入 system 提示词（`build_prepare`），仅改变输出组织方式；模板不存在或越权返回 404。
+- 模型：可选 `model` 覆盖本次生成模型（校验见 §3.5）。
 - 落库：**每次生成新增一条** `preparations`（`status=draft`，`version=1`）。
 - 失败：置 `failed` 并返回统一错误。
 
@@ -262,13 +269,18 @@ failed → processing   （重试）
 - 材料、记录与知识库都为空 → `insufficient_evidence=true` 且回答明确说明无法确认。
 - 不落库（问答历史非 MVP）。
 
-### 8.3 整理记录 `POST /meetings/{id}/organize`
-- 输入：显式 `record_ids`。输出 `{ organized_content, source_record_ids[] }`。不落库。
+### 8.3 整理任务 `POST /meetings/{id}/organize`
+- 输入：`task`（`organize` 整理记录 / `summary` 提炼要点 / `brief` 简短摘要 / `polish` 修正口误建议，默认 `organize`）、可选 `style` 风格、`instruction` 用户附加要求与 `model` 覆盖；输入源三级回退：`text` > `audio_id`（音频转写文本）> `record_ids`（空 = 最近 20 条 ≤8000 字记录），均无内容返回 `422`。
+- `instruction`（用户附加要求）注入 user 消息「用户补充要求：…」节，为空时不追加；对应前端快捷任务标记（`#任务名` 黄色 chip）+ 用户补充文字的交互。
+- 输出 `{ task, organized_content, structured, source_record_ids[] }`；不落库，不覆盖原始记录与转写文本。
+- `summary` / `polish` 由 `build_organize` 按任务注入专属 system prompt 并要求严格 JSON 输出；服务端容错解析（剥离代码块标记、截取首尾括号重试），失败时 `structured=null` 且 `organized_content` 返回原文。
+- `summary` 结构：结论 / 关键讨论 / 待办（含 `source_quote` 必须摘自原文）/ 待确认问题；Prompt 明确"只提取明确出现的信息，禁止臆造"。
+- `polish` 结构：修改建议数组（`location/original/suggested/reason/confidence`）；Prompt 约束"只改明显口误与识别错误、每条修改保持同一行内、宁可少改不要错改、无问题输出空数组"；采纳写回由前端执行（录音进行中禁止写回）。
 
 ### 8.4 纪要生成 `POST /meetings/{id}/minutes/generate`
-- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）、`template`（可空）。
-- 模板：`standard` 标准纪要、`concise` 简洁记录、`task_list` 任务清单；`template` 为空时使用记忆中心默认模板，未设置则 `standard`；模板只改变输出组织方式，不降低来源与事实验证要求。
-- 记忆：仅注入表达偏好；模板偏好只作为默认值，显式请求模板优先。
+- 输入：`record_ids`、`include_action_items`、`include_materials`（默认 `true`）、`template`（可空）、`template_id`（可空）。
+- 模板：`standard` 标准纪要、`concise` 简洁记录、`task_list` 任务清单；`template` 为空时使用记忆中心默认模板，未设置则 `standard`；`template_id`（会议模板，`api.md 5.16a`）优先于 `template`，模板结构文本经 `build_minutes` 注入提示词，生成结果 `template` 记为 `custom`；模板只改变输出组织方式，不降低来源与事实验证要求。
+- 记忆：仅注入表达偏好；模板偏好只作为默认值，显式请求模板或 `template_id` 优先。
 - 上下文：显式记录（为空时当前会议最近 100 条）+ 当前会议资料（最多 10 份、合计约 12000 字符）+ 实际参与记录上的标记（`highlight` / `decision` / `question`）。
 - 资料只作背景，Prompt 明确禁止把资料中没有的信息写成会议事实；标记用于强调重点、决议和待确认问题。
 - 任务清单模板中未提及负责人或截止时间时写“未指定”，不得编造。

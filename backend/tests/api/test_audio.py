@@ -221,3 +221,206 @@ def test_unsupported_audio_type(
 def test_requires_auth(client: TestClient) -> None:
     assert client.get("/api/v1/meetings/mtg_x/audio").status_code == 401
     assert client.post("/api/v1/audio/aud_x/confirm").status_code == 401
+
+
+# ============================ 实时录音：分片边录边转 ============================
+
+
+def _start_live(client: TestClient, headers: dict[str, str], meeting_id: str):
+    return client.post(
+        f"/api/v1/meetings/{meeting_id}/audio/live/start",
+        json={"file_type": "webm"},
+        headers=headers,
+    )
+
+
+def _send_chunk(
+    client: TestClient,
+    headers: dict[str, str],
+    audio_id: str,
+    seq: int,
+    content: bytes,
+    offset_seconds: int = 0,
+):
+    return client.post(
+        f"/api/v1/audio/{audio_id}/live/chunk",
+        files={"file": (f"chunk-{seq:04d}.webm", content, "audio/webm")},
+        data={"seq": str(seq), "offset_seconds": str(offset_seconds)},
+        headers=headers,
+    )
+
+
+def test_live_session_transcribes_and_finishes(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        audio_service,
+        "transcribe_file",
+        lambda content, file_name: f"分段{content.decode()}",
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    started = _start_live(client, headers, meeting["meeting_id"])
+    assert started.status_code == 201, started.text
+    audio = started.json()["data"]
+    assert audio["status"] == "processing"
+
+    first = _send_chunk(client, headers, audio["audio_id"], 1, b"one", offset_seconds=0)
+    second = _send_chunk(client, headers, audio["audio_id"], 2, b"two", offset_seconds=30)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+
+    data = second.json()["data"]
+    assert [seg["text"] for seg in data["segments"]] == ["分段one", "分段two"]
+    assert [seg["offset_seconds"] for seg in data["segments"]] == [0, 30]
+    assert data["transcript"] == "分段one\n分段two"
+
+    finished = client.post(
+        f"/api/v1/audio/{audio['audio_id']}/live/finish", headers=headers
+    )
+    assert finished.status_code == 200
+    done = finished.json()["data"]
+    assert done["status"] == "transcribed"
+    assert (media_root / "audio" / f"{audio['audio_id']}.webm").exists()
+    chunks_dir = media_root / "audio" / audio["audio_id"] / "chunks"
+    assert not chunks_dir.exists() or not any(chunks_dir.iterdir())
+
+    # 幂等：重复 finish 不改变状态
+    again = client.post(
+        f"/api/v1/audio/{audio['audio_id']}/live/finish", headers=headers
+    )
+    assert again.status_code == 200
+    assert again.json()["data"]["status"] == "transcribed"
+
+
+def test_live_chunk_out_of_order_rejected(
+    client: TestClient, media_root, fake_transcription: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    audio = _start_live(client, headers, meeting["meeting_id"]).json()["data"]
+
+    response = _send_chunk(client, headers, audio["audio_id"], 2, b"data")
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+def test_live_chunk_failure_marks_segment_and_retries(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def flaky(content, file_name):
+        if b"bad" in content:
+            raise AppError("MODEL_TIMEOUT", "转写服务超时", http_status=504)
+        return "正常文本"
+
+    monkeypatch.setattr(audio_service, "transcribe_file", flaky)
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    audio = _start_live(client, headers, meeting["meeting_id"]).json()["data"]
+
+    first = _send_chunk(client, headers, audio["audio_id"], 1, b"bad-data")
+    assert first.status_code == 200
+    data = first.json()["data"]
+    assert data["segments"][0]["text"] == ""
+    assert "超时" in data["segments"][0]["error"]
+    assert data["transcript"] is None
+
+    monkeypatch.setattr(
+        audio_service, "transcribe_file", lambda content, file_name: "重试成功"
+    )
+    retried = client.post(
+        f"/api/v1/audio/{audio['audio_id']}/segments/1/retry", headers=headers
+    )
+    assert retried.status_code == 200
+    done = retried.json()["data"]
+    assert done["segments"][0]["text"] == "重试成功"
+    assert done["segments"][0]["error"] is None
+    assert done["transcript"] == "重试成功"
+
+    finished = client.post(
+        f"/api/v1/audio/{audio['audio_id']}/live/finish", headers=headers
+    )
+    assert finished.json()["data"]["status"] == "transcribed"
+
+
+def test_segment_marker_roundtrip(
+    client: TestClient, media_root, fake_transcription: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    audio = _start_live(client, headers, meeting["meeting_id"]).json()["data"]
+    _send_chunk(client, headers, audio["audio_id"], 1, b"fake-audio")
+
+    marked = client.patch(
+        f"/api/v1/audio/{audio['audio_id']}/segments/marker",
+        json={"seq": 1, "marker_type": "highlight"},
+        headers=headers,
+    )
+    assert marked.status_code == 200
+    assert marked.json()["data"]["segments"][0]["marker_type"] == "highlight"
+
+    cleared = client.patch(
+        f"/api/v1/audio/{audio['audio_id']}/segments/marker",
+        json={"seq": 1, "marker_type": None},
+        headers=headers,
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["data"]["segments"][0]["marker_type"] is None
+
+    invalid = client.patch(
+        f"/api/v1/audio/{audio['audio_id']}/segments/marker",
+        json={"seq": 1, "marker_type": "unknown"},
+        headers=headers,
+    )
+    assert invalid.status_code == 422
+
+    missing = client.patch(
+        f"/api/v1/audio/{audio['audio_id']}/segments/marker",
+        json={"seq": 99, "marker_type": "highlight"},
+        headers=headers,
+    )
+    assert missing.status_code == 404
+
+
+def test_update_transcript_resplits_segments(
+    client: TestClient, media_root, fake_transcription: None
+) -> None:
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    audio = _upload(client, headers, meeting["meeting_id"]).json()["data"]
+
+    updated = client.patch(
+        f"/api/v1/audio/{audio['audio_id']}",
+        json={"transcript": "第一段内容\n第二段内容"},
+        headers=headers,
+    )
+
+    assert updated.status_code == 200
+    segments = updated.json()["data"]["segments"]
+    assert [seg["text"] for seg in segments] == ["第一段内容", "第二段内容"]
+    assert [seg["seq"] for seg in segments] == [1, 2]
+
+
+def test_live_audio_cross_user_and_auth(
+    client: TestClient, media_root, fake_transcription: None
+) -> None:
+    alice = _auth(client, "alice")
+    meeting = _meeting(client, alice)
+    audio = _start_live(client, alice, meeting["meeting_id"]).json()["data"]
+    bob = _auth(client, "bob")
+
+    assert (
+        _send_chunk(client, bob, audio["audio_id"], 1, b"data").status_code == 404
+    )
+    assert (
+        client.post(
+            f"/api/v1/audio/{audio['audio_id']}/live/finish", headers=bob
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post("/api/v1/meetings/mtg_x/audio/live/start", json={}).status_code
+        == 401
+    )

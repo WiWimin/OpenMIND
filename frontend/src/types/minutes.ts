@@ -1,6 +1,6 @@
 // 纪要读取/编辑/确认接口为 [提案]（api.md 5.11–5.14），待团队确认
 export type MinutesStatus = 'draft' | 'confirmed'
-export type MinutesTemplate = 'standard' | 'concise' | 'task_list'
+export type MinutesTemplate = 'standard' | 'concise' | 'task_list' | 'custom'
 
 export interface Minutes {
   minutes_id: string
@@ -20,6 +20,8 @@ export interface GenerateMinutesPayload {
   include_action_items?: boolean
   include_materials?: boolean
   template?: MinutesTemplate
+  /** 可选：套用输出模板（内置或本人自定义），优先于 template */
+  template_id?: string
 }
 
 export interface UpdateMinutesPayload {

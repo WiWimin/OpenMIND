@@ -112,7 +112,7 @@ class EmbeddingClient:
         if not self.api_base or not self.api_key:
             raise AppError(
                 "MODEL_CONFIG_REQUIRED",
-                "未配置向量模型（Embedding）",
+                "服务端未配置向量模型，请联系管理员",
                 http_status=400,
                 retryable=False,
             )

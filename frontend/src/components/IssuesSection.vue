@@ -48,7 +48,7 @@
           <template v-else>
             <p v-if="issue.follow_up" class="issue-item__follow">跟进：{{ issue.follow_up }}</p>
             <div v-if="!readonly" class="issue-item__actions">
-              <AppButton variant="ghost" @click="startEdit(issue)">编辑</AppButton>
+              <AppButton size="sm" variant="ghost" @click="startEdit(issue)">编辑</AppButton>
             </div>
           </template>
         </li>
@@ -86,10 +86,9 @@ import type { SelectOption } from '@/types/ui'
 import { isRequestCancelled } from '@/utils/requests'
 import { issueStatusMeta } from '@/utils/statusLabels'
 
-const props = withDefaults(
-  defineProps<{ meetingId: string; readonly?: boolean }>(),
-  { readonly: false },
-)
+const props = withDefaults(defineProps<{ meetingId: string; readonly?: boolean }>(), {
+  readonly: false,
+})
 
 const toast = useToast()
 

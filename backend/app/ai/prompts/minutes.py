@@ -23,6 +23,7 @@ def build_minutes(context: dict) -> list[dict[str, str]]:
     marked = context.get("marked_records", [])
     memory = context.get("memory_context", "")
     template = context.get("template", "standard")
+    template_instructions = context.get("template_instructions", "")
     joined_records = "\n\n".join(records)
     joined_materials = "\n\n".join(materials)
     marked_lines = "\n".join(
@@ -30,9 +31,15 @@ def build_minutes(context: dict) -> list[dict[str, str]]:
         f"{item.get('content', '')}"
         for item in marked
     )
-    instruction = _TEMPLATE_INSTRUCTIONS.get(
-        template, _TEMPLATE_INSTRUCTIONS["standard"]
-    )
+    if template_instructions:
+        instruction = (
+            "按用户提供的模板结构生成会议纪要，模板要求："
+            f"{template_instructions}"
+        )
+    else:
+        instruction = _TEMPLATE_INSTRUCTIONS.get(
+            template, _TEMPLATE_INSTRUCTIONS["standard"]
+        )
     system = (
         f"你是会议纪要助手。{instruction}"
         "根据会议资料、会议记录和用户标记生成内容；资料只作背景，"
