@@ -19,7 +19,7 @@ class UserMemory(Base):
     work_scenarios: Mapped[str | None] = mapped_column(Text, nullable=True)
     communication_style: Mapped[str | None] = mapped_column(Text, nullable=True)
     preferred_minutes_template: Mapped[str | None] = mapped_column(
-        String(20), nullable=True
+        String(64), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()

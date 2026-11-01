@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as memoryApi from '@/api/memory'
+import * as templatesApi from '@/api/templates'
 import MemoryDialog from '@/components/settings/MemoryDialog.vue'
 import type { UserMemory } from '@/types/memory'
 
@@ -9,6 +10,10 @@ vi.mock('@/api/memory', () => ({
   getMemory: vi.fn(),
   saveMemory: vi.fn(),
   clearMemory: vi.fn(),
+}))
+
+vi.mock('@/api/templates', () => ({
+  listTemplates: vi.fn(),
 }))
 
 const memory: UserMemory = {
@@ -27,6 +32,7 @@ describe('MemoryDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(memoryApi.getMemory).mockResolvedValue(memory)
+    vi.mocked(templatesApi.listTemplates).mockResolvedValue([])
   })
 
   it('loads and renders the memory fields', async () => {

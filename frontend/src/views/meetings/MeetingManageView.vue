@@ -2,37 +2,10 @@
   <section class="meeting-manage">
     <PageHeader title="会议管理">
       <template #actions>
-        <AppButton variant="ghost" @click="onWorkspaceButton">本地文件夹配置</AppButton>
+        <AppButton variant="ghost" @click="onWorkspaceButton">{{ workspaceButtonLabel }}</AppButton>
         <AppButton variant="ghost" @click="goTemplates">模板管理</AppButton>
       </template>
     </PageHeader>
-
-    <!-- 本地工作区状态条 -->
-    <div
-      v-if="ws.status.value === 'connected' || ws.status.value === 'needs-permission'"
-      class="workspace-bar"
-      :class="{ 'workspace-bar--warn': ws.status.value === 'needs-permission' }"
-      role="status"
-    >
-      <span class="workspace-bar__icon" aria-hidden="true"><NavIcon name="folder" :size="15" /></span>
-      <template v-if="ws.status.value === 'connected'">
-        <span class="workspace-bar__text">
-          本地文件夹已连接：<strong>{{ ws.directoryName.value }}</strong
-          >，上传的资料与生成的纪要将自动保存到对应会议文件夹。
-        </span>
-        <button type="button" class="workspace-bar__action" @click="ws.disconnect()">断开</button>
-      </template>
-      <template v-else>
-        <span class="workspace-bar__text">
-          本地文件夹「<strong>{{ ws.directoryName.value }}</strong
-          >」需要恢复访问权限后才能自动保存。
-        </span>
-        <button type="button" class="workspace-bar__action workspace-bar__action--primary" @click="onRestore">
-          恢复访问
-        </button>
-        <button type="button" class="workspace-bar__action" @click="ws.disconnect()">断开</button>
-      </template>
-    </div>
 
     <section class="meeting-panel">
       <header class="meeting-panel__head">
@@ -559,11 +532,17 @@ function onWorkspaceButton(): void {
   void onConnect()
 }
 
+// 未配置（或浏览器不支持）时展示「本地文件夹配置」，已配置后展示「修改文件夹配置」
+const workspaceButtonLabel = computed(() =>
+  ws.status.value === 'connected' || ws.status.value === 'needs-permission'
+    ? '修改文件夹配置'
+    : '本地文件夹配置',
+)
+
 async function onConnect(): Promise<void> {
   const connected = await ws.connect()
-  if (connected) {
-    toast.success(`本地文件夹已连接：${ws.directoryName.value}`)
-  } else if (ws.status.value === 'unconfigured') {
+  // 连接成功不弹提示，页面顶部的工作区状态条已展示连接状态
+  if (!connected && ws.status.value === 'unconfigured') {
     toast.error('未选择文件夹')
   }
 }
@@ -592,58 +571,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-/* 本地工作区状态条 */
-.workspace-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  color: var(--color-accent-strong);
-  font-size: 0.75rem;
-  background: var(--color-accent-soft);
-  border: 1px solid rgba(13, 148, 136, 0.22);
-  border-radius: var(--radius-lg);
-}
-
-.workspace-bar--warn {
-  color: var(--color-checking);
-  background: #fdf3e0;
-  border-color: rgba(180, 83, 9, 0.22);
-}
-
-.workspace-bar__icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-}
-
-.workspace-bar__text {
-  flex: 1;
-  min-width: 0;
-}
-
-.workspace-bar__text strong {
-  font-weight: 650;
-}
-
-.workspace-bar__action {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  color: inherit;
-  font: inherit;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid currentColor;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-}
-
-.workspace-bar__action--primary {
-  color: #ffffff;
-  background: var(--color-checking);
-  border-color: var(--color-checking);
 }
 
 /* 面板 */

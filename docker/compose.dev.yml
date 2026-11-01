@@ -73,6 +73,9 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
       VITE_APP_ENV: ${VITE_APP_ENV:-development}
+      # Windows/macOS bind mount 不透传 inotify，容器内 Vite 需轮询文件变化，
+      # 否则改动既不触发 HMR，浏览器刷新也可能命中旧的转换缓存。
+      CHOKIDAR_USEPOLLING: "true"
       # Read by vite.config.ts in the Node process (dev-server proxy target).
       # Inside the container the backend is reachable as `backend:8000`, not on
       # the container's own localhost. This value is NOT exposed to the browser.

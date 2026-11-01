@@ -8,7 +8,7 @@ from app.models.meeting import Meeting
 from app.models.minutes import MeetingMinutes
 from app.models.record import MeetingRecord
 from app.repositories import material_repository, minutes_repository, record_repository
-from app.schemas.minutes import MinutesGenerateRequest, MinutesUpdate
+from app.schemas.minutes import MinutesGenerateRequest, MinutesTemplate, MinutesUpdate
 from app.services import meeting_service, meeting_template_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
@@ -17,6 +17,11 @@ from app.services.model_config_service import (
     resolve_model_config,
 )
 from app.utils.ids import new_id
+
+# 纪要模板标记的内置枚举值（custom 为套用模板清单时的标记，不在此列）
+_ENUM_TEMPLATE_VALUES = {
+    member.value for member in MinutesTemplate if member is not MinutesTemplate.custom
+}
 
 _STATUS_DRAFT = "draft"
 _STATUS_CONFIRMED = "confirmed"
@@ -108,17 +113,20 @@ def generate_minutes(
         db, meeting_id, enabled=payload.include_materials
     )
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.minutes)
-    template = (
-        payload.template.value
-        if payload.template
-        else memory_service.preferred_minutes_template(db, user_id) or "standard"
-    )
+    preferred = memory_service.preferred_minutes_template(db, user_id)
+    template = payload.template.value if payload.template else preferred or "standard"
     template_instructions = ""
     if payload.template_id:
         template_instructions = meeting_template_service.resolve_template_content(
             db, user_id, payload.template_id
         )
         # 套用会议模板时记录为 custom，原始内置枚举不再准确
+        template = "custom"
+    elif template not in _ENUM_TEMPLATE_VALUES:
+        # 记忆中的默认模板指向模板清单（内置 id 或自定义 id）：注入其结构文本
+        template_instructions = meeting_template_service.resolve_template_content(
+            db, user_id, template
+        )
         template = "custom"
     memory_context = memory_service.memory_context_for(db, user_id, "minutes")
     content = generate_text(

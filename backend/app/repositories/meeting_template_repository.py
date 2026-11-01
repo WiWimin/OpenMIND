@@ -13,8 +13,9 @@ def create(
     user_id: str,
     name: str,
     description: str | None,
-    file_name: str,
-    storage_key: str,
+    category: str | None = None,
+    file_name: str | None = None,
+    storage_key: str | None = None,
     content_text: str,
 ) -> MeetingTemplate:
     template = MeetingTemplate(
@@ -22,6 +23,7 @@ def create(
         user_id=user_id,
         name=name,
         description=description,
+        category=category,
         file_name=file_name,
         storage_key=storage_key,
         content_text=content_text,

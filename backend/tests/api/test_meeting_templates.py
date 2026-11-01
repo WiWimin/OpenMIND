@@ -25,17 +25,21 @@ def test_list_templates_contains_builtin(client: TestClient) -> None:
     sources = {item["source"] for item in items}
     assert "builtin" in sources
     builtin_ids = {item["template_id"] for item in items if item["source"] == "builtin"}
-    assert "tpl-builtin-standard-minutes" in builtin_ids
+    assert "tpl-builtin-minutes" in builtin_ids
+    assert "tpl-builtin-pre-summary" in builtin_ids
     for item in items:
         assert "content_text" not in item  # 列表不返回模板正文
+        assert item["content_preview"]  # 但返回卡片缩略图用的内容预览
+        assert item["category"] in ("会前", "会后", "通用")
 
 
 def test_get_builtin_template_detail(client: TestClient) -> None:
     headers = _auth(client)
-    response = client.get("/api/v1/meeting-templates/tpl-builtin-standard-minutes", headers=headers)
+    response = client.get("/api/v1/meeting-templates/tpl-builtin-minutes", headers=headers)
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["source"] == "builtin"
+    assert data["category"] == "会后"
     assert data["content_text"]
 
 
@@ -112,7 +116,7 @@ def test_builtin_template_content_injected_into_prepare(
     ).json()["data"]
     response = client.post(
         f"/api/v1/meetings/{meeting['meeting_id']}/prepare",
-        json={"include_history": True, "template_id": "tpl-builtin-standard-minutes"},
+        json={"include_history": True, "template_id": "tpl-builtin-minutes"},
         headers=headers,
     )
     assert response.status_code == 200
@@ -173,6 +177,113 @@ def test_builtin_detail_for_other_users_without_ownership(client: TestClient) ->
         headers=headers,
     )
     assert response.status_code == 200
+
+
+def test_create_text_template(client: TestClient) -> None:
+    headers = _auth(client)
+    response = client.post(
+        "/api/v1/meeting-templates/text",
+        json={
+            "name": "评审会纪要",
+            "description": "用于评审会",
+            "category": "会后",
+            "content_text": "1. 评审结论；2. 问题清单；3. 待办。",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()["data"]
+    assert created["source"] == "custom"
+    assert created["category"] == "会后"
+    assert created["file_name"] is None
+    assert created["content_preview"].startswith("1. 评审结论")
+
+    detail = client.get(f"/api/v1/meeting-templates/{created['template_id']}", headers=headers)
+    assert detail.status_code == 200
+    assert "评审结论" in detail.json()["data"]["content_text"]
+
+
+def test_create_text_template_validations(client: TestClient) -> None:
+    headers = _auth(client)
+    empty = client.post(
+        "/api/v1/meeting-templates/text",
+        json={"name": "空白模板", "content_text": "   "},
+        headers=headers,
+    )
+    assert empty.status_code == 422
+
+    bad_category = client.post(
+        "/api/v1/meeting-templates/text",
+        json={"name": "分类错误", "category": "会中", "content_text": "内容"},
+        headers=headers,
+    )
+    assert bad_category.status_code == 422
+
+
+def test_duplicate_template_via_text_create(client: TestClient) -> None:
+    """另存为 = 读取详情后按文本创建副本。"""
+    headers = _auth(client)
+    source = client.post(
+        "/api/v1/meeting-templates/text",
+        json={"name": "原始模板", "category": "通用", "content_text": "1. 结构要点"},
+        headers=headers,
+    ).json()["data"]
+    detail = client.get(f"/api/v1/meeting-templates/{source['template_id']}", headers=headers)
+
+    copied = client.post(
+        "/api/v1/meeting-templates/text",
+        json={
+            "name": "原始模板 副本",
+            "category": detail.json()["data"]["category"],
+            "content_text": detail.json()["data"]["content_text"],
+        },
+        headers=headers,
+    )
+    assert copied.status_code == 201
+    assert copied.json()["data"]["template_id"] != source["template_id"]
+
+
+def test_generate_template_draft(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeDraft:
+        name = "周会复盘"
+        description = "适用于每周例会的复盘结构"
+        category = "会后"
+        content_text = "1. 数据回顾；2. 风险与阻塞；3. 改进项。"
+
+    class FakeClient:
+        def chat_json(self, *args, **kwargs):
+            return FakeDraft()
+
+    monkeypatch.setattr(
+        meeting_template_service, "build_llm_client", lambda config: FakeClient()
+    )
+    headers = _auth(client)
+    response = client.post(
+        "/api/v1/meeting-templates/generate",
+        json={"description": "每周例会的复盘模板"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["name"] == "周会复盘"
+    assert data["category"] == "会后"
+    assert "数据回顾" in data["content_text"]
+    # 草稿不入库
+    listed = client.get("/api/v1/meeting-templates", headers=headers).json()["data"]
+    assert all(item["name"] != "周会复盘" for item in listed)
+
+
+def test_generate_template_requires_configured_llm(client: TestClient) -> None:
+    headers = _auth(client)
+    response = client.post(
+        "/api/v1/meeting-templates/generate",
+        json={"description": "周会模板"},
+        headers=headers,
+    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "MODEL_CONFIG_REQUIRED"
 
 
 def _user_id(db_session: Session) -> str:

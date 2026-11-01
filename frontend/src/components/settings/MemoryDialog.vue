@@ -1,5 +1,14 @@
 <template>
-  <AppModal :open="open" title="记忆中心" @close="emit('close')">
+  <AppModal :open="open" title="记忆中心" overflow-visible @close="emit('close')">
+    <template #top>
+      <img
+        :src="memoryParrotUrl"
+        class="memory-dialog__mascot"
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+      />
+    </template>
     <div class="memory-dialog">
       <LoadingSpinner v-if="loading" class="memory-dialog__state" />
       <ErrorMessage v-else-if="loadError" :error="loadError" retryable @retry="load" />
@@ -57,9 +66,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import * as memoryApi from '@/api/memory'
+import * as templatesApi from '@/api/templates'
 import AppButton from '@/components/AppButton.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -68,20 +78,25 @@ import FormField from '@/components/FormField.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import memoryParrotUrl from '@/assets/ip/memory-parrot.png'
 import { useToast } from '@/composables/useToast'
-import type { MinutesTemplate } from '@/types/minutes'
+import type { MeetingTemplate } from '@/types/template'
 import type { UserMemory } from '@/types/memory'
 import { formatDateTime } from '@/utils/datetime'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
-const templateOptions = [
-  { value: '', label: '使用标准模板' },
-  { value: 'standard', label: '标准纪要' },
-  { value: 'concise', label: '简洁记录' },
+const templateOptions = computed(() => [
+  { value: '', label: '不设置默认模板' },
+  { value: 'standard', label: '标准结构' },
+  { value: 'concise', label: '简洁结构' },
   { value: 'task_list', label: '任务清单' },
-]
+  ...templates.value.map((template) => ({
+    value: template.template_id,
+    label: `${template.name}（${template.category ?? '通用'}）`,
+  })),
+])
 
 const toast = useToast()
 const loading = ref(false)
@@ -95,6 +110,16 @@ const workScenarios = ref('')
 const communicationStyle = ref('')
 const preferredTemplate = ref('')
 const updatedAt = ref('')
+const templates = ref<MeetingTemplate[]>([])
+
+async function loadTemplates(): Promise<void> {
+  try {
+    templates.value = await templatesApi.listTemplates()
+  } catch {
+    // 模板清单加载失败时仅显示内置结构选项
+    templates.value = []
+  }
+}
 
 function applyMemory(memory: UserMemory): void {
   role.value = memory.role
@@ -124,7 +149,7 @@ async function save(): Promise<void> {
       role: role.value.trim(),
       work_scenarios: workScenarios.value.trim(),
       communication_style: communicationStyle.value.trim(),
-      preferred_minutes_template: (preferredTemplate.value || null) as MinutesTemplate | null,
+      preferred_minutes_template: preferredTemplate.value || null,
     })
     applyMemory(memory)
     toast.success('记忆已保存')
@@ -161,6 +186,7 @@ watch(
   (open) => {
     if (open) {
       void load()
+      void loadTemplates()
     }
   },
   { immediate: true },
@@ -168,6 +194,18 @@ watch(
 </script>
 
 <style scoped>
+/* 鹦鹉 IP：趴在记忆中心窗口上边框中央 */
+.memory-dialog__mascot {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 6rem;
+  width: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
 .memory-dialog {
   max-height: 60vh;
   overflow-y: auto;
