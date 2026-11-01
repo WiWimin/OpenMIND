@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -34,11 +35,29 @@ class ChatResponse(BaseModel):
     insufficient_evidence: bool
 
 
+class OrganizeTask(StrEnum):
+    organize = "organize"  # 整理记录（正文输出）
+    summary = "summary"  # 提炼要点（JSON：结论/讨论/待办/待确认）
+    brief = "brief"  # 简短摘要（正文输出）
+    polish = "polish"  # 修正口误（JSON diff 建议）
+
+
 class OrganizeRequest(BaseModel):
-    record_ids: list[str] = Field(min_length=1)
-    style: str = "structured"
+    # 输入源三级回退：text > audio_id > record_ids（空 = 最近 20 条 ≤8000 字记录）
+    record_ids: list[str] = Field(default_factory=list)
+    task: OrganizeTask = OrganizeTask.organize
+    style: str = Field(default="", max_length=200)
+    text: str = Field(default="", max_length=20000)
+    # 用户附加要求：随任务注入设计好的提示词（快捷任务标记 + 用户补充文字场景）
+    instruction: str = Field(default="", max_length=2000)
+    audio_id: str | None = Field(default=None, max_length=40)
+    # 可选：覆盖本次任务使用的模型名，必须已在模型配置中登记
+    model: str | None = Field(default=None, max_length=100)
 
 
 class OrganizeResponse(BaseModel):
+    task: OrganizeTask
     organized_content: str
+    # summary/polish 任务的服务端解析结果；解析失败为 null（此时 organized_content 为原始输出）
+    structured: dict[str, Any] | list[Any] | None = None
     source_record_ids: list[str]
