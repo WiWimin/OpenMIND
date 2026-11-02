@@ -9,6 +9,7 @@ from app.api.v1 import (
     issues,
     knowledge,
     materials,
+    meeting_templates,
     meetings,
     memory,
     minutes,
@@ -16,14 +17,13 @@ from app.api.v1 import (
     records,
     settings,
     tasks,
-    templates,
 )
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(meetings.router)
-api_router.include_router(templates.router)
+api_router.include_router(meeting_templates.router)
 api_router.include_router(audio.router)
 api_router.include_router(materials.router)
 api_router.include_router(preparations.router)

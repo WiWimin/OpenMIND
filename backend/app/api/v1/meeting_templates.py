@@ -12,25 +12,11 @@ from app.schemas.meeting_template import (
     MeetingTemplateRead,
     TemplateGenerateDraft,
     TemplateGenerateRequest,
-    TemplateSource,
     TemplateTextCreate,
 )
 from app.services import meeting_template_service
 
 router = APIRouter(tags=["meeting-templates"])
-
-
-def _custom_read(template: object) -> MeetingTemplateRead:
-    return MeetingTemplateRead(
-        template_id=template.template_id,
-        name=template.name,
-        description=template.description,
-        category=template.category,
-        source=TemplateSource.custom,
-        file_name=template.file_name,
-        created_at=template.created_at,
-        content_preview=template.content_text[:60],
-    )
 
 
 @router.get("/meeting-templates", response_model=Envelope[list[MeetingTemplateRead]])
@@ -62,7 +48,11 @@ async def upload_template(
         description=description,
         category=category,
     )
-    return Envelope(data=_custom_read(template))
+    return Envelope(
+        data=MeetingTemplateRead.model_validate(
+            meeting_template_service.custom_read(template)
+        )
+    )
 
 
 @router.post(
@@ -81,7 +71,11 @@ def create_template_text(
         category=payload.category,
         content_text=payload.content_text,
     )
-    return Envelope(data=_custom_read(template))
+    return Envelope(
+        data=MeetingTemplateRead.model_validate(
+            meeting_template_service.custom_read(template)
+        )
+    )
 
 
 @router.post(
@@ -125,7 +119,8 @@ def get_template(
         db, template_id, current_user.user_id
     )
     detail = MeetingTemplateDetailRead(
-        **_custom_read(template).model_dump(), content_text=template.content_text
+        **meeting_template_service.custom_read(template),
+        content_text=template.content_text,
     )
     return Envelope(data=detail)
 

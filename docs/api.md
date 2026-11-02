@@ -2,7 +2,7 @@
 
 本文件是前端、后端与 AI 模块的共同接口基线，也是接口的唯一事实来源。运行期以 FastAPI 自动生成的 OpenAPI 文档为准；设计与实现冲突时先更新本文件。
 
-> 状态：MVP 设计基线。`[提案]` 表示本次新增、需团队确认后实现的接口；`[扩展]` 表示非 MVP、先定义结构但不实现。
+> 状态：MVP 全部实现。`[扩展]` 表示非 MVP、先定义结构但不实现。
 
 ## 一、统一约定
 
@@ -508,7 +508,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 > 上传路径的解析失败以 `processing_status=failed` + `parse_error` 表达，不返回 `422 FILE_PARSE_FAILED`；后者用于解析层错误语义说明，不是上传接口的响应。
 
-### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials` [提案]
+### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials`
 
 查询参数：`page`、`page_size`。响应 `200`：分页结构，`items` 为材料对象数组，按 `created_at` 倒序。
 
@@ -559,7 +559,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 可更新字段：`content`、`marker_type`。传 `marker_type: null` 清除标记；归档会议不可修改。响应 `200` 为更新后记录对象。
 
-### 4.11 删除记录 `DELETE /api/v1/records/{record_id}` [提案]
+### 4.11 删除记录 `DELETE /api/v1/records/{record_id}`
 
 响应 `200`：`{ "status": "success", "data": { "deleted": true, "record_id": "rec_xxx" } }`。
 若该记录被行动项或问题引用，返回 `409 BUSINESS_RULE_VIOLATION`，以保留来源可追溯性。
@@ -725,19 +725,19 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 响应 `201`：纪要对象（`status = draft`）。
 - 每次生成**新增一条**纪要记录，不覆盖已确认纪要；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
 
-### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes` [提案]
+### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes`
 
 响应 `200`：分页结构，按 `created_at` 倒序。
 
-### 5.12 纪要详情 `GET /api/v1/minutes/{minutes_id}` [提案]
+### 5.12 纪要详情 `GET /api/v1/minutes/{minutes_id}`
 
 响应 `200`：纪要对象。
 
-### 5.13 编辑纪要 `PATCH /api/v1/minutes/{minutes_id}` [提案]
+### 5.13 编辑纪要 `PATCH /api/v1/minutes/{minutes_id}`
 
 可更新字段：`content`。响应 `200` 为更新后对象，`version` 递增。
 
-### 5.14 确认纪要 `POST /api/v1/minutes/{minutes_id}/confirm` [提案]
+### 5.14 确认纪要 `POST /api/v1/minutes/{minutes_id}/confirm`
 
 响应 `200`：返回 `status = confirmed` 的纪要对象。
 
@@ -853,9 +853,9 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/api/v1/meetings/{meeting_id}/action-items` | 行动项列表 |
-| GET | `/api/v1/action-items/{action_id}` | 行动项详情 [提案] |
+| GET | `/api/v1/action-items/{action_id}` | 行动项详情 |
 | PATCH | `/api/v1/action-items/{action_id}` | 编辑行动项 |
-| DELETE | `/api/v1/action-items/{action_id}` | 删除行动项（未转任务时）[提案] |
+| DELETE | `/api/v1/action-items/{action_id}` | 删除行动项（未转任务时）|
 | POST | `/api/v1/action-items/{action_id}/confirm` | 确认行动项 |
 | POST | `/api/v1/action-items/{action_id}/convert-to-task` | 转为任务 |
 
@@ -962,4 +962,4 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 
 - 接口字段、状态值、错误码或路径变更必须先更新本文件，再更新实现。
 - 每个 PR 应说明：新增/修改的接口、请求响应变化、是否影响其他成员、是否需要数据库迁移。
-- `[提案]` 接口需团队确认后从提案转为正式；`[扩展]` 接口不在 MVP 范围。
+- `[扩展]` 接口不在 MVP 范围。

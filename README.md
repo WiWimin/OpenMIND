@@ -258,10 +258,10 @@ main（阶段验收通过后）
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
 - 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 291 个用例、`ruff check` 均通过。
+- pytest 341 个用例、`ruff check` 均通过。
 
 **数据与基础设施**
-- PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline`、`0002_enable_pgvector` 已可在容器内执行并通过校验。
+- PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline` 至 `0022_audio_segments`（共 22 个）已在容器内执行并通过校验。
 - `docker/compose.dev.yml` 三服务（`db` / `backend` / `frontend`），含 `db` 健康检查与命名卷持久化。
 - `scripts/verify-db.ps1` / `.sh` 数据库全链路校验（5 项，失败即非零退出）。
 

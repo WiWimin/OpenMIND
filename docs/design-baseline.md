@@ -20,6 +20,9 @@
 | `development.md` | 环境要求、启动、常用命令、故障排查 | 接口字段 |
 | `collaboration-rules.md` | **三流分工、分支模型、合并/同步/发布流程** | 接口字段、表结构 |
 | `CONTRIBUTING.md` | 提交信息、PR 模板与流程摘要（分支流程引用 `collaboration-rules.md`） | 设计细节 |
+| `frontend-design-baseline.md` | 前端视觉/交互设计基线（配色、字体、组件样式） | 接口字段、表结构 |
+| `M00-acceptance.md` | M00 模块验收报告（历史归档） | 现行接口契约 |
+| `test-reports/` | 各阶段测试与验收报告归档 | 现行接口契约 |
 
 **权威关系**：
 
@@ -76,7 +79,6 @@ design-baseline.md ──索引──► requirements / architecture / database 
 
 | 项 | 说明 |
 | --- | --- |
-| `[提案]` 接口采纳 | `api.md` 中材料列表、纪要读取/编辑/确认、记录删除、行动项详情/删除，需团队确认后转正式 |
 | MIME 嗅探 / 音频转写 | 均超出当前 MVP |
 | 向量索引类型（HNSW/IVFFlat） | 待数据量确定后选择（`database.md 六`） |
 | 并发编辑冲突 | MVP 仅保证 `version` 递增一致，不做乐观锁 |
@@ -116,3 +118,4 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 选择体验打磨 | 模型选择框默认选中「全部模型」第一个并同步请求参数；模式选项文案精简（去「模式」后缀与小字描述，后续新组件亦不加小字描述）；会议管理页本地文件夹按钮按状态切换文案、移除状态条与连接成功 toast；知识库窗口重构：工具栏（上传直达文件选择 + 关键词输入即查、去抖 400ms）+ 检索结果 + 常驻文件列表 |
 | 2026-10 | 模板管理页重构 | 页面改为卡片网格（缩略图/标签/预览/使用/另存为/设为默认）+ 搜索与全部/内置/我的筛选；内置模板重组为 6 个（会前摘要/会议议程/发言稿/会议纪要/会议记录/会议简报，含 `category`）；新增 `POST /meeting-templates/text`（文本创建，支撑新建与另存为）与 `POST /meeting-templates/generate`（AI 生成草稿，候选不入库）；迁移 `0021`：模板加 `category`、`file_name`/`storage_key` 放宽、记忆默认模板放宽为 64 字符支持模板 id；`preferred_minutes_template` 支持模板 id，纪要生成自动注入；「使用」跳预处理页 `?templateId=` 预选；模板选择器按分类分组 |
 | 2026-10 | 模板选择跳转化 | AI 输入框工具栏顺序调整为 模式→模型→模板；模板图标改为导航入口（点击跳模板管理页并携带 `returnTo`/`meetingId`），不再弹出模板列表；管理页「使用」按来源原路返回并经 `?templateId=` 预选；纪要生成页支持 query 预选；默认结构取消选项随列表移除，换模板通过点其他卡片「使用」 |
+| 2026-11 | 历史代码与文档清理 | 删除零引用组件/死导出/孤儿测试与无引用 schema；抽取公共基类与 helper（AI HTTP 客户端、上传校验+存盘补偿、`PageParams`/`list_envelope`/`paginate_by`、`extraction_support`、`resource_not_found`）；知识检索统一到 `VectorRetriever`、状态文案统一到 `statusLabels.ts`；`api/v1/templates.py` 重命名为 `meeting_templates.py`；docs/api.md、database.md、module-development-spec.md、design-baseline.md、ai-design.md、README 同步至实现现状 |

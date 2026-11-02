@@ -4,6 +4,7 @@ from app.ai.prompts.extract_issues import build_extract_issues
 from app.ai.prompts.minutes import build_minutes
 from app.ai.prompts.organize import build_organize
 from app.ai.prompts.prepare import build_prepare
+from app.ai.prompts.template_draft import build_template_draft
 
 __all__ = [
     "build_chat",
@@ -12,4 +13,5 @@ __all__ = [
     "build_minutes",
     "build_organize",
     "build_prepare",
+    "build_template_draft",
 ]

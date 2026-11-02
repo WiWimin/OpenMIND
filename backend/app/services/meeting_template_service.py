@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.ai.parsers import parse_bytes
+from app.ai.prompts import build_template_draft
 from app.core.config import get_settings
 from app.core.exceptions import AppError, resource_not_found
 from app.models.meeting_template import MeetingTemplate
@@ -126,7 +127,7 @@ def _builtin_read(item: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _custom_read(row: MeetingTemplate) -> dict[str, object]:
+def custom_read(row: MeetingTemplate) -> dict[str, object]:
     return {
         "template_id": row.template_id,
         "name": row.name,
@@ -147,7 +148,7 @@ def preview_text(text: str) -> str:
 def list_templates(db: Session, user_id: str) -> list[dict[str, object]]:
     items: list[dict[str, object]] = [_builtin_read(item) for item in BUILTIN_TEMPLATES]
     for row in meeting_template_repository.list_by_user(db, user_id):
-        items.append(_custom_read(row))
+        items.append(custom_read(row))
     return items
 
 
@@ -276,15 +277,7 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
 
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.minutes)
     client = build_llm_client(config)
-    prompt = (
-        "你是会议模板设计助手。请根据用户需求设计一个会议文档模板。要求：\n"
-        "1. name：简短的模板名称（不超过 20 字）；\n"
-        "2. description：一句话说明模板适用场景；\n"
-        "3. category：从「会前」「会后」「通用」中选择一个；\n"
-        "4. content_text：模板正文，用编号列表给出文档应包含的结构要点，"
-        "每条说明该部分要写什么、有什么要求，语言与用户需求一致。\n"
-        f"用户需求：{text}"
-    )
+    prompt = build_template_draft(text)
     try:
         draft = client.chat_json(
             [{"role": "user", "content": prompt}],

@@ -20,15 +20,17 @@
 
 ```text
 backend/app/ai/
-├── llm/          # 大模型调用（超时、重试、结构化输出）
-├── embeddings/   # 文本向量化
-├── rag/          # 权限内检索
-├── prompts/      # Prompt 模板集中管理
-├── parsers/      # 文件解析（pdf/docx/txt）——已由 M03 PR 落地
-├── preparation/  # 会前准备生成
-├── minutes/      # 纪要生成
-├── extraction/   # 行动项/问题提取
-└── chat/         # 问答编排（RAG + Prompt）
+├── llm/            # 大模型调用（超时、重试、结构化输出）
+├── embeddings/     # 文本向量化
+├── transcription/  # 音频转写（ASR 客户端）
+├── indexing/       # 文本切分（chunker）
+├── rag/            # 权限内检索
+├── prompts/        # Prompt 模板集中管理
+├── parsers/        # 文件解析（pdf/docx/txt）——已由 M03 PR 落地
+├── preparation/    # 会前准备生成
+├── minutes/        # 纪要生成
+├── extraction/     # 行动项/问题提取
+└── chat/           # 问答编排（RAG + Prompt）
 ```
 
 - 各子包对外只暴露 `service` 层函数/类；业务层（`services/`）调用它们，不直接调用底层 HTTP。
