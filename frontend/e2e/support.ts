@@ -23,7 +23,8 @@ export async function register(page: Page, name: string): Promise<void> {
   await page.locator('#register-confirm').fill(E2E_PASSWORD)
   await page.getByRole('button', { name: '注册', exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard$/)
-  await expect(page.getByRole('heading', { name: '会议工作台', exact: true })).toBeVisible()
+  // Dashboard 首屏为问候语一级标题（如「晚上好，<用户名>」）
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible()
 }
 
 async function authToken(page: Page): Promise<string> {
@@ -161,14 +162,24 @@ export async function createMeeting(
   await expect(dialog).toBeVisible()
   await dialog.locator('#meeting-title').fill(title)
   await dialog.locator('#meeting-topic').fill(topic)
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  // 新建（非编辑）模式下提交按钮文案为「创建」
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
   await expect(dialog).toBeHidden()
-  await expect(
-    page.getByRole('button', { name: new RegExp(escapeRegExp(title)) }).first(),
-  ).toBeVisible()
+  // 当前 UX：创建成功后自动进入会议流程页 /new-meeting?meetingId=<id>
+  await expect(page).toHaveURL(/\/new-meeting\?meetingId=mtg_[0-9a-f]+/)
 }
 
 export async function openMeeting(page: Page, title: string): Promise<string> {
+  const current = new URL(page.url())
+  if (current.pathname === '/new-meeting') {
+    // 创建后的流程页携带 meetingId，直接进入会议详情
+    const meetingId = current.searchParams.get('meetingId')
+    if (meetingId) {
+      await page.goto(`/meetings/${meetingId}`)
+      await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+      return page.url()
+    }
+  }
   await page
     .getByRole('button', { name: new RegExp(escapeRegExp(title)) })
     .first()
