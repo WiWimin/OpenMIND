@@ -9,7 +9,6 @@ import type { Preparation } from '@/types/preparation'
 vi.mock('@/api/preparations', () => ({
   generatePreparation: vi.fn(),
   listPreparations: vi.fn(),
-  getPreparation: vi.fn(),
   updatePreparation: vi.fn(),
   confirmPreparation: vi.fn(),
 }))

@@ -20,15 +20,6 @@ class ParsedDocument:
     parser: str
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def as_result(self, material_id: str, status: str = "processed") -> dict[str, Any]:
-        return {
-            "material_id": material_id,
-            "status": status,
-            "file_name": self.file_name,
-            "content": self.content,
-            "metadata": {"parser": self.parser, **self.metadata},
-        }
-
 
 class BaseParser(ABC):
     parser_name: str

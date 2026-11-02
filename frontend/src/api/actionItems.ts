@@ -1,6 +1,6 @@
 import http from '@/api/client'
 import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
-import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
+import type { ApiSuccess, ListData } from '@/types/api'
 import type {
   ActionItem,
   ConvertToTaskPayload,
@@ -36,11 +36,6 @@ export async function listActionItems(
   return unwrapData(data)
 }
 
-export async function getActionItem(actionId: string): Promise<ActionItem> {
-  const { data } = await http.get<ApiSuccess<ActionItem> | ActionItem>(`/action-items/${actionId}`)
-  return unwrapData(data)
-}
-
 export async function updateActionItem(
   actionId: string,
   payload: UpdateActionItemPayload,
@@ -49,13 +44,6 @@ export async function updateActionItem(
     `/action-items/${actionId}`,
     payload,
   )
-  return unwrapData(data)
-}
-
-export async function deleteActionItem(actionId: string): Promise<DeletedResult<'action_id'>> {
-  const { data } = await http.delete<
-    ApiSuccess<DeletedResult<'action_id'>> | DeletedResult<'action_id'>
-  >(`/action-items/${actionId}`)
   return unwrapData(data)
 }
 

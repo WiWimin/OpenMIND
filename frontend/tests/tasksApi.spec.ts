@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { cancelTask, getTask, listTasks, updateTask } from '@/api/tasks'
+import { cancelTask, listTasks, updateTask } from '@/api/tasks'
 import type { ListData } from '@/types/api'
 import type { PersonalTask } from '@/types/task'
 import { response } from './support'
@@ -40,13 +40,6 @@ describe('tasks api', () => {
 
     await expect(listTasks({ page: 1, status: 'todo' })).resolves.toEqual(list)
     expect(get).toHaveBeenCalledWith('/tasks', { params: { page: 1, status: 'todo' } })
-  })
-
-  it('gets a task', async () => {
-    get.mockResolvedValue(response({ status: 'success', data: task }))
-
-    await expect(getTask('tsk_1')).resolves.toEqual(task)
-    expect(get).toHaveBeenCalledWith('/tasks/tsk_1')
   })
 
   it('updates a task status', async () => {

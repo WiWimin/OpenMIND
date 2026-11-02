@@ -48,14 +48,6 @@ class AudioLiveStart(BaseModel):
     file_type: str = Field(default="webm", max_length=10)
 
 
-class AudioLiveChunkResult(BaseModel):
-    audio_id: str
-    seq: int
-    text: str
-    error: str | None = None
-    transcript: str | None
-
-
 class AudioSegmentMarkerUpdate(BaseModel):
     seq: int = Field(ge=1)
     marker_type: str | None = None

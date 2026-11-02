@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { NAV_MODULES, findModuleByRouteName, findNavItem } from '@/constants/navigation'
+import { NAV_MODULES, findModuleByRouteName } from '@/constants/navigation'
 
 describe('navigation config', () => {
   it('defines the two-level navigation modules', () => {
@@ -15,9 +15,6 @@ describe('navigation config', () => {
   it('maps stage routes to the new-meeting module', () => {
     const module = findModuleByRouteName('new-meeting-preprocess')
     expect(module?.key).toBe('new-meeting')
-    expect(findNavItem(module, 'new-meeting-preprocess')?.label).toBe('资料预处理')
-    expect(findNavItem(module, 'new-meeting-asr')?.label).toBe('录音转写')
-    expect(findNavItem(module, 'new-meeting-minutes')?.label).toBe('纪要生成')
   })
 
   it('keeps the meeting detail under meeting management', () => {

@@ -117,23 +117,9 @@ export const NAV_MODULES: NavModule[] = [
   },
 ]
 
-export function findModuleByKey(key: string | undefined): NavModule | undefined {
-  return NAV_MODULES.find((module) => module.key === key)
-}
-
 export function findModuleByRouteName(name: string | undefined): NavModule | undefined {
   if (!name) {
     return undefined
   }
   return NAV_MODULES.find((module) => module.match.includes(name))
-}
-
-export function findNavItem(
-  module: NavModule | undefined,
-  name: string | undefined,
-): NavItem | undefined {
-  if (!module || !name) {
-    return undefined
-  }
-  return module.items.find((item) => item.match.includes(name))
 }

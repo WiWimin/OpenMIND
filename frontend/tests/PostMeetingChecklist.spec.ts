@@ -20,9 +20,7 @@ vi.mock('@/api/minutes', () => ({
 vi.mock('@/api/actionItems', () => ({
   extractActionItems: vi.fn(),
   listActionItems: vi.fn(),
-  getActionItem: vi.fn(),
   updateActionItem: vi.fn(),
-  deleteActionItem: vi.fn(),
   confirmActionItem: vi.fn(),
   convertActionItemToTask: vi.fn(),
 }))

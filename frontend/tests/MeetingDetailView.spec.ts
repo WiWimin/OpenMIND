@@ -31,14 +31,12 @@ vi.mock('@/api/meetings', () => ({
 vi.mock('@/api/materials', () => ({
   listMaterials: vi.fn(),
   uploadMaterial: vi.fn(),
-  getMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
 }))
 
 vi.mock('@/api/preparations', () => ({
   generatePreparation: vi.fn(),
   listPreparations: vi.fn(),
-  getPreparation: vi.fn(),
   updatePreparation: vi.fn(),
 }))
 
@@ -53,9 +51,7 @@ vi.mock('@/api/minutes', () => ({
 vi.mock('@/api/actionItems', () => ({
   extractActionItems: vi.fn(),
   listActionItems: vi.fn(),
-  getActionItem: vi.fn(),
   updateActionItem: vi.fn(),
-  deleteActionItem: vi.fn(),
   confirmActionItem: vi.fn(),
   convertActionItemToTask: vi.fn(),
 }))

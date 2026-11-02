@@ -32,17 +32,9 @@ export const useMeetingsStore = defineStore('meetings', () => {
     return list.load(page)
   }
 
-  function setPage(page: number): Promise<void> {
-    return list.setPage(page)
-  }
-
   function setStatusFilter(status: MeetingStatusFilter): Promise<void> {
     filters.value.status = status
     return list.load(1)
-  }
-
-  function loadMore(): Promise<void> {
-    return list.loadMore()
   }
 
   function syncInList(meeting: Meeting): void {
@@ -106,9 +98,7 @@ export const useMeetingsStore = defineStore('meetings', () => {
     currentLoading,
     currentError,
     fetchList,
-    setPage,
     setStatusFilter,
-    loadMore,
     fetchMeeting,
     createMeeting,
     updateMeeting,

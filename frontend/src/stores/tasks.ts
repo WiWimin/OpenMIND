@@ -23,10 +23,6 @@ export const useTasksStore = defineStore('tasks', () => {
     return list.load(page)
   }
 
-  function setPage(page: number): Promise<void> {
-    return list.setPage(page)
-  }
-
   function setStatusFilter(status: TaskStatusFilter): Promise<void> {
     filters.value.status = status
     return list.load(1)
@@ -62,7 +58,6 @@ export const useTasksStore = defineStore('tasks', () => {
     error: list.error,
     filters,
     fetchList,
-    setPage,
     setStatusFilter,
     loadMore,
     updateTask,

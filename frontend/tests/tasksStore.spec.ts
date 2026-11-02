@@ -8,7 +8,6 @@ import type { PersonalTask } from '@/types/task'
 
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
-  getTask: vi.fn(),
   updateTask: vi.fn(),
   cancelTask: vi.fn(),
 }))

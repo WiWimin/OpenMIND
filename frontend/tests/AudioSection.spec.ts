@@ -13,7 +13,6 @@ vi.mock('@/api/audio', () => ({
   retryAudio: vi.fn(),
   confirmAudio: vi.fn(),
   deleteAudio: vi.fn(),
-  getAudio: vi.fn(),
 }))
 
 const audio: MeetingAudio = {

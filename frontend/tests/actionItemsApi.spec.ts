@@ -5,9 +5,7 @@ import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
   confirmActionItem,
   convertActionItemToTask,
-  deleteActionItem,
   extractActionItems,
-  getActionItem,
   listActionItems,
   updateActionItem,
 } from '@/api/actionItems'
@@ -23,7 +21,6 @@ vi.mock('@/api/client', () => ({
 const get = vi.mocked(http.get)
 const post = vi.mocked(http.post)
 const patch = vi.mocked(http.patch)
-const del = vi.mocked(http.delete)
 
 const actionItem: ActionItem = {
   action_id: 'act_1',
@@ -76,26 +73,11 @@ describe('action items api', () => {
     expect(get).toHaveBeenCalledWith('/meetings/mtg_1/action-items', { params: {} })
   })
 
-  it('gets a single action item', async () => {
-    get.mockResolvedValue(response(actionItem))
-
-    await expect(getActionItem('act_1')).resolves.toEqual(actionItem)
-    expect(get).toHaveBeenCalledWith('/action-items/act_1')
-  })
-
   it('updates an action item', async () => {
     patch.mockResolvedValue(response(actionItem))
 
     await expect(updateActionItem('act_1', { assignee: '李四' })).resolves.toEqual(actionItem)
     expect(patch).toHaveBeenCalledWith('/action-items/act_1', { assignee: '李四' })
-  })
-
-  it('deletes an action item', async () => {
-    const deleted = { deleted: true as const, action_id: 'act_1' }
-    del.mockResolvedValue(response({ status: 'success', data: deleted }))
-
-    await expect(deleteActionItem('act_1')).resolves.toEqual(deleted)
-    expect(del).toHaveBeenCalledWith('/action-items/act_1')
   })
 
   it('confirms an action item', async () => {
