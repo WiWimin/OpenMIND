@@ -23,6 +23,15 @@ class AppError(Exception):
         super().__init__(message)
 
 
+def resource_not_found(label: str) -> AppError:
+    """统一的 404 AppError 工厂，文案为「{label}不存在或不可访问」。"""
+    return AppError(
+        "RESOURCE_NOT_FOUND",
+        f"{label}不存在或不可访问",
+        http_status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 def error_body(
     error_code: str,
     message: str,

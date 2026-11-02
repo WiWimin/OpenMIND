@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IssueStatus(StrEnum):
@@ -17,6 +18,8 @@ class IssueSource(BaseModel):
 
 
 class IssueRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     issue_id: str
     meeting_id: str
     description: str
@@ -26,18 +29,22 @@ class IssueRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="before")
     @classmethod
-    def from_model(cls, issue: object) -> IssueRead:
-        return cls(
-            issue_id=issue.issue_id,
-            meeting_id=issue.meeting_id,
-            description=issue.description,
-            status=issue.status,
-            follow_up=issue.follow_up,
-            source=IssueSource(record_id=issue.source_record_id),
-            created_at=issue.created_at,
-            updated_at=issue.updated_at,
-        )
+    def _flatten_source(cls, data: Any) -> Any:
+        """把 ORM 的扁平 source_record_id 列映射为嵌套 source。"""
+        if not isinstance(data, dict) and hasattr(data, "source_record_id"):
+            return {
+                "issue_id": data.issue_id,
+                "meeting_id": data.meeting_id,
+                "description": data.description,
+                "status": data.status,
+                "follow_up": data.follow_up,
+                "source": {"record_id": data.source_record_id},
+                "created_at": data.created_at,
+                "updated_at": data.updated_at,
+            }
+        return data
 
 
 class IssueExtractRequest(BaseModel):

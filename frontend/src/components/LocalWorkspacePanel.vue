@@ -78,7 +78,7 @@ import * as materialsApi from '@/api/materials'
 import * as minutesApi from '@/api/minutes'
 import AppButton from '@/components/AppButton.vue'
 import { ALLOWED_MATERIAL_EXTENSIONS } from '@/constants/upload'
-import { fileExtension } from '@/utils/materialUpload'
+import { isAllowedExtension } from '@/utils/materialUpload'
 
 interface LocalFileEntry {
   name: string
@@ -184,7 +184,7 @@ async function readFiles(handle: LocalDirectoryHandle): Promise<LocalFileEntry[]
     if (entry.kind !== 'file' || !entry.getFile) {
       continue
     }
-    if (!(ALLOWED_MATERIAL_EXTENSIONS as readonly string[]).includes(fileExtension(entry.name))) {
+    if (!isAllowedExtension(entry.name, ALLOWED_MATERIAL_EXTENSIONS)) {
       continue
     }
     const file = await entry.getFile()

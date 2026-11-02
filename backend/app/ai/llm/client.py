@@ -9,23 +9,11 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from app.ai.http_client import ModelHTTPClient
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
-
-_BACKOFF_SECONDS = (1, 3)
-_MAX_ATTEMPTS = 3
-
-_QUOTA_HINTS = ("quota", "balance", "insufficient", "billing", "免费额度", "额度", "余额")
-
-
-def _is_quota_error(response: httpx.Response) -> bool:
-    try:
-        text = response.text.lower()
-    except Exception:
-        return False
-    return any(hint in text for hint in _QUOTA_HINTS)
 
 
 @dataclass(frozen=True)
@@ -36,7 +24,9 @@ class LLMResult:
     latency_ms: int
 
 
-class LLMClient:
+class LLMClient(ModelHTTPClient):
+    service_label = "模型服务"
+
     def __init__(
         self,
         *,
@@ -46,10 +36,12 @@ class LLMClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         settings = get_settings()
-        self.api_base = (settings.llm_api_base if api_base is None else api_base).rstrip("/")
-        self.api_key = settings.llm_api_key if api_key is None else api_key
+        super().__init__(
+            api_base=settings.llm_api_base if api_base is None else api_base,
+            api_key=settings.llm_api_key if api_key is None else api_key,
+            transport=transport,
+        )
         self.model = settings.llm_model if model is None else model
-        self._client = httpx.Client(base_url=self.api_base, transport=transport)
 
     def chat(
         self,
@@ -73,41 +65,17 @@ class LLMClient:
             payload["response_format"] = response_format
 
         started = time.monotonic()
-        last_error: AppError | None = None
-        for attempt in range(_MAX_ATTEMPTS):
-            if attempt:
-                time.sleep(_BACKOFF_SECONDS[attempt - 1])
-            try:
-                response = self._client.post(
-                    "/chat/completions",
-                    json=payload,
-                    headers=self._headers(),
-                    timeout=timeout_s,
-                )
-            except httpx.TimeoutException as exc:
-                logger.warning(
-                    "LLM 调用超时 host=%s model=%s type=%s",
-                    urlsplit(self.api_base).hostname or "invalid",
-                    model or self.model,
-                    type(exc).__name__,
-                )
-                last_error = self._timeout_error()
-            except httpx.HTTPError as exc:
-                logger.warning(
-                    "LLM 调用网络异常 host=%s model=%s type=%s",
-                    urlsplit(self.api_base).hostname or "invalid",
-                    model or self.model,
-                    type(exc).__name__,
-                )
-                last_error = self._network_error()
-            else:
-                if response.status_code == httpx.codes.OK:
-                    elapsed_ms = int((time.monotonic() - started) * 1000)
-                    return self._parse_result(response, model or self.model, elapsed_ms)
-                last_error = self._http_error(response)
-            if not last_error.retryable:
-                raise last_error
-        raise last_error or self._network_error()
+        response = self._request_with_retry(
+            lambda: self._client.post(
+                "/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=timeout_s,
+            ),
+            model=model or self.model,
+        )
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return self._parse_result(response, model or self.model, elapsed_ms)
 
     def probe(self, *, timeout_s: float = 15) -> None:
         """保存配置时的连通性校验：单次请求，不重试。
@@ -129,7 +97,7 @@ class LLMClient:
             timeout=timeout_s,
         )
         if response.status_code != httpx.codes.OK:
-            raise self._http_error(response)
+            raise self.http_error(response)
         try:
             data = response.json()
         except ValueError:
@@ -160,7 +128,7 @@ class LLMClient:
             logger.warning("模型列表拉取网络异常 host=%s", host)
             raise self._network_error() from None
         if response.status_code != httpx.codes.OK:
-            raise self._http_error(response)
+            raise self.http_error(response)
         try:
             data = response.json()
         except ValueError:
@@ -205,55 +173,6 @@ class LLMClient:
                 http_status=400,
                 retryable=False,
             )
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-    def _timeout_error(self) -> AppError:
-        return AppError("MODEL_TIMEOUT", "模型调用超时", http_status=504, retryable=True)
-
-    def _network_error(self) -> AppError:
-        return AppError(
-            "INTERNAL_ERROR",
-            "模型服务网络异常",
-            http_status=500,
-            retryable=True,
-        )
-
-    def _http_error(self, response: httpx.Response) -> AppError:
-        status_code = response.status_code
-        if status_code == 429:
-            return AppError("RATE_LIMITED", "模型服务限流", http_status=429, retryable=True)
-        if 500 <= status_code < 600:
-            return AppError(
-                "INTERNAL_ERROR",
-                "模型服务暂时不可用",
-                http_status=500,
-                retryable=True,
-            )
-        if status_code in (401, 403):
-            return AppError(
-                "MODEL_CONFIG_INVALID",
-                "模型密钥无效或已失效",
-                http_status=400,
-                retryable=False,
-            )
-        if status_code == 402 or _is_quota_error(response):
-            return AppError(
-                "MODEL_QUOTA_EXCEEDED",
-                "模型额度不足",
-                http_status=402,
-                retryable=False,
-            )
-        return AppError(
-            "MODEL_CONFIG_INVALID",
-            "模型调用失败，请检查配置",
-            http_status=400,
-            retryable=False,
-        )
 
     def _parse_result(self, response: httpx.Response, model: str, elapsed_ms: int) -> LLMResult:
         try:

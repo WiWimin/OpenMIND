@@ -6,7 +6,7 @@ import type { MaterialProcessingStatus } from '@/types/material'
 import type { MeetingStatus } from '@/types/meeting'
 import type { MinutesStatus, MinutesTemplate } from '@/types/minutes'
 import type { PreparationStatus } from '@/types/preparation'
-import type { RecordMarkerType } from '@/types/record'
+import type { RecordMarkerType, RecordType } from '@/types/record'
 import type { TaskStatus } from '@/types/task'
 import type { StatusTone } from '@/types/ui'
 
@@ -59,6 +59,12 @@ export const minutesTemplateMeta: Record<MinutesTemplate, StatusMeta> = {
   concise: { label: '简洁记录', tone: 'info' },
   task_list: { label: '任务清单', tone: 'warning' },
   custom: { label: '自定义模板', tone: 'info' },
+}
+
+export const recordTypeMeta: Record<RecordType, StatusMeta> = {
+  manual: { label: '手动记录', tone: 'neutral' },
+  transcript: { label: '转写', tone: 'info' },
+  imported: { label: '导入', tone: 'neutral' },
 }
 
 export const recordMarkerMeta: Record<RecordMarkerType, StatusMeta> = {

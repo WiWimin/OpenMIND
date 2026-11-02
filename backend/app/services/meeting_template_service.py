@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.parsers import parse_bytes
 from app.core.config import get_settings
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.meeting_template import MeetingTemplate
 from app.repositories import meeting_template_repository
 from app.services.model_config_service import (
@@ -17,6 +17,7 @@ from app.services.model_config_service import (
 )
 from app.utils import storage
 from app.utils.ids import new_id
+from app.utils.storage import ensure_upload_size
 
 _ALLOWED_EXTENSIONS = ("docx", "txt", "md")
 _MAX_CONTENT_CHARS = 20000
@@ -143,10 +144,6 @@ def preview_text(text: str) -> str:
     return _preview(text or "")
 
 
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "模板不存在或不可访问", http_status=404)
-
-
 def list_templates(db: Session, user_id: str) -> list[dict[str, object]]:
     items: list[dict[str, object]] = [_builtin_read(item) for item in BUILTIN_TEMPLATES]
     for row in meeting_template_repository.list_by_user(db, user_id):
@@ -161,7 +158,7 @@ def resolve_template_content(db: Session, user_id: str, template_id: str) -> str
         return builtin["content_text"]
     row = meeting_template_repository.get_owned(db, template_id, user_id)
     if row is None:
-        raise _not_found()
+        raise resource_not_found("模板")
     return row.content_text
 
 
@@ -185,13 +182,7 @@ def upload_template(
         )
 
     settings = get_settings()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            "FILE_TOO_LARGE",
-            f"文件超过大小限制（{settings.max_upload_mb}MB）",
-            http_status=413,
-        )
+    ensure_upload_size(content, max_mb=settings.max_upload_mb)
 
     content_text = _extract_text(content, extension)
     cleaned_name = (name or Path(file_name).stem).strip()
@@ -207,9 +198,11 @@ def upload_template(
 
     template_id = new_id("tpl")
     storage_key = f"templates/{template_id}.{extension}"
-    storage.save_bytes(settings.storage_dir, relative_key=storage_key, data=content)
-    try:
-        return meeting_template_repository.create(
+    return storage.save_then_create(
+        settings.storage_dir,
+        storage_key,
+        content,
+        lambda: meeting_template_repository.create(
             db,
             template_id=template_id,
             user_id=user_id,
@@ -219,10 +212,8 @@ def upload_template(
             file_name=file_name,
             storage_key=storage_key,
             content_text=content_text,
-        )
-    except Exception:
-        storage.delete_object(settings.storage_dir, storage_key)
-        raise
+        ),
+    )
 
 
 def create_template_text(
@@ -333,7 +324,7 @@ def _clean_category(category: str | None) -> str | None:
 def get_owned_template(db: Session, template_id: str, user_id: str) -> MeetingTemplate:
     template = meeting_template_repository.get_owned(db, template_id, user_id)
     if template is None:
-        raise _not_found()
+        raise resource_not_found("模板")
     return template
 
 

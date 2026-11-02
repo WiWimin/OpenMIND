@@ -84,7 +84,7 @@ import { useToast } from '@/composables/useToast'
 import type { IssueStatus, OpenIssue } from '@/types/issue'
 import type { SelectOption } from '@/types/ui'
 import { isRequestCancelled } from '@/utils/requests'
-import { issueStatusMeta } from '@/utils/statusLabels'
+import { issueStatusMeta, type StatusMeta } from '@/utils/statusLabels'
 
 const props = withDefaults(defineProps<{ meetingId: string; readonly?: boolean }>(), {
   readonly: false,
@@ -96,11 +96,9 @@ const { items, pagination, loading, error, load } = useAsyncList<OpenIssue>({
   fetcher: ({ page, page_size }) => issuesApi.listIssues(props.meetingId, { page, page_size }),
 })
 
-const statusOptions: SelectOption[] = [
-  { value: 'open', label: '待处理' },
-  { value: 'resolved', label: '已解决' },
-  { value: 'cancelled', label: '已取消' },
-]
+const statusOptions: SelectOption[] = (
+  Object.entries(issueStatusMeta) as [IssueStatus, StatusMeta][]
+).map(([value, meta]) => ({ value, label: meta.label }))
 
 const extracting = ref(false)
 const busyId = ref<string | null>(null)

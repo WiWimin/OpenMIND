@@ -554,9 +554,9 @@ import type {
 } from '@/types/chat'
 import type { Meeting } from '@/types/meeting'
 import type { MeetingRecord, RecordMarkerType, RecordType } from '@/types/record'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime, formatTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
-import { audioStatusMeta, recordMarkerMeta } from '@/utils/statusLabels'
+import { audioStatusMeta, recordMarkerMeta, recordTypeMeta } from '@/utils/statusLabels'
 import { validateAudioFile } from '@/utils/audioUpload'
 
 const route = useRoute()
@@ -902,7 +902,7 @@ const streamEntries = computed<TranscriptEntry[]>(() => {
     key: `rec-${record.record_id}`,
     kind: 'record' as const,
     seq: null,
-    time: timeLabel(record.created_at),
+    time: formatTime(record.created_at),
     text: record.content,
     marker: record.marker_type,
     tag: recordTypeLabel(record.record_type),
@@ -946,22 +946,8 @@ const composerTypeOptions: { label: string; value: string }[] = [
   { label: '导入文本', value: 'imported' },
 ]
 
-const RECORD_TYPE_LABELS: Record<RecordType, string> = {
-  manual: '手动记录',
-  transcript: '转写',
-  imported: '导入',
-}
-
 function recordTypeLabel(type: RecordType): string {
-  return RECORD_TYPE_LABELS[type]
-}
-
-function timeLabel(value: string): string {
-  return new Date(value).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  return recordTypeMeta[type]?.label ?? type
 }
 
 function offsetLabel(seconds: number): string {
@@ -1145,7 +1131,7 @@ function exportTxt(meeting: Meeting): void {
       const marker = record.marker_type
         ? `［${recordMarkerMeta[record.marker_type].label}］`
         : ''
-      lines.push(`[${timeLabel(record.created_at)}]${marker} ${record.content}`)
+      lines.push(`[${formatTime(record.created_at)}]${marker} ${record.content}`)
     }
   }
   const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' })

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData, RecordDeleteResult
 from app.schemas.record import MeetingRecordRead, RecordCreate, RecordUpdate
 from app.services import record_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(tags=["records"])
 
@@ -38,21 +36,18 @@ def list_records(
     meeting_id: str,
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
 ) -> Envelope[ListData[MeetingRecordRead]]:
     items, total = record_service.list_records(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
-        page=page,
-        page_size=page_size,
+        page=params.page,
+        page_size=params.page_size,
     )
-    data = ListData[MeetingRecordRead](
-        items=[MeetingRecordRead.model_validate(item) for item in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items, MeetingRecordRead, page=params.page, page_size=params.page_size, total=total
     )
-    return Envelope(data=data)
 
 
 @router.patch("/records/{record_id}", response_model=Envelope[MeetingRecordRead])

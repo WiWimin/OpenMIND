@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.meeting import Meeting
 from app.models.user import utc_now
 from app.repositories import (
@@ -21,18 +21,15 @@ from app.repositories import (
 from app.schemas.meeting import MeetingCreate, MeetingUpdate
 from app.utils import storage
 from app.utils.ids import new_id
+from app.utils.pagination import paginate_by
 
 _ARCHIVED = "archived"
-
-
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "会议不存在或不可访问", http_status=404)
 
 
 def get_owned_meeting(db: Session, meeting_id: str, user_id: str) -> Meeting:
     meeting = meeting_repository.get_owned(db, meeting_id, user_id)
     if meeting is None:
-        raise _not_found()
+        raise resource_not_found("会议")
     return meeting
 
 
@@ -55,12 +52,15 @@ def list_meetings(
     page: int,
     page_size: int,
 ) -> tuple[list[Meeting], int]:
-    offset = (page - 1) * page_size
-    items = meeting_repository.list_by_user(
-        db, user_id, status=status, limit=page_size, offset=offset
+    return paginate_by(
+        meeting_repository.list_by_user,
+        meeting_repository.count_by_user,
+        db,
+        user_id,
+        page=page,
+        page_size=page_size,
+        status=status,
     )
-    total = meeting_repository.count_by_user(db, user_id, status=status)
-    return items, total
 
 
 def create_meeting(db: Session, user_id: str, payload: MeetingCreate) -> Meeting:

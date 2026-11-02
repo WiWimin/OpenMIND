@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData, MaterialDeleteResult
 from app.schemas.material import MaterialRead
 from app.services import material_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(tags=["materials"])
 
@@ -47,21 +47,18 @@ def list_materials(
     meeting_id: str,
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
 ) -> Envelope[ListData[MaterialRead]]:
     items, total = material_service.list_materials(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
-        page=page,
-        page_size=page_size,
+        page=params.page,
+        page_size=params.page_size,
     )
-    data = ListData[MaterialRead](
-        items=[MaterialRead.model_validate(item) for item in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items, MaterialRead, page=params.page, page_size=params.page_size, total=total
     )
-    return Envelope(data=data)
 
 
 @router.get("/materials/{material_id}", response_model=Envelope[MaterialRead])

@@ -192,7 +192,7 @@ import type { PersonalTask, TaskStatus } from '@/types/task'
 import type { SelectOption } from '@/types/ui'
 import { formatDate, formatDateTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
-import { taskStatusMeta } from '@/utils/statusLabels'
+import { taskStatusMeta, type StatusMeta } from '@/utils/statusLabels'
 
 const store = useTasksStore()
 const router = useRouter()
@@ -215,20 +215,13 @@ store.filters.status = props.defaultStatus
 
 const toast = useToast()
 
-const filterOptions: SelectOption[] = [
-  { value: '', label: '全部' },
-  { value: 'todo', label: '待办' },
-  { value: 'in_progress', label: '进行中' },
-  { value: 'completed', label: '已完成' },
-  { value: 'cancelled', label: '已取消' },
-]
+const taskStatusOptions = (
+  Object.entries(taskStatusMeta) as [TaskStatus, StatusMeta][]
+).map(([value, meta]) => ({ value, label: meta.label }))
 
-const statusOptions: SelectOption[] = [
-  { value: 'todo', label: '待办' },
-  { value: 'in_progress', label: '进行中' },
-  { value: 'completed', label: '已完成' },
-  { value: 'cancelled', label: '已取消' },
-]
+const filterOptions: SelectOption[] = [{ value: '', label: '全部' }, ...taskStatusOptions]
+
+const statusOptions: SelectOption[] = taskStatusOptions
 
 const showCancel = ref(false)
 const cancelling = ref(false)

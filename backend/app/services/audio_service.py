@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -7,13 +8,17 @@ from sqlalchemy.orm import Session
 
 from app.ai.transcription import TranscriptionClient
 from app.core.config import get_settings
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.audio import MeetingAudio
 from app.repositories import audio_repository
 from app.schemas.record import RecordCreate, RecordMarkerType, RecordType
 from app.services import meeting_service, record_service
 from app.utils import storage
 from app.utils.ids import new_id
+from app.utils.pagination import paginate_by
+from app.utils.storage import ensure_upload_size
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "webm"}
 _STATUS_UPLOADED = "uploaded"
@@ -53,6 +58,7 @@ def _run_transcription(
         audio.status = _STATUS_FAILED
         audio.error = exc.message
     except Exception:
+        logger.exception("音频转写失败 audio_id=%s", audio.audio_id)
         audio.status = _STATUS_FAILED
         audio.error = "音频转写失败"
     finally:
@@ -71,19 +77,15 @@ def upload_audio(
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     audio_type = _infer_audio_type(file_name)
     settings = get_settings()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            "FILE_TOO_LARGE",
-            f"文件超过大小限制（{settings.max_upload_mb}MB）",
-            http_status=413,
-        )
+    ensure_upload_size(content, max_mb=settings.max_upload_mb)
 
     audio_id = new_id("aud")
     storage_key = f"audio/{audio_id}.{audio_type}"
-    storage.save_bytes(settings.storage_dir, relative_key=storage_key, data=content)
-    try:
-        audio = audio_repository.create(
+    audio = storage.save_then_create(
+        settings.storage_dir,
+        storage_key,
+        content,
+        lambda: audio_repository.create(
             db,
             audio_id=audio_id,
             meeting_id=meeting_id,
@@ -91,10 +93,8 @@ def upload_audio(
             file_name=file_name,
             audio_type=audio_type,
             storage_key=storage_key,
-        )
-    except Exception:
-        storage.delete_object(settings.storage_dir, storage_key)
-        raise
+        ),
+    )
     _run_transcription(db, audio, content, file_name)
     return audio
 
@@ -177,13 +177,7 @@ def append_live_chunk(
     if not content:
         raise AppError("VALIDATION_ERROR", "分片内容为空", http_status=422)
     settings = get_settings()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            "FILE_TOO_LARGE",
-            f"文件超过大小限制（{settings.max_upload_mb}MB）",
-            http_status=413,
-        )
+    ensure_upload_size(content, max_mb=settings.max_upload_mb)
 
     ext = audio.type
     chunk_key = _chunk_key(audio_id, seq, ext)
@@ -201,6 +195,9 @@ def append_live_chunk(
     except AppError as exc:
         segment["error"] = exc.message
     except Exception:
+        logger.exception(
+            "实时转写分片失败 audio_id=%s seq=%d", audio_id, seq
+        )
         segment["error"] = "音频转写失败"
 
     segments.append(segment)
@@ -294,6 +291,7 @@ def retry_live_segment(
     except AppError as exc:
         target["error"] = exc.message
     except Exception:
+        logger.exception("实时转写分片重试失败 audio_id=%s seq=%s", audio_id, seq)
         target["error"] = "音频转写失败"
     audio.segments = segments
     _rebuild_transcript(audio)
@@ -304,20 +302,20 @@ def list_audio(
     db: Session, *, meeting_id: str, user_id: str, page: int, page_size: int
 ) -> tuple[list[MeetingAudio], int]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    offset = (page - 1) * page_size
-    items = audio_repository.list_by_meeting(
-        db, meeting_id, limit=page_size, offset=offset
+    return paginate_by(
+        audio_repository.list_by_meeting,
+        audio_repository.count_by_meeting,
+        db,
+        meeting_id,
+        page=page,
+        page_size=page_size,
     )
-    total = audio_repository.count_by_meeting(db, meeting_id)
-    return items, total
 
 
 def get_owned_audio(db: Session, audio_id: str, user_id: str) -> MeetingAudio:
     audio = audio_repository.get_owned(db, audio_id, user_id)
     if audio is None:
-        raise AppError(
-            "RESOURCE_NOT_FOUND", "音频不存在或不可访问", http_status=404
-        )
+        raise resource_not_found("音频")
     return audio
 
 

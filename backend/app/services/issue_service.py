@@ -3,12 +3,13 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.ai.extraction import IssueCandidate, IssueExtractor
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.issue import OpenIssue
 from app.models.record import MeetingRecord
-from app.repositories import issue_repository, record_repository
+from app.repositories import issue_repository
 from app.schemas.issue import IssueStatus, IssueUpdate
 from app.services import meeting_service
+from app.services.extraction_support import build_transcripts, gather_records
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -16,11 +17,11 @@ from app.services.model_config_service import (
     resolve_model_config,
 )
 from app.utils.ids import new_id
+from app.utils.pagination import paginate_by
 
 _STATUS_OPEN = "open"
 _STATUS_RESOLVED = "resolved"
 _STATUS_CANCELLED = "cancelled"
-_MAX_RECORDS = 100
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     _STATUS_OPEN: {_STATUS_RESOLVED, _STATUS_CANCELLED},
@@ -31,20 +32,6 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 
 def extract_candidates(transcripts: list[str], config: ModelConfig) -> list[IssueCandidate]:
     return IssueExtractor(build_llm_client(config)).extract(transcripts)
-
-
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "问题不存在或不可访问", http_status=404)
-
-
-def _gather_records(
-    db: Session, meeting_id: str, record_ids: list[str]
-) -> list[MeetingRecord]:
-    if record_ids:
-        return record_repository.list_by_ids(db, meeting_id, record_ids)
-    return record_repository.list_by_meeting(
-        db, meeting_id, limit=_MAX_RECORDS, offset=0
-    )
 
 
 def _source_record_id(
@@ -62,8 +49,8 @@ def extract_issues(
     db: Session, *, meeting_id: str, user_id: str, record_ids: list[str]
 ) -> list[OpenIssue]:
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
-    records = _gather_records(db, meeting_id, record_ids)
-    transcripts = [f"[{record.record_id}] {record.content}" for record in records]
+    records = gather_records(db, meeting_id, record_ids)
+    transcripts = build_transcripts(records)
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.extraction)
     candidates = extract_candidates(transcripts, config)
     issues: list[OpenIssue] = []
@@ -86,16 +73,20 @@ def list_issues(
     db: Session, *, meeting_id: str, user_id: str, page: int, page_size: int
 ) -> tuple[list[OpenIssue], int]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    offset = (page - 1) * page_size
-    items = issue_repository.list_by_meeting(db, meeting_id, limit=page_size, offset=offset)
-    total = issue_repository.count_by_meeting(db, meeting_id)
-    return items, total
+    return paginate_by(
+        issue_repository.list_by_meeting,
+        issue_repository.count_by_meeting,
+        db,
+        meeting_id,
+        page=page,
+        page_size=page_size,
+    )
 
 
 def get_owned_issue(db: Session, issue_id: str, user_id: str) -> OpenIssue:
     issue = issue_repository.get_owned(db, issue_id, user_id)
     if issue is None:
-        raise _not_found()
+        raise resource_not_found("问题")
     return issue
 
 

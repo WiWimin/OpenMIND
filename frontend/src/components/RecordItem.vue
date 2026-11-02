@@ -50,21 +50,17 @@ import AppButton from '@/components/AppButton.vue'
 import AppTag from '@/components/AppTag.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import type { MeetingRecord, RecordMarkerType, RecordType } from '@/types/record'
+import type { MeetingRecord, RecordMarkerType } from '@/types/record'
 import { formatDateTime } from '@/utils/datetime'
-import { recordMarkerMeta } from '@/utils/statusLabels'
+import {
+  recordMarkerMeta,
+  recordTypeMeta,
+  type StatusMeta,
+} from '@/utils/statusLabels'
 
-const TYPE_LABELS: Record<RecordType, string> = {
-  manual: '手动记录',
-  transcript: '转写',
-  imported: '导入',
-}
-
-const MARKER_OPTIONS: { value: RecordMarkerType; label: string }[] = [
-  { value: 'highlight', label: '重点' },
-  { value: 'decision', label: '决议' },
-  { value: 'question', label: '疑问' },
-]
+const MARKER_OPTIONS = (Object.entries(recordMarkerMeta) as [RecordMarkerType, StatusMeta][]).map(
+  ([value, meta]) => ({ value, label: meta.label }),
+)
 
 const props = withDefaults(
   defineProps<{
@@ -88,7 +84,7 @@ const editing = ref(false)
 const draft = ref('')
 const error = ref('')
 
-const typeLabel = computed(() => TYPE_LABELS[props.record.record_type])
+const typeLabel = computed(() => recordTypeMeta[props.record.record_type]?.label)
 const time = computed(() => formatDateTime(props.record.created_at))
 const markerMeta = computed(() =>
   props.record.marker_type ? recordMarkerMeta[props.record.marker_type] : null,

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ActionItemStatus(StrEnum):
@@ -19,6 +20,8 @@ class ActionItemSource(BaseModel):
 
 
 class ActionItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     action_id: str
     meeting_id: str
     content: str
@@ -29,22 +32,26 @@ class ActionItemRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="before")
     @classmethod
-    def from_model(cls, item: object) -> ActionItemRead:
-        return cls(
-            action_id=item.action_id,
-            meeting_id=item.meeting_id,
-            content=item.content,
-            assignee=item.assignee,
-            due_date=item.due_date,
-            status=item.status,
-            source=ActionItemSource(
-                record_id=item.source_record_id,
-                excerpt=item.source_excerpt,
-            ),
-            created_at=item.created_at,
-            updated_at=item.updated_at,
-        )
+    def _flatten_source(cls, data: Any) -> Any:
+        """把 ORM 的扁平 source_record_id / source_excerpt 列映射为嵌套 source。"""
+        if not isinstance(data, dict) and hasattr(data, "source_record_id"):
+            return {
+                "action_id": data.action_id,
+                "meeting_id": data.meeting_id,
+                "content": data.content,
+                "assignee": data.assignee,
+                "due_date": data.due_date,
+                "status": data.status,
+                "source": {
+                    "record_id": data.source_record_id,
+                    "excerpt": data.source_excerpt,
+                },
+                "created_at": data.created_at,
+                "updated_at": data.updated_at,
+            }
+        return data
 
 
 class ActionItemExtractRequest(BaseModel):

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Response, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.action_item import (
     ActionItemExtractRequest,
     ActionItemExtractResult,
@@ -15,13 +14,8 @@ from app.schemas.action_item import (
 from app.schemas.common import ActionItemDeleteResult, Envelope, ListData
 from app.schemas.task import TaskRead
 from app.services import action_item_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(tags=["action-items"])
-
-
-def _to_read(item: object) -> ActionItemRead:
-    return ActionItemRead.from_model(item)
 
 
 @router.post(
@@ -40,7 +34,11 @@ def extract_action_items(
         user_id=current_user.user_id,
         record_ids=payload.record_ids,
     )
-    return Envelope(data=ActionItemExtractResult(items=[_to_read(item) for item in items]))
+    return Envelope(
+        data=ActionItemExtractResult(
+            items=[ActionItemRead.model_validate(item) for item in items]
+        )
+    )
 
 
 @router.get(
@@ -51,21 +49,18 @@ def list_action_items(
     meeting_id: str,
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
 ) -> Envelope[ListData[ActionItemRead]]:
     items, total = action_item_service.list_action_items(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
-        page=page,
-        page_size=page_size,
+        page=params.page,
+        page_size=params.page_size,
     )
-    data = ListData[ActionItemRead](
-        items=[_to_read(item) for item in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items, ActionItemRead, page=params.page, page_size=params.page_size, total=total
     )
-    return Envelope(data=data)
 
 
 @router.get("/action-items/{action_id}", response_model=Envelope[ActionItemRead])
@@ -73,7 +68,7 @@ def get_action_item(
     action_id: str, db: DbSession, current_user: CurrentUser
 ) -> Envelope[ActionItemRead]:
     item = action_item_service.get_owned_action_item(db, action_id, current_user.user_id)
-    return Envelope(data=_to_read(item))
+    return Envelope(data=ActionItemRead.model_validate(item))
 
 
 @router.patch("/action-items/{action_id}", response_model=Envelope[ActionItemRead])
@@ -86,7 +81,7 @@ def update_action_item(
     item = action_item_service.update_action_item(
         db, action_id, current_user.user_id, payload
     )
-    return Envelope(data=_to_read(item))
+    return Envelope(data=ActionItemRead.model_validate(item))
 
 
 @router.delete(
@@ -104,7 +99,7 @@ def confirm_action_item(
     action_id: str, db: DbSession, current_user: CurrentUser
 ) -> Envelope[ActionItemRead]:
     item = action_item_service.confirm_action_item(db, action_id, current_user.user_id)
-    return Envelope(data=_to_read(item))
+    return Envelope(data=ActionItemRead.model_validate(item))
 
 
 @router.post(

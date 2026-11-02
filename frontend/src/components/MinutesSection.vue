@@ -94,13 +94,13 @@ import { useToast } from '@/composables/useToast'
 import type { Minutes, MinutesTemplate } from '@/types/minutes'
 import { formatDateTime } from '@/utils/datetime'
 import { isRequestCancelled } from '@/utils/requests'
-import { minutesStatusMeta, minutesTemplateMeta } from '@/utils/statusLabels'
+import { minutesStatusMeta, minutesTemplateMeta, type StatusMeta } from '@/utils/statusLabels'
 
 const TEMPLATE_OPTIONS: { value: MinutesTemplate | ''; label: string }[] = [
   { value: '', label: '使用默认模板' },
-  { value: 'standard', label: '标准纪要' },
-  { value: 'concise', label: '简洁记录' },
-  { value: 'task_list', label: '任务清单' },
+  ...(Object.entries(minutesTemplateMeta) as [MinutesTemplate, StatusMeta][])
+    .filter(([value]) => value !== 'custom')
+    .map(([value, meta]) => ({ value, label: meta.label })),
 ]
 
 const props = withDefaults(

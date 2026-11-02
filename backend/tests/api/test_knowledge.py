@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai.rag import retriever as rag_retriever
 from app.core.config import get_settings
 from app.services import knowledge_service
 
@@ -24,13 +25,17 @@ def media_root(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture()
 def fake_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeClient:
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [list(_VECTOR) for _ in texts]
+
     monkeypatch.setattr(
         knowledge_service,
-        "embed_texts",
-        lambda texts, client: [list(_VECTOR) for _ in texts],
+        "build_embedding_client",
+        lambda config: _FakeClient(),
     )
     monkeypatch.setattr(
-        knowledge_service,
+        rag_retriever,
         "embed_query",
         lambda text, config: list(_VECTOR),
     )

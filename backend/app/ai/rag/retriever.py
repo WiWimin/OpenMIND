@@ -57,7 +57,7 @@ class VectorRetriever:
         min_score: float = 0.3,
     ) -> list[RetrievedChunk]:
         if scope == "knowledge_base":
-            return self._retrieve_knowledge(
+            return self.retrieve_knowledge(
                 query,
                 user_id=user_id,
                 top_k=top_k,
@@ -96,14 +96,15 @@ class VectorRetriever:
         scored.sort(key=lambda item: item.score, reverse=True)
         return scored[:top_k]
 
-    def _retrieve_knowledge(
+    def retrieve_knowledge(
         self,
         query: str,
         *,
         user_id: str,
-        top_k: int,
-        min_score: float,
+        top_k: int = 5,
+        min_score: float = 0.3,
     ) -> list[RetrievedChunk]:
+        """知识库范围检索（`knowledge_service.search_documents` 与 RAG 共用）。"""
         statement = (
             select(KnowledgeChunk, KnowledgeDocument.file_name)
             .join(

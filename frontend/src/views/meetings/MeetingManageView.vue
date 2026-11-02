@@ -126,8 +126,8 @@
           <div class="meeting-files-view__head">
             <h2 class="meeting-files-view__title">{{ activeMeeting?.title }}</h2>
             <StatusBadge
-              :label="activeMeeting?.status === 'archived' ? '已归档' : '已安排'"
-              :tone="activeMeeting?.status === 'archived' ? 'neutral' : 'info'"
+              :label="meetingBadgeMeta(activeMeeting?.status).label"
+              :tone="meetingBadgeMeta(activeMeeting?.status).tone"
             />
             <AppButton
               variant="ghost"
@@ -195,11 +195,12 @@ import NavIcon from '@/components/NavIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
+import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import type { Meeting, MeetingStatus } from '@/types/meeting'
-import type { Pagination } from '@/types/pagination'
 import { formatDateTime } from '@/utils/datetime'
+import { meetingStatusMeta, type StatusMeta } from '@/utils/statusLabels'
 import {
   assignCategory,
   categoryOf,
@@ -238,8 +239,8 @@ const MeetingRow = defineComponent({
           ]),
         ]),
         h(StatusBadge, {
-          label: rowProps.meeting.status === 'archived' ? '已归档' : '已安排',
-          tone: rowProps.meeting.status === 'archived' ? 'neutral' : 'info',
+          label: meetingBadgeMeta(rowProps.meeting.status).label,
+          tone: meetingBadgeMeta(rowProps.meeting.status).tone,
         }),
         h('div', { class: 'meeting-row__actions' }, [
           h(
@@ -272,11 +273,23 @@ const toast = useToast()
 const router = useRouter()
 const ws = useLocalWorkspace()
 
-const items = ref<Meeting[]>([])
-const pagination = ref<Pagination>({ page: 1, page_size: 100, total: 0, total_pages: 1 })
-const loading = ref(false)
-const error = ref<unknown>(null)
 const status = ref<StatusFilter>('')
+
+const {
+  items,
+  pagination,
+  loading,
+  error,
+  load: loadMeetings,
+} = useAsyncList<Meeting>({
+  fetcher: ({ page, page_size }) =>
+    meetingsApi.listMeetings({
+      page,
+      page_size,
+      status: status.value || undefined,
+    }),
+  pageSize: 100,
+})
 
 const categories = ref<MeetingCategory[]>([])
 
@@ -300,10 +313,15 @@ const deleteCategoryTarget = ref<MeetingCategory | null>(null)
 const creatingCategory = ref(false)
 const newCategoryName = ref('')
 
+function meetingBadgeMeta(status: MeetingStatus | undefined): StatusMeta {
+  return meetingStatusMeta[status ?? 'scheduled']
+}
+
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: '', label: '全部' },
-  { value: 'scheduled', label: '已安排' },
-  { value: 'archived', label: '已归档' },
+  ...(Object.entries(meetingStatusMeta) as [MeetingStatus, StatusMeta][]).map(
+    ([value, meta]) => ({ value, label: meta.label }),
+  ),
 ]
 
 const searchActive = computed(() => searchQuery.value.trim().length > 0)
@@ -396,21 +414,7 @@ function openWorkspace(): void {
 }
 
 async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    const result = await meetingsApi.listMeetings({
-      page: 1,
-      page_size: 100,
-      status: status.value || undefined,
-    })
-    items.value = result.items
-    pagination.value = result.pagination
-  } catch (caught) {
-    error.value = caught
-  } finally {
-    loading.value = false
-  }
+  await loadMeetings(1)
 }
 
 function refreshCategories(): void {

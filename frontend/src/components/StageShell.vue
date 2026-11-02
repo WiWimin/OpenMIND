@@ -111,6 +111,7 @@ import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import type { CreateMeetingPayload, Meeting, MeetingStatus } from '@/types/meeting'
+import { meetingStatusMeta } from '@/utils/statusLabels'
 
 type StageKey = 'preprocess' | 'asr' | 'minutes'
 
@@ -155,7 +156,7 @@ const steps = computed(() => {
 const activeIndex = computed(() => steps.value.findIndex((step) => step.key === props.stage))
 
 function statusLabel(status: MeetingStatus): string {
-  return status === 'archived' ? '已归档' : '已安排'
+  return meetingStatusMeta[status]?.label ?? status
 }
 
 function syncQuery(): void {

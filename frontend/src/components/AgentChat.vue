@@ -281,6 +281,7 @@ import assistantParrotUrl from '@/assets/ip/assistant-parrot.png'
 import MarkdownView from '@/components/MarkdownView.vue'
 import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
+import { formatTime } from '@/utils/datetime'
 import type { PolishSuggestion, SummaryStructured } from '@/types/chat'
 import type {
   AgentChatMessage,
@@ -381,14 +382,6 @@ const trimmedContext = computed(() => {
 
 function nextMessageId(): number {
   return ++messageId
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
 }
 
 function onScroll(): void {

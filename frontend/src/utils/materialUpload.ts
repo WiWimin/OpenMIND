@@ -5,13 +5,26 @@ export function fileExtension(fileName: string): string {
   return index === -1 ? '' : fileName.slice(index + 1).toLowerCase()
 }
 
-export function validateMaterialFile(file: File, maxMb: number = MAX_UPLOAD_MB): string | null {
-  const extension = fileExtension(file.name)
-  if (!(ALLOWED_MATERIAL_EXTENSIONS as readonly string[]).includes(extension)) {
-    return `仅支持 ${ALLOWED_MATERIAL_EXTENSIONS.join(' / ')} 文件`
+export function isAllowedExtension(fileName: string, extensions: readonly string[]): boolean {
+  return (extensions as readonly string[]).includes(fileExtension(fileName))
+}
+
+/** 通用的文件类型 + 大小校验；返回错误文案或 null。 */
+export function validateFile(
+  file: File,
+  extensions: readonly string[],
+  label: string,
+  maxMb: number,
+): string | null {
+  if (!isAllowedExtension(file.name, extensions)) {
+    return `仅支持 ${extensions.join(' / ')} ${label}`
   }
   if (file.size > maxMb * 1024 * 1024) {
     return `文件不能超过 ${maxMb} MB`
   }
   return null
+}
+
+export function validateMaterialFile(file: File, maxMb: number = MAX_UPLOAD_MB): string | null {
+  return validateFile(file, ALLOWED_MATERIAL_EXTENSIONS, '文件', maxMb)
 }

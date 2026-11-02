@@ -28,8 +28,8 @@
               <h2 class="aside-section__title">会前准备稿</h2>
             </div>
             <StatusBadge
-              :label="lastPreparation.status === 'confirmed' ? '已确认' : '草稿'"
-              :tone="lastPreparation.status === 'confirmed' ? 'success' : 'info'"
+              :label="preparationStatusMeta[lastPreparation.status]?.label ?? lastPreparation.status"
+              :tone="preparationStatusMeta[lastPreparation.status]?.tone ?? 'neutral'"
             />
           </div>
 
@@ -129,6 +129,7 @@ import type { AgentReply } from '@/types/agent'
 import type { ChatMode, ChatSource } from '@/types/chat'
 import type { MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
+import { preparationStatusMeta } from '@/utils/statusLabels'
 import { resolveErrorMessage } from '@/utils/errors'
 
 const route = useRoute()
