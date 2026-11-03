@@ -124,14 +124,6 @@
         </li>
       </ul>
     </section>
-
-    <MeetingFormDialog
-      :open="showForm"
-      :loading="saving"
-      :error="saveError"
-      @submit="createMeeting"
-      @cancel="closeForm"
-    />
   </section>
 </template>
 
@@ -146,14 +138,12 @@ import AppButton from '@/components/AppButton.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 import { useMeetingsStore } from '@/stores/meetings'
-import type { CreateMeetingPayload } from '@/types/meeting'
 import type { PersonalTask } from '@/types/task'
 import { formatDate } from '@/utils/datetime'
 import { meetingStatusMeta } from '@/utils/statusLabels'
@@ -175,10 +165,6 @@ const tasks = ref<PersonalTask[]>([])
 const tasksLoading = ref(true)
 const tasksError = ref<unknown>(null)
 const savingTaskId = ref<string | null>(null)
-
-const showForm = ref(false)
-const saving = ref(false)
-const saveError = ref<unknown>(null)
 
 const userName = computed(() => auth.user?.name ?? '朋友')
 
@@ -259,35 +245,12 @@ async function completeTask(task: PersonalTask): Promise<void> {
 }
 
 function openCreate(): void {
-  saveError.value = null
-  showForm.value = true
-}
-
-function closeForm(): void {
-  showForm.value = false
+  // 新建统一走独立创建页（含本地存储位置选择），创建完成后进入会议流程页
+  void router.push({ name: ROUTE_NAMES.newMeetingCreate })
 }
 
 function openDetail(meetingId: string): void {
   void router.push({ name: ROUTE_NAMES.meetingDetail, params: { meetingId } })
-}
-
-async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
-  saving.value = true
-  saveError.value = null
-  try {
-    const created = await store.createMeeting(payload)
-    showForm.value = false
-    toast.success('会议已创建，进入会议流程')
-    await router.push({
-      name: ROUTE_NAMES.newMeeting,
-      query: { meetingId: created.meeting_id },
-    })
-    void loadStats()
-  } catch (caught) {
-    saveError.value = caught
-  } finally {
-    saving.value = false
-  }
 }
 
 onMounted(() => {

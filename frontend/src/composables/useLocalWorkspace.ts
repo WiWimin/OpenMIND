@@ -3,8 +3,11 @@ import { computed, ref, shallowRef } from 'vue'
 import * as meetingsApi from '@/api/meetings'
 import {
   clearStoredHandle,
+  ensureLocalDir,
   isLocalWorkspaceSupported,
   isWriteAllowed,
+  listSubdirs,
+  loadMeetingRoot,
   loadStoredHandle,
   pickDirectory,
   queryPermission,
@@ -14,7 +17,6 @@ import {
   writeBlobToPath,
   type LocalDirHandle,
 } from '@/utils/localFileSystem'
-import { categoryNameOf, categoryOf } from '@/utils/meetingCategories'
 
 export type WorkspaceStatus = 'unsupported' | 'unconfigured' | 'needs-permission' | 'connected'
 
@@ -109,7 +111,6 @@ export interface MirrorMeetingFileOptions {
   meetingId: string
   /** meetingTitle 缺省时自动调用会议详情接口解析 */
   meetingTitle?: string
-  kind: 'materials' | 'minutes' | 'audio'
   fileName: string
   content: Blob | string
 }
@@ -117,14 +118,37 @@ export interface MirrorMeetingFileOptions {
 /** skipped：未连接本地文件夹（正常降级）；written：写入成功；failed：已连接但写入失败 */
 export type MirrorResult = 'skipped' | 'written' | 'failed'
 
-const KIND_SUBFOLDER: Record<MirrorMeetingFileOptions['kind'], string> = {
-  materials: '资料',
-  minutes: '纪要',
-  audio: '录音',
+/**
+ * 解析会议的本地存储根（路径即会议根）：
+ * 1) 新建会议时显式选择的路径（IndexedDB 持久化）；
+ * 2) 未选择时默认「授权目录/<会议名>/」。
+ */
+async function meetingRootSegments(meetingId: string, title: string): Promise<string[]> {
+  try {
+    const stored = await loadMeetingRoot(meetingId)
+    if (stored && stored.length > 0) {
+      return stored
+    }
+  } catch {
+    /* 读取失败走默认 */
+  }
+  return [sanitizeFolderName(title)]
+}
+
+/** 创建会议时的默认落盘：若已连接，在授权目录创建 <会议名>/ 文件夹 */
+async function createDefaultMeetingFolder(title: string): Promise<void> {
+  if (status.value !== 'connected' || !handle.value) {
+    return
+  }
+  try {
+    await ensureLocalDir(handle.value, [sanitizeFolderName(title)])
+  } catch (caught) {
+    console.warn('[local-workspace] 默认会议文件夹创建失败', caught)
+  }
 }
 
 /**
- * 把会议相关文件镜像写入本地「授权目录/OpenMIND/<分类>/<会议>/<子目录>/」。
+ * 把会议相关文件镜像写入本地「授权目录/<会议根>/<文件>」。
  * 未授权时返回 skipped 静默降级，绝不影响主流程。
  */
 async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<MirrorResult> {
@@ -133,13 +157,7 @@ async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<Mir
   }
   try {
     const title = options.meetingTitle ?? (await resolveMeetingTitle(options.meetingId))
-    const categoryName = categoryNameOf(categoryOf(options.meetingId)) ?? '未分类'
-    const segments = [
-      'OpenMIND',
-      sanitizeFolderName(categoryName),
-      sanitizeFolderName(title),
-      KIND_SUBFOLDER[options.kind],
-    ]
+    const segments = await meetingRootSegments(options.meetingId, title)
     const content =
       typeof options.content === 'string'
         ? new Blob([options.content], { type: 'text/plain;charset=utf-8' })
@@ -169,7 +187,6 @@ async function mirrorConfirmedMinutes(
   return mirrorMeetingFile({
     meetingId,
     meetingTitle: title,
-    kind: 'minutes',
     fileName: `会议纪要_${title}.md`,
     content,
   })
@@ -179,11 +196,15 @@ export function useLocalWorkspace() {
   return {
     status,
     directoryName,
+    rootHandle: handle,
     init,
     connect,
     restore,
     disconnect,
     mirrorMeetingFile,
     mirrorConfirmedMinutes,
+    meetingRootSegments,
+    createDefaultMeetingFolder,
+    listSubdirs,
   }
 }

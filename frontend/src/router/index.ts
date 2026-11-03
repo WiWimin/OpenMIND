@@ -31,6 +31,12 @@ const workspaceChildren: RouteRecordRaw[] = [
     meta: { label: '会议总入口', module: 'new-meeting' },
   },
   {
+    path: ROUTE_PATHS.newMeetingCreate.slice(1),
+    name: ROUTE_NAMES.newMeetingCreate,
+    component: () => import('@/views/newMeeting/CreateMeetingView.vue'),
+    meta: { label: '新建会议', module: 'new-meeting' },
+  },
+  {
     path: ROUTE_PATHS.preprocess.slice(1),
     name: ROUTE_NAMES.preprocess,
     component: () => import('@/views/newMeeting/PreprocessView.vue'),

@@ -269,7 +269,6 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
     materialsKey.value += 1
     void mirrorMeetingFile({
       meetingId: meetingId.value,
-      kind: 'materials',
       fileName: payload.file.name,
       content: payload.file,
     })

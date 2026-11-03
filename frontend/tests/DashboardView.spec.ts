@@ -127,35 +127,22 @@ describe('DashboardView', () => {
     expect(wrapper.findAll('.home__task')).toHaveLength(1)
   })
 
-  it('opens the create dialog from the intro CTA and creates a meeting', async () => {
+  it('navigates to the create page from the intro CTA', async () => {
     mockMeetings([meeting])
     mockTasks([task])
-    vi.mocked(meetingsApi.createMeeting).mockResolvedValue(meeting)
 
     const wrapper = mountView()
     await flushPromises()
 
     const cta = wrapper.get('.home__cta')
     await cta.trigger('click')
-    expect(wrapper.find('.meeting-form').exists()).toBe(true)
 
-    await wrapper.get('#meeting-title').setValue('项目周会')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-
-    expect(meetingsApi.createMeeting).toHaveBeenCalledWith({
-      title: '项目周会',
-      topic: undefined,
-      meeting_time: undefined,
-    })
-    expect(pushMock).toHaveBeenCalledWith({
-      name: 'new-meeting',
-      query: { meetingId: 'mtg_1' },
-    })
+    expect(pushMock).toHaveBeenCalledWith({ name: 'new-meeting-create' })
     expect(wrapper.find('.meeting-form').exists()).toBe(false)
+    expect(meetingsApi.createMeeting).not.toHaveBeenCalled()
   })
 
-  it('opens the create dialog when arriving with ?create=1', async () => {
+  it('redirects ?create=1 to the create page', async () => {
     mockMeetings([])
     mockTasks([])
     routeState.query = { create: '1' }
@@ -163,8 +150,9 @@ describe('DashboardView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('.meeting-form').exists()).toBe(true)
+    expect(pushMock).toHaveBeenCalledWith({ name: 'new-meeting-create' })
     expect(replaceMock).toHaveBeenCalledWith({ query: {} })
+    expect(wrapper.find('.meeting-form').exists()).toBe(false)
   })
 
   it('navigates to the meeting detail when a meeting row is clicked', async () => {

@@ -37,8 +37,9 @@ export const NAV_MODULES: NavModule[] = [
   {
     key: 'new-meeting',
     label: '新建会议',
-    routeName: ROUTE_NAMES.newMeeting,
+    routeName: ROUTE_NAMES.newMeetingCreate,
     match: [
+      ROUTE_NAMES.newMeetingCreate,
       ROUTE_NAMES.newMeeting,
       ROUTE_NAMES.preprocess,
       ROUTE_NAMES.asr,

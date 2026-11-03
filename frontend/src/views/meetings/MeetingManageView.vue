@@ -114,6 +114,7 @@
             :key="meeting.meeting_id"
             :meeting="meeting"
             @open="enterMeeting"
+            @import="openImport"
             @delete="askDeleteMeeting"
           />
           <p v-if="activeFolderMeetings.length === 0" class="folder-empty-hint">
@@ -143,15 +144,28 @@
       </template>
     </section>
 
-    <!-- 新建会议 -->
-    <MeetingFormDialog
-      :open="showCreate"
-      :loading="creating"
-      :error="createError"
-      :categories="categories"
-      @submit="createMeeting"
-      @cancel="showCreate = false"
-    />
+    <!-- 从本地文件夹导入资料到指定会议 -->
+    <AppModal
+      :open="importTarget !== null"
+      :label="`导入资料 · ${importTarget?.title ?? ''}`"
+      @close="importTarget = null"
+    >
+      <div v-if="importTarget" class="meeting-import">
+        <p class="meeting-import__hint">
+          从已授权的本地文件夹选择资料导入该会议；未连接时可先在此授权（与会议详情页同一份授权）。
+        </p>
+        <LocalWorkspacePanel
+          :meeting-id="importTarget.meeting_id"
+          :meeting-title="importTarget.title"
+          :readonly="importTarget.status === 'archived'"
+          :show-export="false"
+          @imported="onImported"
+        />
+        <div class="meeting-import__actions">
+          <AppButton variant="ghost" @click="importTarget = null">完成</AppButton>
+        </div>
+      </div>
+    </AppModal>
 
     <!-- 删除会议确认 -->
     <ConfirmDialog
@@ -185,12 +199,13 @@ import { useRouter } from 'vue-router'
 import * as meetingsApi from '@/api/meetings'
 import AppBreadcrumb from '@/components/AppBreadcrumb.vue'
 import AppButton from '@/components/AppButton.vue'
+import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
 import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
-import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -210,13 +225,13 @@ import {
   type MeetingCategory,
 } from '@/utils/meetingCategories'
 
-/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 打开/删除 */
+/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 打开/导入/删除 */
 const MeetingRow = defineComponent({
   name: 'MeetingRow',
   props: {
     meeting: { type: Object as () => Meeting, required: true },
   },
-  emits: ['open', 'delete'],
+  emits: ['open', 'import', 'delete'],
   setup(rowProps, { emit }) {
     return () =>
       h('div', { class: 'meeting-row' }, [
@@ -251,6 +266,15 @@ const MeetingRow = defineComponent({
               onClick: () => emit('open', rowProps.meeting),
             },
             '查看',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'meeting-row__action',
+              onClick: () => emit('import', rowProps.meeting),
+            },
+            '导入',
           ),
           h(
             'button',
@@ -298,10 +322,6 @@ const activeCategory = ref<MeetingCategory | null>(null)
 const activeMeeting = ref<Meeting | null>(null)
 
 const searchQuery = ref('')
-
-const showCreate = ref(false)
-const creating = ref(false)
-const createError = ref<unknown>(null)
 
 const showDeleteMeeting = ref(false)
 const deleteMeetingTarget = ref<Meeting | null>(null)
@@ -430,36 +450,26 @@ function setStatus(next: StatusFilter): void {
 }
 
 function openCreate(): void {
-  createError.value = null
-  showCreate.value = true
-}
-
-async function createMeeting(payload: MeetingFormPayload): Promise<void> {
-  creating.value = true
-  createError.value = null
-  try {
-    const created = await meetingsApi.createMeeting({
-      title: payload.title,
-      topic: payload.topic,
-      meeting_time: payload.meeting_time,
-    })
-    if (payload.categoryId) {
-      assignCategory(created.meeting_id, payload.categoryId)
-    }
-    showCreate.value = false
-    toast.success('会议已创建')
-    refreshCategories()
-    await load()
-  } catch (caught) {
-    createError.value = caught
-  } finally {
-    creating.value = false
-  }
+  // 新建统一走独立创建页（含本地存储位置选择），创建完成后进入会议流程页
+  void router.push({ name: ROUTE_NAMES.newMeetingCreate })
 }
 
 function askDeleteMeeting(meeting: Meeting): void {
   deleteMeetingTarget.value = meeting
   showDeleteMeeting.value = true
+}
+
+/** 从会议管理页直接把本地文件夹资料导入指定会议 */
+const importTarget = ref<Meeting | null>(null)
+
+function openImport(meeting: Meeting): void {
+  importTarget.value = meeting
+}
+
+function onImported(): void {
+  if (importTarget.value) {
+    toast.success(`已导入资料到「${importTarget.value.title}」`)
+  }
 }
 
 async function confirmDeleteMeeting(): Promise<void> {
@@ -947,5 +957,25 @@ onMounted(() => {
 
 .meeting-panel__breadcrumb {
   margin-bottom: 0;
+}
+
+/* 会议管理页 · 本地文件夹导入对话框 */
+.meeting-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  min-width: min(32rem, calc(100vw - 3rem));
+}
+
+.meeting-import__hint {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.85rem;
+}
+
+.meeting-import__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

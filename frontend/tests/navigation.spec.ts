@@ -17,6 +17,12 @@ describe('navigation config', () => {
     expect(module?.key).toBe('new-meeting')
   })
 
+  it('routes the top-level new-meeting entry to the create page', () => {
+    const module = NAV_MODULES.find((item) => item.key === 'new-meeting')
+    expect(module?.routeName).toBe('new-meeting-create')
+    expect(findModuleByRouteName('new-meeting-create')?.key).toBe('new-meeting')
+  })
+
   it('keeps the meeting detail under meeting management', () => {
     expect(findModuleByRouteName('meeting-detail')?.key).toBe('meetings')
   })

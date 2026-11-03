@@ -161,17 +161,14 @@ describe('MeetingManageView', () => {
     })
   })
 
-  it('creates a meeting and assigns the selected category', async () => {
-    vi.mocked(meetingsApi.createMeeting).mockResolvedValue({
-      ...meetings[0],
-      meeting_id: 'mtg_new',
-      title: '第 1 次周会',
-    })
+  it('navigates to the create page when clicking 新建会议', async () => {
     const wrapper = mountView()
     await flushPromises()
 
     const createButton = wrapper.findAll('button').find((button) => button.text() === '新建会议')
     await createButton?.trigger('click')
-    expect(wrapper.findComponent({ name: 'MeetingFormDialog' }).exists()).toBe(true)
+
+    expect(pushMock).toHaveBeenCalledWith({ name: 'new-meeting-create' })
+    expect(wrapper.findComponent({ name: 'MeetingFormDialog' }).exists()).toBe(false)
   })
 })

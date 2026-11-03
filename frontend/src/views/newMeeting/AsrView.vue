@@ -833,7 +833,6 @@ async function uploadAudioFile(file: File): Promise<void> {
       toast.success('音频已转写，请检查文本')
       void mirrorMeetingFile({
         meetingId: meetingId.value,
-        kind: 'audio',
         fileName: file.name,
         content: file,
       })

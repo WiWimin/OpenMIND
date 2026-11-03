@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as materialsApi from '@/api/materials'
 import * as minutesApi from '@/api/minutes'
 import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import type { ListData } from '@/types/api'
 import type { Material } from '@/types/material'
 import * as minutesDocx from '@/utils/minutesDocx'
@@ -36,13 +37,21 @@ const minutes = {
 
 type FileEntry = { name: string; file: File }
 
-function createDirectory(entries: FileEntry[]) {
+interface DirectoryMockOptions {
+  /** queryPermission 返回值，默认 granted */
+  permission?: PermissionState
+  /** requestPermission 返回值（恢复权限用），默认跟随 permission */
+  requestResult?: PermissionState
+}
+
+function createDirectory(entries: FileEntry[], options: DirectoryMockOptions = {}) {
   const write = vi.fn().mockResolvedValue(undefined)
   const close = vi.fn().mockResolvedValue(undefined)
   const getFileHandle = vi.fn().mockResolvedValue({
     createWritable: vi.fn().mockResolvedValue({ write, close }),
   })
-  return {
+  const directory: Record<string, unknown> = {
+    kind: 'directory' as const,
     name: 'meeting-files',
     values: async function* () {
       for (const entry of entries) {
@@ -54,9 +63,13 @@ function createDirectory(entries: FileEntry[]) {
       }
     },
     getFileHandle,
+    getDirectoryHandle: vi.fn(async () => directory),
+    queryPermission: vi.fn(async () => options.permission ?? 'granted'),
+    requestPermission: vi.fn(async () => options.requestResult ?? options.permission ?? 'granted'),
     _write: write,
     _close: close,
   }
+  return directory
 }
 
 function mountPanel(readonly = false): VueWrapper {
@@ -90,7 +103,9 @@ function materialList(items: Material[]): ListData<Material> {
 }
 
 describe('LocalWorkspacePanel', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // 面板已统一到共享目录句柄：每个用例前重置单例，避免句柄/状态串味
+    await useLocalWorkspace().disconnect()
     vi.resetAllMocks()
     vi.mocked(materialsApi.listMaterials).mockResolvedValue(materialList([]))
     Object.defineProperty(window, 'showDirectoryPicker', {
@@ -220,11 +235,41 @@ describe('LocalWorkspacePanel', () => {
     await button(wrapper, '导出最新纪要')?.trigger('click')
     await flushPromises()
 
+    // 默认会议根 = <会议名>/，纪要写入其中
+    expect(directory.getDirectoryHandle).toHaveBeenCalledWith('项目周会', { create: true })
     expect(directory.getFileHandle).toHaveBeenCalledWith('项目周会-会议纪要.docx', {
       create: true,
     })
     expect(directory._write).toHaveBeenCalledWith(blob)
     expect(directory._close).toHaveBeenCalled()
     expect(wrapper.text()).toContain('最新纪要已导出到本地文件夹')
+  })
+
+  it('shows a restore banner when permission expires and recovers in place', async () => {
+    const directory = createDirectory(
+      [{ name: 'plan.txt', file: new File(['plan'], 'plan.txt') }],
+      { permission: 'prompt', requestResult: 'prompt' },
+    )
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      value: vi.fn().mockResolvedValue(directory),
+      configurable: true,
+    })
+    const wrapper = mountPanel()
+
+    // 选择目录后权限未授予 → 进入 needs-permission，展示恢复入口
+    await button(wrapper, '选择本地文件夹')?.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('本地文件夹权限已过期或被撤销')
+    const restoreBtn = button(wrapper, '恢复权限')
+    expect(restoreBtn).toBeTruthy()
+
+    // 一键恢复（手势内弹窗）→ granted → 文件列表可用，无需重新选目录
+    directory.requestPermission = vi.fn(async () => 'granted' as PermissionState)
+    await restoreBtn?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('本地文件夹权限已恢复')
+    expect(wrapper.text()).toContain('plan.txt')
+    expect(wrapper.text()).not.toContain('权限已过期或被撤销')
   })
 })

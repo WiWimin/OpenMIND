@@ -232,7 +232,6 @@ async function upload(): Promise<void> {
       toast.success('音频已转写，请检查文本')
       void mirrorMeetingFile({
         meetingId: props.meetingId,
-        kind: 'audio',
         fileName: file.name,
         content: file,
       })

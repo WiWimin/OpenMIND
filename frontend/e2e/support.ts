@@ -157,15 +157,13 @@ export async function createMeeting(
   title: string,
   topic = 'Playwright 端到端验收',
 ): Promise<void> {
-  await page.getByRole('button', { name: '新建会议', exact: true }).first().click()
-  const dialog = page.getByRole('dialog', { name: '新建会议', exact: true })
-  await expect(dialog).toBeVisible()
-  await dialog.locator('#meeting-title').fill(title)
-  await dialog.locator('#meeting-topic').fill(topic)
-  // 新建（非编辑）模式下提交按钮文案为「创建」
-  await dialog.getByRole('button', { name: '创建', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  // 当前 UX：创建成功后自动进入会议流程页 /new-meeting?meetingId=<id>
+  // 新建统一走独立创建页（含本地存储位置选择；未连接本地文件夹时选择器自动隐藏）
+  await page.goto('/new-meeting/create')
+  await expect(page).toHaveURL(/\/new-meeting\/create/)
+  await page.locator('#meeting-title').fill(title)
+  await page.locator('#meeting-topic').fill(topic)
+  await page.getByRole('button', { name: '创建', exact: true }).click()
+  // 创建成功 → 进入会议流程页（三个功能卡片）
   await expect(page).toHaveURL(/\/new-meeting\?meetingId=mtg_[0-9a-f]+/)
 }
 
