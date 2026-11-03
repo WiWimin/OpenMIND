@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-" + "a" * 32)
+# 单测/接口测试禁用 RAG 相关性 Judge：避免低分带查询触发真实 LLM 调用
+# （Judge 行为由 tests/unit/test_rag_judge.py 显式开关覆盖）
+os.environ.setdefault("RAG_JUDGE_ENABLED", "false")
 
 import app.models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.db.base import Base

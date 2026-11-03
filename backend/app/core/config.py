@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_model: str = ""
     embedding_dim: int = 1024
+    # RAG 相关性 Judge：top1 分数低于 rag_judge_min_score 时交 LLM 复核，
+    # 判定“答不了”则整体拒答（拦截分数够但无关的负样本）；Judge 不可用时回退分数判定
+    rag_judge_enabled: bool = True
+    rag_judge_min_score: float = 0.6
     asr_api_base: str = ""
     asr_api_key: str = ""
     asr_model: str = ""

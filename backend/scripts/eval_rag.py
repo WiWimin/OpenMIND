@@ -41,7 +41,9 @@ from app.models.knowledge_chunk import KnowledgeChunk  # noqa: E402
 from app.models.knowledge_document import KnowledgeDocument  # noqa: E402
 from app.models.material import MeetingMaterial  # noqa: E402
 from app.models.meeting import Meeting  # noqa: E402
+from app.models.model_config import UserModelConfig  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.models.user_memory import UserMemory  # noqa: E402
 from app.services.model_config_service import (  # noqa: E402
     build_embedding_client,
     resolve_model_config,
@@ -152,6 +154,21 @@ def ingest(db, dataset: dict) -> tuple[str, str, dict, dict]:
         user_id = decode_access_token(token)["sub"]
         headers = {"Authorization": f"Bearer {token}"}
         print(f"[灌库] eval 用户={name} user_id={user_id}")
+
+        # 写入与服务端一致的 LLM 配置（模拟“已配置用户”；ALLOW_GLOBAL_FALLBACK=false
+        # 时 Judge/生成链路需要用户自带配置，否则 LLM 不可用、Judge 会全部回退）
+        settings = get_settings()
+        if settings.llm_api_base and settings.llm_api_key:
+            unwrap(client.put(
+                "/me/settings/model",
+                json={
+                    "llm_api_base": settings.llm_api_base,
+                    "llm_api_key": settings.llm_api_key,
+                    "llm_model": settings.llm_model,
+                },
+                headers=headers,
+            ))
+            print("[灌库] eval 用户 LLM 配置已写入（服务端同款，probe 校验）")
 
         doc_map: dict[str, str] = {}
         mat_map: dict[str, str] = {}
@@ -317,6 +334,12 @@ def _cleanup(db, user_id: str) -> None:
             MeetingMaterial.meeting_id == m.meeting_id).delete()
     db.query(Meeting).filter(Meeting.user_id == user_id).delete()
 
+    # BYOK 写入与记忆（外键先于 users 删除）
+    db.query(UserModelConfig).filter(
+        UserModelConfig.user_id == user_id
+    ).delete()
+    db.query(UserMemory).filter(UserMemory.user_id == user_id).delete()
+
     db.query(User).filter(User.user_id == user_id).delete()
     db.commit()
 
@@ -351,7 +374,9 @@ def write_report(dataset: dict, meta: dict, m: dict, negatives: list,
     lines.append(f"- 执行时间：{meta['timestamp']}")
     lines.append(f"- Embedding：`{meta['embedding_model']}` dim={meta['embedding_dim']}")
     lines.append(f"- 固定配置：top_k={TOP_K}、min_score={MIN_SCORE}、"
-                 f"chunk={meta['chunk_size']}/{meta['chunk_overlap']}")
+                 f"chunk={meta['chunk_size']}/{meta['chunk_overlap']}；"
+                 f"RAG Judge：enabled={meta['judge_enabled']}、"
+                 f"judge_min_score={meta['judge_min_score']}（低分带 LLM 复核）")
     lines.append(f"- 灌入路径：HTTP API `{API_BASE}`；检索路径：应用层 VectorRetriever"
                  "（与生产同实现，含 user_id SQL 下推，不经 LLM、无裸 SQL）")
     lines.append(f"- 数据集：`backend/scripts/eval/dataset.json` "
@@ -505,6 +530,8 @@ def main() -> int:
                 "embedding_model": settings.embedding_model,
                 "embedding_dim": settings.embedding_dim,
                 "chunk_size": 800, "chunk_overlap": 120,
+                "judge_enabled": settings.rag_judge_enabled,
+                "judge_min_score": settings.rag_judge_min_score,
                 "dataset_sha": sha256_file(DATASET_PATH),
                 "stages": "①维度一致 ②连续 embedding ③检索冒烟 — 全部通过",
                 "consistency": consistency,

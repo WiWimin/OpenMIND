@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.rag.relevance import RelevanceJudge
 from app.ai.rag.similarity import cosine
+from app.core.config import get_settings
 from app.models.chunk import DocumentChunk
 from app.models.knowledge_chunk import KnowledgeChunk
 from app.models.knowledge_document import KnowledgeDocument
@@ -45,6 +47,37 @@ class VectorRetriever:
         self._db = db
         self._user_id = user_id
         self._config = resolve_model_config(db, user_id)
+        self._judge: RelevanceJudge | None = None
+
+    @staticmethod
+    def _build_judge(config: ModelConfig) -> RelevanceJudge:
+        """Judge 构造工厂（测试可 monkeypatch）。"""
+        return RelevanceJudge(config)
+
+    def _apply_judge(
+        self, query: str, results: list[RetrievedChunk]
+    ) -> list[RetrievedChunk]:
+        """低分带相关性复核：top1 低于 rag_judge_min_score 时交 LLM Judge 判定。
+
+        判“无关”→ 整体拒答（返回空，拦截分数够但答不了的负样本）；
+        Judge 不可用（返回 None）→ 回退分数判定，不阻断检索。
+        """
+        if not results:
+            return results
+        settings = get_settings()
+        if not settings.rag_judge_enabled:
+            return results
+        if results[0].score >= settings.rag_judge_min_score:
+            return results
+        if self._judge is None:
+            self._judge = self._build_judge(self._config)
+        # 对 top3 候选整体判定：任一可作答即保留（避免答案在非 top1 时误拒）
+        verdict = self._judge.is_relevant(
+            query, [item.excerpt for item in results[:3]]
+        )
+        if verdict is False:
+            return []
+        return results
 
     def retrieve(
         self,
@@ -94,7 +127,7 @@ class VectorRetriever:
                     )
                 )
         scored.sort(key=lambda item: item.score, reverse=True)
-        return scored[:top_k]
+        return self._apply_judge(query, scored[:top_k])
 
     def retrieve_knowledge(
         self,
@@ -140,4 +173,4 @@ class VectorRetriever:
                     )
                 )
         scored.sort(key=lambda item: item.score, reverse=True)
-        return scored[:top_k]
+        return self._apply_judge(query, scored[:top_k])
