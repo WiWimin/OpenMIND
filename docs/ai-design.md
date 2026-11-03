@@ -182,6 +182,15 @@ class Retriever:
 - 记忆只作为软偏好注入 Prompt，必须明确不得覆盖材料事实、来源、权限和业务规则。
 - 用户可查看、修改、删除；删除后不再进入后续 AI 调用。
 
+### 5.6 相关性 Judge（低分带复核）
+
+- 背景：单一 `min_score=0.3` 阈值下，负样本 top1（0.31–0.48）与正样本 top1（min 0.45）分数区间重叠，无法靠阈值分离（评测基线负样本拦截率仅 50%）。
+- 机制：`VectorRetriever` 在排序后，若 top1 分数低于 `RAG_JUDGE_MIN_SCORE`（默认 0.6）且 `RAG_JUDGE_ENABLED=true`，对 **top3 候选整体** 调 LLM 结构化判定（`chat_json`、`temperature=0`，任一候选可作答即保留；全部无关则整体拒答）。
+- 回退：Judge 不可用（未配置/超时/额度/输出非法）返回 `None`，**回退分数判定，绝不阻断检索**；高分带（≥ 阈值）不触达 LLM，零额外成本。
+- 实现：`ai/rag/relevance.py`（`RelevanceJudge`）+ `ai/rag/retriever._apply_judge`；测试环境由 `tests/conftest.py` 以 env 禁用，行为用例见 `tests/unit/test_rag_judge.py`。
+- 效果（评测，见 `docs/test-reports/rag-eval-report.md`）：负样本拦截率 50% → **100%**，会议材料 hit@5 0.812 → 0.938。
+- 边界：联网搜索（若启用）只存在于答案层后置补救，**不进入检索层**，Judge/阈值口径不受影响；评测脚本固定关闭联网。
+
 ## 六、文件解析链路（M03，`ai/parsers/`）
 
 ### 6.1 处理状态机（`meeting_materials.processing_status`）
@@ -230,6 +239,7 @@ failed → processing   （重试）
 ### 6.5 音频转写
 
 - 支持 MP3 / WAV / M4A / WEBM，上传后同步调用 OpenAI 兼容 `/audio/transcriptions`。
+- **WEBM/OGG 转码**：Chromium `MediaRecorder` 产出的 webm/ogg（Opus）FunASR 无法解码（静默返回空文本）；`TranscriptionClient` 在送 ASR 前经 **ffmpeg** 转为 16kHz 单声道 wav（容器镜像已装 ffmpeg；宿主机直跑需 PATH 可用）。转码缺失/失败抛 `FILE_PARSE_FAILED`，不静默降级。
 - 服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`；未配置返回 `MODEL_CONFIG_REQUIRED`，不伪造转写。
 - **本地 FunASR（可选）**：`docker/asr` 基于 FunASR `funasr-server`，使用 SenseVoiceSmall + FSMN-VAD，CPU 推理；Compose 服务名 `asr`，仅通过 `--profile asr` 启动，宿主机只监听 `127.0.0.1:10096`。
   - 配置：`ASR_API_BASE=http://asr:8000/v1`、`ASR_API_KEY=local-dev`（占位值，FunASR 不校验）、`ASR_MODEL=sensevoice`。
@@ -243,6 +253,7 @@ failed → processing   （重试）
 - **实时录音（分片边录边转）**：前端每约 30 秒产出一段完整可解码的分片（周期性 stop/start `MediaRecorder`，保证单片可解码），按 `seq` 串行上传；后端逐片转写并追加分段（`segments` JSONB）与全文（`\n` 拼接），页面实时滚动出字（延迟约一个分片周期）。
   - 单片转写/上传失败仅在该分段写入 `error` 占位，可单片重试，不阻塞后续分片。
   - 结束时 `live/finish` 按 `seq` 合并分片为单一音频文件（供再次转写/存档），删除分片文件，落定 `transcribed`/`failed`；调用幂等。
+  - 停止录音时**先等待末片 `dataavailable` 落地并进入上传链，再调用 `finish`**，避免末片晚于 finish 到达被 409 拒收而丢失尾部音频（竞态修复）。
   - 该方案为分片近实时转写，非 WebSocket 逐字流式；音频原文件不进入 RAG。
 - 用户修订全文后按行重拆 `segments`，沿用原分段的相对时间与标记。
 
