@@ -1,135 +1,127 @@
-import { writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { createMeeting, register, uniqueName } from './support'
 
-test('capture-probe: 分析伪麦克风采集能量', async ({ page }) => {
-  await page.goto('/register')
-  const result = await page.evaluate(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const label = stream.getAudioTracks()[0]?.label ?? 'none'
-    const rec = new MediaRecorder(stream)
-    const parts: Blob[] = []
-    rec.ondataavailable = (e) => parts.push(e.data)
-    rec.start()
-    await new Promise((r) => setTimeout(r, 4000))
-    await new Promise<void>((r) => {
-      rec.onstop = () => r()
-      rec.stop()
-    })
-    const blob = new Blob(parts, { type: 'audio/webm' })
-    const ac = new AudioContext()
-    const buf = await ac.decodeAudioData(await blob.arrayBuffer())
-    const ch = buf.getChannelData(0)
-    let sum = 0
-    for (let i = 0; i < ch.length; i++) sum += ch[i] * ch[i]
-    const rms = Number(Math.sqrt(sum / ch.length).toFixed(4))
-
-    // 页内转码为 16kHz 单声道 PCM WAV，供外部 FunASR 直接转写
-    const rate = 16000
-    const offline = new OfflineAudioContext(1, Math.ceil(buf.duration * rate), rate)
-    const src = offline.createBufferSource()
-    src.buffer = buf
-    src.connect(offline.destination)
-    src.start()
-    const rendered = await offline.startRendering()
-    const data = rendered.getChannelData(0)
-    const bytes = new ArrayBuffer(44 + data.length * 2)
-    const view = new DataView(bytes)
-    const wstr = (off: number, s: string) => {
-      for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i))
-    }
-    wstr(0, 'RIFF')
-    view.setUint32(4, 36 + data.length * 2, true)
-    wstr(8, 'WAVEfmt ')
-    view.setUint32(16, 16, true)
-    view.setUint16(20, 1, true)
-    view.setUint16(22, 1, true)
-    view.setUint32(24, rate, true)
-    view.setUint32(28, rate * 2, true)
-    view.setUint16(32, 2, true)
-    view.setUint16(34, 16, true)
-    wstr(36, 'data')
-    view.setUint32(40, data.length * 2, true)
-    for (let i = 0; i < data.length; i++) {
-      const s = Math.max(-1, Math.min(1, data[i]))
-      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
-    }
-    let binary = ''
-    const u8 = new Uint8Array(bytes)
-    for (let i = 0; i < u8.length; i += 0x8000) {
-      binary += String.fromCharCode(...u8.subarray(i, i + 0x8000))
-    }
-    return {
-      label,
-      size: blob.size,
-      duration: Number(buf.duration.toFixed(2)),
-      rms,
-      wavBase64: btoa(binary),
-    }
-  })
-  const { wavBase64, ...summary } = result as {
-    wavBase64?: string
-    label: string
-    size: number
-    duration: number
-    rms: number
-  }
-  console.log('[capture-probe] =', JSON.stringify(summary))
-  if (wavBase64) {
-    const out = join(tmpdir(), 'openmind-capture.wav')
-    writeFileSync(out, Buffer.from(wavBase64, 'base64'))
-    console.log('[capture-probe] wav saved =', out)
-  }
-})
-
 /**
- * 实时录音 E2E（chromium-live 项目专用，伪麦克风 + 真实语音文件作音源）。
- * 阶段 0 探针：验证「getUserMedia → MediaRecorder 分片 → live/chunk 上传 →
- * 停止合并 → FunASR 转写」全链路适配性；通过后在本文件补充异常用例。
+ * 实时录音 E2E（chromium-live 项目专用）。
+ * 音源：伪麦克风 + 真实语音文件（playwright.config 注入
+ * --use-file-for-fake-audio-capture，Chromium 专有 flags，仅 bundled Chromium 生效）。
+ *
+ * 覆盖：主链路（录制→分片→ffmpeg 转码→FunASR 转写→确认生成记录）+ 3 个异常用例。
  */
-test('实时录音：伪麦克风录制 → 分片上传 → 停止合并转写', async ({ page }) => {
-  test.setTimeout(240_000)
 
+async function openAsrStage(page: Page): Promise<string> {
   const title = `E2E 实时录音 ${Date.now()}`
   await register(page, uniqueName('e2e-live'))
   await createMeeting(page, title)
-
   const meetingId = new URL(page.url()).searchParams.get('meetingId')
   expect(meetingId, 'createMeeting 后应携带 meetingId').toBeTruthy()
   await page.goto(`/new-meeting/asr?meetingId=${meetingId}`)
+  return meetingId as string
+}
+
+function terminalBadge(page: Page, text: RegExp) {
+  return page.locator('.status-badge').filter({ hasText: text }).first()
+}
+
+test('主链路：录制→分片转码转写→确认生成会议记录', async ({ page }) => {
+  test.setTimeout(240_000)
+  await openAsrStage(page)
 
   await page.getByRole('button', { name: '开始实时录音', exact: true }).click()
   const pill = page.locator('.recording-pill')
   await expect(pill).toBeVisible({ timeout: 30_000 })
 
-  // 录制约 8 秒：期间按分片节奏上传（伪麦克风循环播放真实语音）
+  // 录制约 8 秒（分片周期 30s，末片在停止时上传）
   await page.waitForTimeout(8000)
   await pill.click()
 
-  // 等待「正在结束转写…」完成（录音 pill 消失）
-  await expect(pill).toHaveCount(0, { timeout: 120_000 })
+  // 终态：已转写（ffmpeg 转码后 FunASR 出文本）
+  await expect(terminalBadge(page, /已转写/)).toBeVisible({ timeout: 120_000 })
 
-  // 等待终态徽标（已转写 / 转写失败）
-  const terminal = page
-    .locator('.status-badge')
-    .filter({ hasText: /已转写|转写失败/ })
-    .first()
-  await expect(terminal).toBeVisible({ timeout: 120_000 })
+  // 转写正文来自 fixture 语音（“open mind 的语音转写测试…”）
+  await expect(page.locator('.asr-page__main')).toContainText('open mind')
+  await expect(page.locator('.asr-page__main')).toContainText(/转写内容流\s*1\s*条/)
 
-  const badges = await page.locator('.status-badge').evaluateAll((els) =>
-    els.map((el) => `${el.className}|${el.textContent?.trim()}`),
-  )
-  console.log('[probe] badges =', JSON.stringify(badges))
-  const mainText = await page.locator('.asr-page__main').innerText()
-  console.log('[probe] main =', mainText.replace(/\s+/g, ' ').slice(0, 800))
-  const transcript = await page
-    .locator('#audio-transcript, textarea')
-    .first()
-    .inputValue()
-    .catch(() => '')
-  console.log('[probe] transcript =', JSON.stringify(transcript.slice(0, 200)))
+  // 确认并生成会议记录
+  await page.getByRole('button', { name: '确认并保存为记录', exact: true }).click()
+  await expect(page.getByText('已保存为会议记录').first()).toBeVisible({ timeout: 30_000 })
+})
+
+test('异常①：麦克风权限被拒绝时给出明确提示', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => {
+    const md = navigator.mediaDevices
+    if (md) {
+      md.getUserMedia = () =>
+        Promise.reject(new DOMException('denied', 'NotAllowedError')) as never
+    }
+  })
+  await openAsrStage(page)
+
+  await page.getByRole('button', { name: '开始实时录音', exact: true }).click()
+
+  await expect(
+    page.getByText('无法访问麦克风，请检查浏览器权限设置').first(),
+  ).toBeVisible({ timeout: 30_000 })
+  // 会话未进入录音态
+  await expect(page.locator('.recording-pill')).toHaveCount(0)
+})
+
+test('异常②：分片上传失败不中断会话，末段标记占位可重试', async ({ page }) => {
+  test.setTimeout(240_000)
+  await page.route('**/live/chunk', (route) => route.abort())
+  await openAsrStage(page)
+
+  await page.getByRole('button', { name: '开始实时录音', exact: true }).click()
+  await expect(page.locator('.recording-pill')).toBeVisible({ timeout: 30_000 })
+  await page.waitForTimeout(6000)
+  await page.locator('.recording-pill').click()
+
+  // 单片失败仅占位，不中断：占位分段 + 会话进入终态
+  await expect(page.getByText('已标记占位').first()).toBeVisible({ timeout: 60_000 })
+  await expect(
+    terminalBadge(page, /已转写|转写失败/),
+  ).toBeVisible({ timeout: 120_000 })
+})
+
+test('异常③：结束转写失败时展示失败原因且标记可重试', async ({ page }) => {
+  test.setTimeout(240_000)
+  await page.route('**/live/finish', (route) => {
+    if (route.request().method() === 'OPTIONS') {
+      return route.continue()
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'access-control-allow-origin': '*' },
+      body: JSON.stringify({
+        status: 'success',
+        data: {
+          audio_id: 'aud_e2e_mock',
+          meeting_id: 'mtg_e2e_mock',
+          file_name: '实时录音-e2e-mock.webm',
+          type: 'webm',
+          status: 'failed',
+          transcript: null,
+          segments: [],
+          error: '模拟转写失败，请稍后重试',
+          created_at: '2026-11-03T00:00:00+08:00',
+          updated_at: '2026-11-03T00:00:00+08:00',
+        },
+      }),
+    })
+  })
+  await openAsrStage(page)
+
+  await page.getByRole('button', { name: '开始实时录音', exact: true }).click()
+  await expect(page.locator('.recording-pill')).toBeVisible({ timeout: 30_000 })
+  await page.waitForTimeout(5000)
+  await page.locator('.recording-pill').click()
+
+  // 失败原因透出（ErrorMessage），状态终态为转写失败
+  await expect(page.getByText('模拟转写失败，请稍后重试').first()).toBeVisible({
+    timeout: 60_000,
+  })
+  await expect(terminalBadge(page, /转写失败/)).toBeVisible({ timeout: 60_000 })
 })

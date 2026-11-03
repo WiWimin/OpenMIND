@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import httpx
@@ -14,6 +15,50 @@ _MIME_TYPES = {
     "m4a": "audio/mp4",
     "webm": "audio/webm",
 }
+
+# Chromium/Firefox MediaRecorder 产出的容器格式（Opus 编码），FunASR 无法解码
+# （返回空文本），送 ASR 前必须用 ffmpeg 转为 16k 单声道 wav。
+_TRANSCODE_EXTENSIONS = {"webm", "ogg", "oga", "opus"}
+
+
+def transcode_to_wav(content: bytes, file_name: str) -> tuple[bytes, str, str]:
+    """把 webm/ogg 音频经 ffmpeg 转为 16kHz 单声道 wav。
+
+    返回 (wav_bytes, 新文件名, mime)；ffmpeg 缺失/失败时抛 FILE_PARSE_FAILED。
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", "pipe:0",
+                "-f", "wav", "-ar", "16000", "-ac", "1", "pipe:1",
+            ],
+            input=content,
+            capture_output=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        raise AppError(
+            "FILE_PARSE_FAILED",
+            "服务器未安装 ffmpeg，无法转码 webm/ogg 音频",
+            http_status=500,
+            retryable=False,
+        ) from None
+    except subprocess.TimeoutExpired:
+        raise AppError(
+            "FILE_PARSE_FAILED",
+            "音频转码超时",
+            http_status=500,
+            retryable=False,
+        ) from None
+    if proc.returncode != 0 or not proc.stdout:
+        detail = proc.stderr.decode(errors="replace").strip()[:200]
+        raise AppError(
+            "FILE_PARSE_FAILED",
+            f"音频转码失败：{detail or 'ffmpeg 无输出'}",
+            http_status=500,
+            retryable=False,
+        )
+    return proc.stdout, f"{Path(file_name).stem}.wav", "audio/wav"
 
 
 class TranscriptionClient(ModelHTTPClient):
@@ -38,7 +83,10 @@ class TranscriptionClient(ModelHTTPClient):
     def transcribe(self, content: bytes, file_name: str) -> str:
         self._ensure_configured()
         extension = Path(file_name).suffix.lower().lstrip(".")
-        mime_type = _MIME_TYPES.get(extension, "application/octet-stream")
+        if extension in _TRANSCODE_EXTENSIONS:
+            content, file_name, mime_type = transcode_to_wav(content, file_name)
+        else:
+            mime_type = _MIME_TYPES.get(extension, "application/octet-stream")
         response = self._request_with_retry(
             lambda: self._client.post(
                 "/audio/transcriptions",

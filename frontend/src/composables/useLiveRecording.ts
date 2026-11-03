@@ -228,8 +228,26 @@ export function useLiveRecording(options: UseLiveRecordingOptions) {
       clearTimeout(chunkTimer)
       chunkTimer = null
     }
-    if (current.state === 'recording') {
+    // dataavailable 为异步派发：必须先等最后一片数据落地并进入 uploadChain，
+    // 否则 finish 会先于末片到达后端（409 冲突）导致尾部分片丢失。
+    const willProduceData = current.state === 'recording'
+    let guard: ReturnType<typeof setTimeout> | undefined
+    const finalDataLanded = willProduceData
+      ? Promise.race([
+          new Promise<void>((resolve) => {
+            current.addEventListener('dataavailable', () => resolve(), { once: true })
+          }),
+          new Promise<void>((resolve) => {
+            guard = setTimeout(resolve, 5000)
+          }),
+        ])
+      : Promise.resolve()
+    if (willProduceData) {
       current.stop()
+    }
+    await finalDataLanded
+    if (guard) {
+      clearTimeout(guard)
     }
     try {
       await uploadChain
