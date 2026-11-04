@@ -502,9 +502,11 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ### 4.2 上传材料 `POST /api/v1/meetings/{meeting_id}/materials`
 
-请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选）、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
+请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选，来源标识，前端已知取值：手动上传、`本地工作区`（会议详情/管理页手动导入）、`本地文件夹自动导入`（新建会议选文件夹后自动导入）、`AI 生成`（Build 模式文件三处保存之会议资料副本））、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
 
 响应 `201`：材料对象。当前为同步解析/索引，成功时 `processing_status = processed`；解析或索引失败时返回 `failed` 并写入 `parse_error`，文件类型不支持 `415`，过大 `413`。
+
+> 同名文件不去重（后端无唯一约束）：同名跳过由前端在自动/手动导入前以 `file_name` 集合判定；`POST` 侧不做内容比对或覆盖。
 
 > 上传路径的解析失败以 `processing_status=failed` + `parse_error` 表达，不返回 `422 FILE_PARSE_FAILED`；后者用于解析层错误语义说明，不是上传接口的响应。
 

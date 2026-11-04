@@ -202,6 +202,40 @@ export async function ensureLocalDir(root: LocalDirHandle, segments: string[]): 
   await ensureDirPath(root, segments)
 }
 
+export interface LocalFileEntry {
+  name: string
+  file: File
+  size: number
+}
+
+/**
+ * 读取路径下第一层文件（不递归子目录，按名称排序）。
+ * limit 控制最多读取的文件数；读满且仍有更多文件时 truncated=true。
+ * 路径不存在时抛 NotFound（由调用方决定降级方式）。
+ */
+export async function readFilesAt(
+  root: LocalDirHandle,
+  segments: string[],
+  limit = 50,
+): Promise<{ files: LocalFileEntry[]; truncated: boolean }> {
+  const dir = await resolveDirPath(root, segments, false)
+  const files: LocalFileEntry[] = []
+  let truncated = false
+  for await (const entry of dir.values()) {
+    if (entry.kind !== 'file' || !entry.getFile) {
+      continue
+    }
+    if (files.length >= limit) {
+      truncated = true
+      break
+    }
+    const file = await entry.getFile()
+    files.push({ name: entry.name, file, size: file.size })
+  }
+  files.sort((left, right) => left.name.localeCompare(right.name))
+  return { files, truncated }
+}
+
 /** 向指定子路径写入一个 Blob 文件；失败抛错由调用方决定降级策略 */
 export async function writeBlobToPath(
   root: LocalDirHandle,
