@@ -1,0 +1,1104 @@
+# OpenMIND E2E changes (baseline ff426413ef239e7f23133de206c402cab0b1d2a6)
+
+diff --git a/frontend/e2e/ai-flow.spec.ts b/frontend/e2e/ai-flow.spec.ts
+index dbe4922..f0106fd 100644
+--- a/frontend/e2e/ai-flow.spec.ts
++++ b/frontend/e2e/ai-flow.spec.ts
+@@ -3,82 +3,68 @@ import { expect, test } from '@playwright/test'
+ import {
+   addRecord,
+   createMeeting,
+-  openMeeting,
+-  openTab,
++  openMeetingTab,
++  openStage,
+   prepareModelAccess,
+   register,
+   uniqueName,
+-  uploadTextMaterial,
++  uploadMaterial,
+ } from './support'
+ 
+-test.describe('AI 核心链路（真实模型）', () => {
+-  test('会前准备、会议问答、纪要、行动项转任务与问题提取', async ({ page, request }) => {
+-    test.setTimeout(900_000)
++const TASK_TITLE = '完成灰度发布检查清单'
+ 
+-    const userName = uniqueName('e2e-ai')
+-    const meetingTitle = `E2E AI 会议 ${Date.now()}`
+-    const decisionRecord = '决议：本周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。'
+-    const openQuestion = '待确认：灰度发布是否按计划在周五开始？需要产品与研发共同确认。'
++test.describe('AI 核心链路（本地 Mock 模型，非真实供应商）', () => {
++  test('会前准备、会议问答、纪要、行动项提取与问题提取', async ({ page, request }) => {
++    test.setTimeout(600_000)
+ 
+-    await register(page, userName)
+-    const modelAccess = await prepareModelAccess(page, request)
+-    test.skip(!modelAccess.ready, modelAccess.reason ?? '模型配置不可用')
++    await register(page, uniqueName('e2e-ai'))
++    const access = await prepareModelAccess(page, request)
++    expect(access.ready, access.reason ?? '模型配置不可用').toBeTruthy()
+ 
+-    await createMeeting(page, meetingTitle)
+-    const meetingUrl = await openMeeting(page, meetingTitle)
++    const meetingId = await createMeeting(page, `E2E AI 会议 ${Date.now()}`)
+ 
+-    await uploadTextMaterial(
++    await openStage(page, meetingId, 'preprocess')
++    await uploadMaterial(
+       page,
+       'e2e-ai-material.txt',
+       '项目背景：十月完成集成验收。风险：模型额度可能不足，需提前检查。',
+     )
+ 
+-    await openTab(page, '记录')
+-    await addRecord(page, decisionRecord)
+-    await addRecord(page, openQuestion)
++    await openMeetingTab(page, meetingId, 'records')
++    await addRecord(page, '决议：本周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。')
++    await addRecord(page, '待确认：灰度发布是否按计划在周五开始？需要产品与研发共同确认。')
+ 
+-    await openTab(page, '会前准备')
++    // 会前准备：生成草稿并确认有内容
++    await openMeetingTab(page, meetingId, 'preparation')
+     await page.getByRole('button', { name: '生成会前准备', exact: true }).click()
+-    await expect(page.locator('#preparation-summary')).toBeVisible({ timeout: 300_000 })
+-    await expect(page.locator('#preparation-summary')).not.toHaveValue('')
++    await expect(page.locator('#preparation-summary')).not.toHaveValue('', { timeout: 120_000 })
+ 
+-    await openTab(page, '记录')
+-    await page.locator('#chat-question').fill('本次会议确定了哪些行动项和待确认问题？')
+-    await page.getByRole('button', { name: '提问', exact: true }).click()
+-    await expect(page.locator('.chat-turn__answer')).toBeVisible({ timeout: 300_000 })
+-    await expect(page.locator('.chat-turn__answer')).toHaveText(/\S/)
+-
+-    await openTab(page, '纪要')
++    // 纪要：生成草稿并提取行动项
++    await openMeetingTab(page, meetingId, 'minutes')
+     await page.getByRole('button', { name: '生成会议纪要', exact: true }).click()
+-    await expect(page.locator('#minutes-content .ProseMirror')).toBeVisible({
+-      timeout: 300_000,
++    const editor = page.locator('.minutes-section__editor')
++    await expect(editor).toBeVisible({ timeout: 120_000 })
++    await expect(editor.getByText('灰度发布', { exact: false }).first()).toBeVisible({
++      timeout: 120_000,
+     })
+-    await expect(page.locator('#minutes-content .ProseMirror')).toHaveText(/\S/)
+-    await expect(page.getByText('草稿', { exact: true }).first()).toBeVisible()
++    await expect(editor.getByText('草稿', { exact: true }).first()).toBeVisible()
+ 
+     await page.getByRole('button', { name: '提取行动项', exact: true }).click()
+     const firstAction = page.locator('.action-item').first()
+-    await expect(firstAction).toBeVisible({ timeout: 300_000 })
+-    await firstAction.getByRole('button', { name: '确认', exact: true }).click()
+-    await firstAction.getByRole('button', { name: '转为我的个人任务', exact: true }).click()
+-
+-    const convertDialog = page.getByRole('dialog', { name: '转为我的个人任务', exact: true })
+-    await expect(convertDialog).toBeVisible()
+-    await convertDialog.locator('#convert-title').fill('完成灰度发布检查清单')
+-    await convertDialog.getByRole('button', { name: '确定', exact: true }).click()
+-    await expect(convertDialog).toBeHidden()
+-    await expect(firstAction.locator('.action-item__done')).toHaveText('已转任务')
++    await expect(firstAction).toBeVisible({ timeout: 120_000 })
++    await expect(firstAction).toContainText(TASK_TITLE)
+ 
+-    await page.getByRole('link', { name: '任务管理', exact: true }).click()
+-    await expect(page.getByRole('heading', { name: '我的任务', exact: true })).toBeVisible()
+-    await expect(
+-      page.locator('.task-item').filter({ hasText: '完成灰度发布检查清单' }),
+-    ).toBeVisible()
++    // 会议问答：检索式回答应包含来源说明
++    await openStage(page, meetingId, 'minutes')
++    await page.locator('#agent-chat-input').fill('请检索本次会议资料，说明项目背景与风险。')
++    await page.getByRole('button', { name: '发送消息', exact: true }).click()
++    await expect(page.getByText(/根据会议记录与材料/).first()).toBeVisible({ timeout: 120_000 })
+ 
+-    await page.goto(meetingUrl)
+-    await expect(page.getByRole('heading', { name: meetingTitle, exact: true })).toBeVisible()
+-    await openTab(page, '问题')
++    // 问题提取
++    await openMeetingTab(page, meetingId, 'issues')
+     await page.getByRole('button', { name: '提取未解决问题', exact: true }).click()
+-    await expect(page.locator('.issue-item').first()).toBeVisible({ timeout: 300_000 })
++    const firstIssue = page.locator('.issue-item').first()
++    await expect(firstIssue).toBeVisible({ timeout: 120_000 })
++    await expect(firstIssue).toContainText('灰度发布')
+   })
+ })
+
+diff --git a/frontend/e2e/audio-flow.spec.ts b/frontend/e2e/audio-flow.spec.ts
+index cc14290..c88a143 100644
+--- a/frontend/e2e/audio-flow.spec.ts
++++ b/frontend/e2e/audio-flow.spec.ts
+@@ -3,49 +3,63 @@ import { fileURLToPath } from 'node:url'
+ 
+ import { expect, test } from '@playwright/test'
+ 
+-import { createMeeting, openMeeting, openTab, register, uniqueName } from './support'
++import { apiBase, authToken, createMeeting, openMeetingTab, openStage, register, uniqueName } from './support'
+ 
+ const AUDIO_FIXTURE_NAME = process.env.E2E_AUDIO_FIXTURE ?? 'sample-audio-zh.wav'
+-const AUDIO_FIXTURE = fileURLToPath(
+-  new URL(`./fixtures/${AUDIO_FIXTURE_NAME}`, import.meta.url),
+-)
++const AUDIO_FIXTURE = fileURLToPath(new URL(`./fixtures/${AUDIO_FIXTURE_NAME}`, import.meta.url))
+ const AUDIO_FILE_NAME = basename(AUDIO_FIXTURE)
+ const EXPECT_ASR = process.env.E2E_EXPECT_ASR === '1'
+ 
+ test.describe('音频转写', () => {
+-  test('上传音频并按当前 ASR 配置转写或给出明确失败原因', async ({ page }) => {
++  test('上传音频→转写→编辑→确认生成会议记录', async ({ page }) => {
+     test.setTimeout(300_000)
+ 
+-    const userName = uniqueName('e2e-audio')
+-    const meetingTitle = `E2E 音频会议 ${Date.now()}`
++    await register(page, uniqueName('e2e-audio'))
++    const meetingId = await createMeeting(page, `E2E 音频会议 ${Date.now()}`)
++    await openStage(page, meetingId, 'asr')
+ 
+-    await register(page, userName)
+-    await createMeeting(page, meetingTitle)
+-    await openMeeting(page, meetingTitle)
+-
+-    await openTab(page, '音频')
+-    await page.locator('#audio-file').setInputFiles(AUDIO_FIXTURE)
+-    await page.getByRole('button', { name: '上传并转写', exact: true }).click()
+-
+-    const audioItem = page.locator('.audio-section__item').filter({ hasText: AUDIO_FILE_NAME })
+-    await expect(audioItem).toBeVisible({ timeout: 180_000 })
+-    await expect(audioItem.locator('.status-badge')).toHaveText(
+-      EXPECT_ASR ? /已转写/ : /转写失败/,
+-      { timeout: 180_000 },
+-    )
++    const fileInput = page.locator('input[type=file]').first()
++    await fileInput.setInputFiles(AUDIO_FIXTURE)
++    await expect(page.getByText(AUDIO_FILE_NAME, { exact: false }).first()).toBeVisible({
++      timeout: 180_000,
++    })
+ 
+     if (!EXPECT_ASR) {
+-      await expect(page.locator('.audio-section__error')).toContainText('未配置音频转写服务')
++      await expect(page.getByText(/未配置音频转写服务|转写失败/).first()).toBeVisible({
++        timeout: 180_000,
++      })
+       return
+     }
+ 
+-    const transcript = await page.locator('#audio-transcript').inputValue()
+-    expect(transcript.trim().length).toBeGreaterThan(0)
++    await expect(page.getByText('已转写', { exact: true }).first()).toBeVisible({ timeout: 180_000 })
++    await expect(page.getByText(/Mock ASR 转写文本/).first()).toBeVisible()
++
++    // 编辑转写内容（内联编辑）
++    await page.getByRole('button', { name: '编辑文稿' }).first().click()
++    await page.locator('#asr-transcript').fill('编辑后的转写文本：确认周五前完成检查清单。')
++    await page.getByRole('button', { name: '保存修改' }).click()
++    await expect(page.getByText('编辑后的转写文本', { exact: false }).first()).toBeVisible()
++
++    // 确认并生成会议记录
++    await page.getByRole('button', { name: '确认并保存为记录' }).first().click()
++    await expect(page.getByText(/已保存为会议记录/).first()).toBeVisible({ timeout: 60_000 })
+ 
+-    await page.getByRole('button', { name: '确认并保存为记录', exact: true }).click()
+-    await expect(page.locator('.audio-section__saved')).toContainText('已保存为会议记录')
++    // 直接读取后端，确认生成了 transcript 记录且内容持久化
++    const token = await authToken(page)
++    const response = await page.request.get(`${apiBase()}/meetings/${meetingId}/records`, {
++      headers: { Authorization: `Bearer ${token}` },
++    })
++    expect(response.ok()).toBeTruthy()
++    const payload = await response.json()
++    const records = payload.data.items as Array<{ content: string; record_type: string }>
++    expect(
++      records.some(
++        (record) =>
++          record.record_type === 'transcript' && record.content.includes('编辑后的转写文本'),
++      ),
++    ).toBeTruthy()
+ 
+-    await openTab(page, '记录')
+-    await expect(page.getByText(transcript.slice(0, 40), { exact: false }).first()).toBeVisible()
++    await openMeetingTab(page, meetingId, 'records')
++    await expect(page.getByText('编辑后的转写文本', { exact: false }).first()).toBeVisible()
+   })
+ })
+
+diff --git a/frontend/e2e/core-flow.spec.ts b/frontend/e2e/core-flow.spec.ts
+index 39c70d1..e91e479 100644
+--- a/frontend/e2e/core-flow.spec.ts
++++ b/frontend/e2e/core-flow.spec.ts
+@@ -2,70 +2,64 @@ import { expect, test } from '@playwright/test'
+ 
+ import {
+   addRecord,
++  closeModal,
+   createMeeting,
+-  openMeeting,
+-  openTab,
++  openMeetingTab,
++  openStage,
+   prepareModelAccess,
+   register,
++  saveMemory,
+   uniqueName,
+-  uploadTextMaterial,
++  uploadKnowledge,
++  uploadMaterial,
+ } from './support'
+ 
+ test.describe('会议核心闭环（真实后端 + 真实数据库）', () => {
+   test('注册、建会、资料、记录标记、知识库与记忆', async ({ page, request }) => {
+-    test.setTimeout(300_000)
++    test.setTimeout(420_000)
+ 
+-    const userName = uniqueName('e2e-core')
+-    const meetingTitle = `E2E 核心会议 ${Date.now()}`
+-    const recordText = '确认周五前完成上线检查清单，并在例会同步风险。'
+-    const knowledgeText =
+-      'OpenMIND 端到端资料：项目里程碑是十月完成集成验收，负责人是产品团队，风险是模型额度。'
++    await register(page, uniqueName('e2e-core'))
++    const access = await prepareModelAccess(page, request)
++    expect(access.ready, access.reason ?? '模型配置不可用').toBeTruthy()
+ 
+-    await register(page, userName)
+-    const modelAccess = await prepareModelAccess(page, request)
+-    test.skip(!modelAccess.ready, modelAccess.reason ?? '模型配置不可用')
+-
+-    await createMeeting(page, meetingTitle)
+-    await openMeeting(page, meetingTitle)
++    const meetingTitle = `E2E 核心会议 ${Date.now()}`
++    const meetingId = await createMeeting(page, meetingTitle)
+ 
+-    await uploadTextMaterial(
++    // 资料预处理：上传文本材料并等待解析完成
++    await openStage(page, meetingId, 'preprocess')
++    await uploadMaterial(
+       page,
+       'e2e-material.txt',
+-      '会议资料：本周需要确认上线范围与风险。\n待确认：灰度发布是否在周五进行。\n里程碑：十月完成集成验收。',
++      '会议资料：本周确认上线范围与风险。\n待确认：灰度发布是否在周五进行。\n里程碑：十月完成集成验收。',
+     )
++    await expect(page.getByText('e2e-material.txt', { exact: true }).first()).toBeVisible()
+ 
+-    await openTab(page, '记录')
++    // 记录与重点标记
++    await openMeetingTab(page, meetingId, 'records')
++    const recordText = '确认周五前完成上线检查清单，并在例会同步风险。'
+     await addRecord(page, recordText)
+-
+-    const recordItem = page.locator('.record-item').filter({ hasText: recordText })
++    const recordItem = page.locator('.record-item').filter({ hasText: recordText }).first()
+     await recordItem.getByRole('button', { name: '重点', exact: true }).click()
+     await expect(recordItem.locator('.status-badge').filter({ hasText: '重点' })).toBeVisible()
+ 
+-    await page.getByRole('link', { name: '知识库', exact: true }).click()
+-    await expect(page.getByRole('heading', { name: '个人知识库', exact: true })).toBeVisible()
+-    await page.locator('#knowledge-file').setInputFiles({
+-      name: 'e2e-knowledge.txt',
+-      mimeType: 'text/plain',
+-      buffer: Buffer.from(knowledgeText, 'utf-8'),
+-    })
+-    await page.getByRole('button', { name: '上传到知识库', exact: true }).click()
+-    await expect(page.getByText('已索引', { exact: true }).first()).toBeVisible({
+-      timeout: 120_000,
+-    })
+-    await expect(page.getByText('e2e-knowledge.txt', { exact: true })).toBeVisible()
++    // 知识库上传与检索
++    await uploadKnowledge(
++      page,
++      'e2e-knowledge.txt',
++      'OpenMIND 端到端资料：项目里程碑是十月完成集成验收，负责人是产品团队，风险是模型额度。',
++    )
++    const knowledgeDialog = page.getByRole('dialog', { name: '知识库', exact: true })
++    await knowledgeDialog.getByLabel('查找资料').fill('项目里程碑')
++    await expect(knowledgeDialog.locator('.hit-item').first()).toBeVisible({ timeout: 60_000 })
++    await expect(knowledgeDialog.locator('.hit-item').first()).toContainText('里程碑')
++    await closeModal(page)
+ 
+-    await page.locator('#knowledge-query').fill('项目里程碑')
+-    await page.getByRole('button', { name: '检索', exact: true }).click()
+-    await expect(page.locator('.knowledge-hits')).toBeVisible({ timeout: 60_000 })
+-    await expect(page.locator('.knowledge-hits')).toContainText('里程碑')
++    // 记忆中心保存
++    await saveMemory(page, '产品经理', 'B2B SaaS 产品规划与跨团队项目推进', '结论先行、简洁')
++    await closeModal(page)
+ 
+-    await page.getByRole('link', { name: '系统设置', exact: true }).click()
+-    await page.getByRole('link', { name: '用户记忆中心', exact: true }).click()
+-    await expect(page.getByRole('heading', { name: '记忆中心', exact: true })).toBeVisible()
+-    await page.locator('#memory-role').fill('产品经理')
+-    await page.locator('#memory-scenarios').fill('B2B SaaS 产品规划与跨团队项目推进')
+-    await page.locator('#memory-style').fill('结论先行、简洁')
+-    await page.getByRole('button', { name: '保存记忆', exact: true }).click()
+-    await expect(page.getByText('记忆已保存', { exact: true })).toBeVisible()
++    // 任务总览
++    await page.getByRole('link', { name: '任务管理', exact: true }).click()
++    await expect(page.getByRole('heading', { name: '我的任务', exact: true })).toBeVisible()
+   })
+ })
+
+diff --git a/frontend/e2e/local-workspace.spec.ts b/frontend/e2e/local-workspace.spec.ts
+index 9000f87..b8c707d 100644
+--- a/frontend/e2e/local-workspace.spec.ts
++++ b/frontend/e2e/local-workspace.spec.ts
+@@ -1,6 +1,6 @@
+ import { expect, test } from '@playwright/test'
+ 
+-import { createMeeting, openMeeting, register, uniqueName } from './support'
++import { createMeeting, register, uniqueName } from './support'
+ 
+ test.describe('本地会议工作区', () => {
+   test('浏览器不支持目录访问时给出明确降级提示', async ({ page }) => {
+@@ -8,15 +8,14 @@ test.describe('本地会议工作区', () => {
+       delete (window as Window & { showDirectoryPicker?: unknown }).showDirectoryPicker
+     })
+ 
+-    const userName = uniqueName('e2e-local')
+-    const meetingTitle = `E2E 本地目录会议 ${Date.now()}`
++    await register(page, uniqueName('e2e-local'))
++    const meetingId = await createMeeting(page, `E2E 本地目录会议 ${Date.now()}`)
+ 
+-    await register(page, userName)
+-    await createMeeting(page, meetingTitle)
+-    await openMeeting(page, meetingTitle)
+-
+-    await expect(page.getByText('本地会议工作区', { exact: true })).toBeVisible()
+-    await expect(page.getByText('当前浏览器不支持本地文件夹访问', { exact: false })).toBeVisible()
++    // 本地工作区面板位于会议详情“材料”标签页
++    await page.goto(`/meetings/${meetingId}`)
++    await expect(page.getByRole('tab', { name: '材料', exact: true })).toBeVisible({ timeout: 30_000 })
++    await expect(page.getByRole('heading', { name: '本地会议工作区', exact: true })).toBeVisible()
++    await expect(page.getByText(/当前浏览器不支持本地文件夹访问/)).toBeVisible()
+     await expect(page.getByRole('button', { name: '选择本地文件夹', exact: true })).toHaveCount(0)
+   })
+ })
+
+diff --git a/frontend/e2e/model-settings.spec.ts b/frontend/e2e/model-settings.spec.ts
+index 90b46c7..5518b7c 100644
+--- a/frontend/e2e/model-settings.spec.ts
++++ b/frontend/e2e/model-settings.spec.ts
+@@ -1,68 +1,61 @@
+ import { expect, test } from '@playwright/test'
+ 
+-import { register, uniqueName } from './support'
++import { apiBase, authToken, openModelConfig, register, uniqueName } from './support'
+ 
+ const llm = {
+-  apiBase: process.env.E2E_LLM_API_BASE ?? '',
+-  apiKey: process.env.E2E_LLM_API_KEY ?? '',
+-  model: process.env.E2E_LLM_MODEL ?? '',
++  apiBase: process.env.E2E_LLM_API_BASE ?? 'http://mock-ai:9000/v1',
++  apiKey: process.env.E2E_LLM_API_KEY ?? 'sk-e2e-mock-1234567890',
++  model: process.env.E2E_LLM_MODEL ?? 'mock-llm',
+ }
+ 
+-const embedding = {
+-  apiBase: process.env.E2E_EMBEDDING_API_BASE ?? '',
+-  apiKey: process.env.E2E_EMBEDDING_API_KEY ?? '',
+-  model: process.env.E2E_EMBEDDING_MODEL ?? '',
+-}
+-
+-function isComplete(settings: { apiBase: string; apiKey: string; model: string }): boolean {
+-  return Boolean(settings.apiBase && settings.apiKey && settings.model)
+-}
+-
+-test.describe('模型设置（BYOK）', () => {
+-  test('保存自备 LLM/Embedding 配置并显示用户配置来源', async ({ page }) => {
+-    test.setTimeout(240_000)
+-    test.skip(
+-      !isComplete(llm) || !isComplete(embedding),
+-      'BLOCKED: 需要 E2E_LLM_* / E2E_EMBEDDING_* 环境变量',
+-    )
++test.describe('模型配置（LLM BYOK，5.0 仅 LLM 可自备）', () => {
++  test('设置菜单保存自定义 LLM 配置并掩码回显', async ({ page }) => {
++    test.setTimeout(180_000)
+ 
+     await register(page, uniqueName('e2e-byok'))
+-    await page.getByRole('link', { name: '系统设置', exact: true }).click()
+-    await page.getByRole('link', { name: '模型配置', exact: true }).click()
+-    await expect(page.getByRole('heading', { name: '模型设置', exact: true })).toBeVisible()
+-
+-    await page.locator('#llm-api-base').fill(llm.apiBase)
+-    await page.locator('#llm-api-key').fill(llm.apiKey)
+-    await page.locator('#llm-model').fill(llm.model)
+-    await page.locator('#embedding-api-base').fill(embedding.apiBase)
+-    await page.locator('#embedding-api-key').fill(embedding.apiKey)
+-    await page.locator('#embedding-model').fill(embedding.model)
+-
+-    let lastError = ''
+-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+-      await page.getByRole('button', { name: '保存配置', exact: true }).click()
+-      try {
+-        await expect(page.locator('.provider-card__source--user')).toHaveCount(2, {
+-          timeout: 60_000,
+-        })
+-        lastError = ''
+-        break
+-      } catch {
+-        lastError =
+-          (await page.locator('.error-message__text').last().textContent().catch(() => '')) ?? ''
+-        if (attempt === 3 || !/网络异常|超时|限流/.test(lastError)) {
+-          break
+-        }
+-        await page.waitForTimeout(2000)
+-      }
+-    }
+-
+-    if (lastError && /网络异常|超时|限流/.test(lastError)) {
+-      test.skip(true, `BLOCKED: 外部模型服务不可用：${lastError}`)
+-      return
+-    }
+-    if (lastError) {
+-      throw new Error(`保存模型配置失败：${lastError}`)
++    await openModelConfig(page)
++
++    await page.locator('#model-provider').selectOption({ label: '自定义（OpenAI 兼容）' })
++    await page.locator('#model-api-key').fill(llm.apiKey)
++    await page.locator('#model-custom-base').fill(llm.apiBase)
++    await page.locator('#model-custom-model').fill(llm.model)
++    await page.getByRole('button', { name: '保存配置' }).click()
++    await expect(page.getByText('模型配置已保存', { exact: false }).first()).toBeVisible({
++      timeout: 60_000,
++    })
++
++    // 保存后 API Key 输入被清空，不显示明文
++    await expect(page.locator('#model-api-key')).toHaveValue('')
++    await expect(page.getByText(llm.apiKey)).toHaveCount(0)
++
++    // 关闭并重新打开，验证配置回显（提供商=custom，密钥仍不回显）
++    await page.getByRole('button', { name: '关闭' }).first().click()
++    await openModelConfig(page)
++    await expect(page.locator('#model-provider')).toHaveValue('custom')
++    await expect(page.locator('#model-custom-base')).toHaveValue(llm.apiBase)
++    await expect(page.locator('#model-custom-model')).toHaveValue(llm.model)
++    await expect(page.locator('#model-api-key')).toHaveValue('')
++    await expect(page.getByText(llm.apiKey)).toHaveCount(0)
++
++    // 5.0 仅 LLM 可自备：界面不应出现 Embedding BYOK 字段
++    await expect(page.locator('#embedding-api-base')).toHaveCount(0)
++    await expect(page.locator('#embedding-api-key')).toHaveCount(0)
++
++    // 直接读取后端：用户配置来源、密钥掩码、Embedding 仍为服务端配置
++    const token = await authToken(page)
++    const response = await page.request.get(`${apiBase()}/me/settings/model`, {
++      headers: { Authorization: `Bearer ${token}` },
++    })
++    expect(response.ok()).toBeTruthy()
++    const data = (await response.json()).data as {
++      llm_source: string
++      llm_api_key_masked: string
++      embedding_source: string
+     }
++    expect(data.llm_source).toBe('user')
++    expect(data.llm_api_key_masked).not.toBe(llm.apiKey)
++    expect(data.llm_api_key_masked).toMatch(/\.\.\.|\*/)
++    expect(data.llm_api_key_masked).toContain('7890')
++    expect(data.embedding_source).not.toBe('user')
+   })
+ })
+
+diff --git a/frontend/e2e/support.ts b/frontend/e2e/support.ts
+index 63a17bd..85b6a6b 100644
+--- a/frontend/e2e/support.ts
++++ b/frontend/e2e/support.ts
+@@ -3,13 +3,20 @@ import { expect, type APIRequestContext, type Page } from '@playwright/test'
+ export const E2E_PASSWORD = 'openmind-e2e-123'
+ 
+ const TOKEN_KEY = 'openmind.auth.token'
++const STAGE_HEADINGS = {
++  preprocess: '资料预处理',
++  asr: '实时录音转写',
++  minutes: '会后智能处理',
++} as const
++
++export type Stage = keyof typeof STAGE_HEADINGS
+ 
+ export function uniqueName(prefix: string): string {
+   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+ }
+ 
+ export function apiBase(): string {
+-  return process.env.E2E_API_BASE ?? 'http://localhost:8000/api/v1'
++  return process.env.E2E_API_BASE ?? 'http://localhost:8010/api/v1'
+ }
+ 
+ export function escapeRegExp(value: string): string {
+@@ -23,192 +30,218 @@ export async function register(page: Page, name: string): Promise<void> {
+   await page.locator('#register-confirm').fill(E2E_PASSWORD)
+   await page.getByRole('button', { name: '注册', exact: true }).click()
+   await expect(page).toHaveURL(/\/dashboard$/)
+-  await expect(page.getByRole('heading', { name: '会议工作台', exact: true })).toBeVisible()
+-}
+-
+-async function authToken(page: Page): Promise<string> {
+-  const token = await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)
+-  if (!token) {
+-    throw new Error('未找到登录令牌，无法调用后端接口')
+-  }
+-  return token
++  // 5.0 概览页标题（旧版为“会议工作台”）
++  await expect(page.getByRole('heading', { name: /OpenMIND 智能会议助手/ })).toBeVisible()
+ }
+ 
+-interface ModelConfigResponse {
+-  llm_source: string
+-  embedding_source: string
+-}
+-
+-interface ProviderSettings {
+-  api_base: string
+-  api_key: string
+-  model: string
+-}
+-
+-export interface ModelAccessResult {
+-  ready: boolean
+-  reason?: string
++export async function login(page: Page, name: string): Promise<void> {
++  await page.goto('/login')
++  await page.locator('#login-name').fill(name)
++  await page.locator('#login-password').fill(E2E_PASSWORD)
++  await page.getByRole('button', { name: '登录', exact: true }).click()
++  await expect(page).toHaveURL(/\/dashboard$/)
+ }
+ 
+-const MAX_CONFIG_ATTEMPTS = 3
+-const TRANSIENT_PROBE_MARKERS = ['网络异常', '超时', '限流']
+-
+-function isTransientProbeFailure(status: number, body: string): boolean {
+-  if (status === 429 || status >= 500) {
+-    return true
+-  }
+-  if (body.includes('"retryable":true')) {
+-    return true
++/** 通过概览页“新建会议”对话框创建会议，返回 meetingId（创建后跳转 /new-meeting）。 */
++export async function createMeeting(
++  page: Page,
++  title: string,
++  topic = 'Playwright 端到端验收',
++): Promise<string> {
++  await page.getByRole('button', { name: '新建会议', exact: true }).first().click()
++  const dialog = page.getByRole('dialog', { name: '新建会议', exact: true })
++  await expect(dialog).toBeVisible()
++  await dialog.locator('#meeting-title').fill(title)
++  if (topic) {
++    await dialog.locator('#meeting-topic').fill(topic)
+   }
+-  return TRANSIENT_PROBE_MARKERS.some((marker) => body.includes(marker))
+-}
+-
+-function providerSettings(prefix: string): ProviderSettings {
+-  return {
+-    api_base: process.env[`${prefix}_API_BASE`] ?? '',
+-    api_key: process.env[`${prefix}_API_KEY`] ?? '',
+-    model: process.env[`${prefix}_MODEL`] ?? '',
++  // 5.0 新建时提交按钮为“创建”（编辑态才是“保存”）
++  await dialog.getByRole('button', { name: '创建', exact: true }).click()
++  await expect(dialog).toBeHidden()
++  await page.waitForURL(/\/new-meeting\?meetingId=/)
++  const meetingId = new URL(page.url()).searchParams.get('meetingId')
++  if (!meetingId) {
++    throw new Error('创建会议后未取得 meetingId')
+   }
++  return meetingId
+ }
+ 
+-function isComplete(settings: ProviderSettings): boolean {
+-  return Boolean(settings.api_base && settings.api_key && settings.model)
++/** 打开三段式工作区的某一阶段页并等待标题渲染。 */
++export async function openStage(page: Page, meetingId: string, stage: Stage): Promise<void> {
++  await page.goto(`/new-meeting/${stage}?meetingId=${meetingId}`)
++  await expect(page.getByRole('heading', { name: STAGE_HEADINGS[stage], exact: true })).toBeVisible({
++    timeout: 30_000,
++  })
+ }
+ 
+-/**
+- * 登录用户若尚未拥有可用的 LLM / Embedding 配置：
+- * - 后端启用全局回退时，直接返回 ready；
+- * - 否则尝试使用 E2E_LLM_* / E2E_EMBEDDING_* 环境变量通过 BYOK 接口写入；
+- * - 外部探测瞬断时重试；仍失败则返回 blocked 原因，由调用方跳过用例；
+- * - 明确的配置错误（401/403/维度等）直接抛出，不掩盖产品问题。
+- */
+-export async function prepareModelAccess(
++/** 在“资料预处理”页上传文本材料，等待解析完成。 */
++export async function uploadMaterial(
+   page: Page,
+-  request: APIRequestContext,
+-): Promise<ModelAccessResult> {
+-  const headers = { Authorization: `Bearer ${await authToken(page)}` }
+-  const response = await request.get(`${apiBase()}/me/settings/model`, { headers })
+-  if (!response.ok()) {
+-    throw new Error(`读取模型配置失败：HTTP ${response.status()} ${await response.text()}`)
+-  }
+-  const current = (await response.json()).data as ModelConfigResponse
+-  const needsLlm = current.llm_source === 'none'
+-  const needsEmbedding = current.embedding_source === 'none'
+-  if (!needsLlm && !needsEmbedding) {
+-    return { ready: true }
+-  }
+-
+-  const llm = providerSettings('E2E_LLM')
+-  const embedding = providerSettings('E2E_EMBEDDING')
+-  if (needsLlm && !isComplete(llm)) {
+-    return {
+-      ready: false,
+-      reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_LLM_* 自备配置',
+-    }
+-  }
+-  if (needsEmbedding && !isComplete(embedding)) {
+-    return {
+-      ready: false,
+-      reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_EMBEDDING_* 自备配置',
+-    }
+-  }
++  fileName: string,
++  content: string,
++): Promise<void> {
++  const input = page.locator('input[type=file][accept*=".txt"]').first()
++  await input.setInputFiles({
++    name: fileName,
++    mimeType: 'text/plain',
++    buffer: Buffer.from(content, 'utf-8'),
++  })
++  // 选择文件后需点击“上传资料”才真正提交
++  await page.getByRole('button', { name: '上传资料', exact: true }).first().click()
++  await expect(page.getByText(fileName, { exact: true }).first()).toBeVisible({ timeout: 60_000 })
++  await expect(page.getByText('已解析', { exact: true }).first()).toBeVisible({ timeout: 60_000 })
++}
+ 
+-  const payload: Record<string, string> = {}
+-  if (needsLlm) {
+-    payload.llm_api_base = llm.api_base
+-    payload.llm_api_key = llm.api_key
+-    payload.llm_model = llm.model
+-  }
+-  if (needsEmbedding) {
+-    payload.embedding_api_base = embedding.api_base
+-    payload.embedding_api_key = embedding.api_key
+-    payload.embedding_model = embedding.model
+-  }
++/** 打开左下角“设置菜单”，进入“模型配置”弹窗。 */
++export async function openModelConfig(page: Page): Promise<void> {
++  await page.getByLabel('设置菜单').first().click()
++  await page.getByRole('menuitem', { name: '模型配置' }).click()
++  await expect(page.getByRole('dialog', { name: '模型配置', exact: true })).toBeVisible()
++}
+ 
+-  let lastStatus = 0
+-  let lastBody = ''
+-  for (let attempt = 1; attempt <= MAX_CONFIG_ATTEMPTS; attempt += 1) {
+-    const saved = await request.put(`${apiBase()}/me/settings/model`, {
+-      headers,
+-      data: payload,
+-    })
+-    if (saved.ok()) {
+-      return { ready: true }
+-    }
+-    lastStatus = saved.status()
+-    lastBody = await saved.text()
+-    if (!isTransientProbeFailure(lastStatus, lastBody)) {
+-      throw new Error(`保存模型配置失败：HTTP ${lastStatus} ${lastBody}`)
+-    }
+-    if (attempt < MAX_CONFIG_ATTEMPTS) {
+-      await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
+-    }
+-  }
+-
+-  return {
+-    ready: false,
+-    reason: `BLOCKED: 外部模型服务暂不可用（HTTP ${lastStatus}）：${lastBody}`,
++/** 打开左下角“设置菜单”的指定菜单项。 */
++export async function openSettingsItem(page: Page, name: string): Promise<void> {
++  const item = page.getByRole('menuitem', { name, exact: true })
++  if (!(await item.isVisible().catch(() => false))) {
++    await page.getByLabel('设置菜单').first().click()
+   }
++  await item.click()
+ }
+ 
+-export async function createMeeting(
+-  page: Page,
+-  title: string,
+-  topic = 'Playwright 端到端验收',
+-): Promise<void> {
+-  await page.getByRole('button', { name: '新建会议', exact: true }).first().click()
+-  const dialog = page.getByRole('dialog', { name: '新建会议', exact: true })
++/** 打开“知识库”弹窗。 */
++export async function openKnowledge(page: Page) {
++  await openSettingsItem(page, '知识库')
++  const dialog = page.getByRole('dialog', { name: '知识库', exact: true })
+   await expect(dialog).toBeVisible()
+-  await dialog.locator('#meeting-title').fill(title)
+-  await dialog.locator('#meeting-topic').fill(topic)
+-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+-  await expect(dialog).toBeHidden()
+-  await expect(
+-    page.getByRole('button', { name: new RegExp(escapeRegExp(title)) }).first(),
+-  ).toBeVisible()
++  return dialog
+ }
+ 
+-export async function openMeeting(page: Page, title: string): Promise<string> {
+-  await page
+-    .getByRole('button', { name: new RegExp(escapeRegExp(title)) })
+-    .first()
+-    .click()
+-  await expect(page).toHaveURL(/\/meetings\/[^/]+$/)
+-  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+-  return page.url()
++/** 打开“记忆中心”弹窗。 */
++export async function openMemory(page: Page) {
++  await openSettingsItem(page, '记忆中心')
++  const dialog = page.getByRole('dialog', { name: '记忆中心', exact: true })
++  await expect(dialog).toBeVisible()
++  return dialog
+ }
+ 
+-export async function openTab(page: Page, label: string): Promise<void> {
+-  await page.getByRole('tab', { name: label, exact: true }).click()
++/** 关闭当前弹窗（AppModal 的关闭按钮）。 */
++export async function closeModal(page: Page): Promise<void> {
++  const close = page.getByRole('button', { name: '关闭', exact: true }).first()
++  if (await close.count()) {
++    await close.click()
++  }
+ }
+ 
+-export async function uploadTextMaterial(
++/** 上传知识库文档并等待索引完成。 */
++export async function uploadKnowledge(
+   page: Page,
+   fileName: string,
+   content: string,
+ ): Promise<void> {
+-  await page.locator('#material-file').setInputFiles({
++  const dialog = await openKnowledge(page)
++  await dialog.locator('input[type=file]').setInputFiles({
+     name: fileName,
+     mimeType: 'text/plain',
+     buffer: Buffer.from(content, 'utf-8'),
+   })
+-  await page.getByRole('button', { name: '上传资料', exact: true }).click()
+-  await expect(page.getByText('已解析', { exact: true }).first()).toBeVisible({
++  await expect(dialog.getByText(fileName, { exact: true })).toBeVisible({ timeout: 120_000 })
++  await expect(dialog.getByText('已索引', { exact: true }).first()).toBeVisible({
+     timeout: 120_000,
+   })
+-  await expect(page.getByText(fileName, { exact: true })).toBeVisible()
+ }
+ 
++/** 保存用户记忆并等待成功提示。 */
++export async function saveMemory(
++  page: Page,
++  role: string,
++  scenarios: string,
++  style: string,
++): Promise<void> {
++  const dialog = await openMemory(page)
++  await dialog.locator('#memory-role').fill(role)
++  await dialog.locator('#memory-scenarios').fill(scenarios)
++  await dialog.locator('#memory-style').fill(style)
++  await dialog.getByRole('button', { name: '保存记忆', exact: true }).click()
++  await expect(page.getByText('记忆已保存', { exact: true }).first()).toBeVisible({
++    timeout: 30_000,
++  })
++}
++
++/** 进入会议管理并在“未分类”文件夹中打开指定会议详情面板。 */
++export async function openMeetingDetail(page: Page, title: string): Promise<void> {
++  await page.goto('/meetings')
++  await expect(page.getByRole('heading', { name: '会议管理', exact: true })).toBeVisible()
++  const folder = page.getByRole('button', { name: /未分类/ }).first()
++  if (await folder.count()) {
++    await folder.click()
++  }
++  await page.getByRole('button', { name: new RegExp(escapeRegExp(title)) }).first().click()
++  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
++}
++
++const MEETING_TAB_LABELS = {
++  materials: '材料',
++  preparation: '会前准备',
++  records: '记录',
++  audio: '音频',
++  minutes: '纪要',
++  issues: '问题',
++  checklist: '收尾',
++} as const
++
++/** 直接打开会议详情的指定标签页（会议详情路由 /meetings/:meetingId?tab=）。 */
++export async function openMeetingTab(
++  page: Page,
++  meetingId: string,
++  tab: keyof typeof MEETING_TAB_LABELS,
++): Promise<void> {
++  await page.goto(`/meetings/${meetingId}?tab=${tab}`)
++  await expect(page.getByRole('tab', { name: MEETING_TAB_LABELS[tab], exact: true })).toBeVisible({
++    timeout: 30_000,
++  })
++}
++
++/** 在会议详情“记录”标签页新增一条记录。 */
+ export async function addRecord(page: Page, content: string): Promise<void> {
+   await page.locator('#record-content').fill(content)
+   await page.getByRole('button', { name: '保存记录', exact: true }).click()
+-  await expect(page.getByText(content, { exact: true })).toBeVisible()
++  await expect(page.getByText(content, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+ }
+ 
+-export async function login(page: Page, name: string): Promise<void> {
+-  await page.goto('/login')
+-  await page.locator('#login-name').fill(name)
+-  await page.locator('#login-password').fill(E2E_PASSWORD)
+-  await page.getByRole('button', { name: '登录', exact: true }).click()
+-  await expect(page).toHaveURL(/\/dashboard$/)
++/** 兼容旧用例：读取登录令牌（BYOK 配置时使用）。 */
++export async function authToken(page: Page): Promise<string> {
++  const token = await page.evaluate((key) => window.localStorage.getItem(key), TOKEN_KEY)
++  if (!token) {
++    throw new Error('未找到登录令牌，无法调用后端接口')
++  }
++  return token
++}
++
++export interface ModelAccessResult {
++  ready: boolean
++  reason?: string
++}
++
++/**
++ * 登录用户是否已具备可用模型配置。
++ * 5.0 的 Embedding 只能由服务端统一配置（用户不可自备），因此本函数只检查
++ * LLM/Embedding 是否已有生效来源（测试环境通过全局 Mock + 回退开关满足）。
++ */
++export async function prepareModelAccess(
++  page: Page,
++  request: APIRequestContext,
++): Promise<ModelAccessResult> {
++  const headers = { Authorization: `Bearer ${await authToken(page)}` }
++  const response = await request.get(`${apiBase()}/me/settings/model`, { headers })
++  if (!response.ok()) {
++    throw new Error(`读取模型配置失败：HTTP ${response.status()} ${await response.text()}`)
++  }
++  const current = (await response.json()).data as { llm_source: string; embedding_source: string }
++  if (current.llm_source !== 'none' && current.embedding_source !== 'none') {
++    return { ready: true }
++  }
++  return {
++    ready: false,
++    reason: 'BLOCKED: 测试环境未提供全局 LLM/Embedding Mock 配置',
++  }
+ }
+
+diff --git a/frontend/tests/router.spec.ts b/frontend/tests/router.spec.ts
+index 1ebeb34..485e546 100644
+--- a/frontend/tests/router.spec.ts
++++ b/frontend/tests/router.spec.ts
+@@ -14,6 +14,21 @@ vi.mock('@/api/auth', () => ({
+   fetchCurrentUser: vi.fn(),
+ }))
+ 
++// 路由单测只验证守卫/重定向逻辑，不渲染真实页面。
++// 真实路由组件是懒加载 SFC（WorkspaceLayout + 各 View），router.push 会触发
++// 其编译与传递依赖加载；在 82 个测试文件并行的全量运行中，这会挤占 CPU 并
++// 超过 Vitest 默认 5000ms 的 testTimeout（不是调大 timeout 能根治的问题）。
++// 因此把这些懒加载组件替换为轻量 stub，保留真实 router/守卫/Pinia/mock。
++const stub = (name: string) => ({ default: { name, render: () => null } })
++vi.mock('@/layouts/WorkspaceLayout.vue', () => stub('WorkspaceLayout'))
++vi.mock('@/views/DashboardView.vue', () => stub('DashboardView'))
++vi.mock('@/views/meetings/MeetingManageView.vue', () => stub('MeetingManageView'))
++vi.mock('@/views/TasksView.vue', () => stub('TasksView'))
++vi.mock('@/views/newMeeting/PreprocessView.vue', () => stub('PreprocessView'))
++vi.mock('@/views/tasks/TaskArchiveView.vue', () => stub('TaskArchiveView'))
++vi.mock('@/views/auth/LoginView.vue', () => stub('LoginView'))
++vi.mock('@/views/auth/RegisterView.vue', () => stub('RegisterView'))
++
+ const user: AuthUser = {
+   user_id: 'user-1',
+   name: 'Alice',
+
+--- /dev/null
++++ /frontend/e2e/task-closure.spec.ts
+@@ -0,0 +1,86 @@
++import { expect, test } from '@playwright/test'
++
++import {
++  addRecord,
++  apiBase,
++  authToken,
++  createMeeting,
++  openMeetingTab,
++  register,
++  uniqueName,
++} from './support'
++
++const TASK_TITLE = '完成灰度发布检查清单'
++
++test.describe('任务业务闭环', () => {
++  test('行动项确认→转任务→状态更新→刷新持久化', async ({ page }) => {
++    test.setTimeout(300_000)
++
++    await register(page, uniqueName('e2e-task'))
++    const meetingId = await createMeeting(page, `E2E 任务闭环 ${Date.now()}`)
++
++    // 1) 新增记录，作为行动项提取输入
++    await openMeetingTab(page, meetingId, 'records')
++    await addRecord(page, '决议：周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。')
++
++    // 2) “纪要”标签页提取行动项候选
++    await openMeetingTab(page, meetingId, 'minutes')
++    await page.getByRole('button', { name: '提取行动项', exact: true }).click()
++    const firstItem = page.locator('.action-item').first()
++    await expect(firstItem).toBeVisible({ timeout: 60_000 })
++    await expect(firstItem).toContainText(TASK_TITLE)
++
++    // 3) 用户确认行动项
++    await firstItem.getByRole('button', { name: '确认', exact: true }).click()
++    const convertButton = firstItem.getByRole('button', { name: '转为我的个人任务', exact: true })
++    await expect(convertButton).toBeVisible({ timeout: 30_000 })
++
++    // 4) 转换为个人任务
++    await convertButton.click()
++    const convertDialog = page.getByRole('dialog', { name: '转为我的个人任务', exact: true })
++    await expect(convertDialog).toBeVisible()
++    await convertDialog.locator('#convert-title').fill(TASK_TITLE)
++    await convertDialog.getByRole('button', { name: '确定', exact: true }).click()
++    await expect(convertDialog).toBeHidden()
++    await expect(firstItem.locator('.action-item__done')).toHaveText('已转任务')
++
++    // 5) 任务列表出现对应任务
++    await page.getByRole('link', { name: '任务管理', exact: true }).click()
++    await expect(page.getByRole('heading', { name: '我的任务', exact: true })).toBeVisible()
++    const taskItem = page.locator('.task-item').filter({ hasText: TASK_TITLE }).first()
++    await expect(taskItem).toBeVisible({ timeout: 30_000 })
++
++    // 6) 更新任务状态（todo → in_progress）
++    const statusSelect = taskItem.locator('select[aria-label="任务状态"]')
++    await expect(statusSelect).toHaveValue('todo')
++    await statusSelect.selectOption('in_progress')
++    await expect(statusSelect).toHaveValue('in_progress')
++
++    // 7) 刷新后验证已持久化
++    await page.reload()
++    const reloadedItem = page.locator('.task-item').filter({ hasText: TASK_TITLE }).first()
++    await expect(reloadedItem).toBeVisible({ timeout: 30_000 })
++    const reloadedStatus = reloadedItem.locator('select[aria-label="任务状态"]')
++    await expect(reloadedStatus).toHaveValue('in_progress')
++
++    // 7.1) 直接读取后端，确认状态不是前端提示或按钮态
++    const selectId = (await reloadedStatus.getAttribute('id')) ?? ''
++    const taskId = selectId.replace('task-status-', '')
++    expect(taskId).not.toBe('')
++    const token = await authToken(page)
++    const taskResponse = await page.request.get(`${apiBase()}/tasks/${taskId}`, {
++      headers: { Authorization: `Bearer ${token}` },
++    })
++    expect(taskResponse.ok()).toBeTruthy()
++    const taskPayload = await taskResponse.json()
++    expect(taskPayload.data.task_id).toBe(taskId)
++    expect(taskPayload.data.title).toBe(TASK_TITLE)
++    expect(taskPayload.data.status).toBe('in_progress')
++
++    // 8) 回到会议详情确认行动项仍为“已转任务”
++    await page.goto(`/meetings/${meetingId}?tab=minutes`)
++    const convertedItem = page.locator('.action-item').filter({ hasText: TASK_TITLE }).first()
++    await expect(convertedItem).toBeVisible({ timeout: 30_000 })
++    await expect(convertedItem.locator('.action-item__done')).toHaveText('已转任务')
++  })
++})
+
+--- /dev/null
++++ /frontend/e2e/auth-flow.spec.ts
+@@ -0,0 +1,29 @@
++import { expect, test } from '@playwright/test'
++
++import { E2E_PASSWORD, register, uniqueName } from './support'
++
++test.describe('认证流程（真实后端 + 真实数据库）', () => {
++  test('注册后清除令牌并重新登录', async ({ page }) => {
++    test.setTimeout(180_000)
++
++    const name = uniqueName('e2e-auth')
++    await register(page, name)
++
++    // 模拟退出登录：清除本地令牌并重新进入登录页
++    await page.evaluate(() => window.localStorage.removeItem('openmind.auth.token'))
++    await page.goto('/login')
++    await expect(page.getByRole('heading', { name: '登录 OpenMIND', exact: true })).toBeVisible()
++
++    await page.locator('#login-name').fill(name)
++    await page.locator('#login-password').fill(E2E_PASSWORD)
++    await page.getByRole('button', { name: '登录', exact: true }).click()
++
++    await expect(page).toHaveURL(/\/dashboard$/)
++    await expect(page.getByRole('heading', { name: /OpenMIND 智能会议助手/ })).toBeVisible()
++
++    // 刷新后仍保持登录态（令牌已持久化到 localStorage）
++    await page.reload()
++    await expect(page).toHaveURL(/\/dashboard$/)
++    await expect(page.getByRole('heading', { name: /OpenMIND 智能会议助手/ })).toBeVisible()
++  })
++})
+
+--- /dev/null
++++ /frontend/e2e/minutes-flow.spec.ts
+@@ -0,0 +1,58 @@
++import { expect, test } from '@playwright/test'
++
++import {
++  addRecord,
++  apiBase,
++  authToken,
++  createMeeting,
++  openMeetingTab,
++  register,
++  uniqueName,
++} from './support'
++
++test.describe('纪要生成闭环（本地 Mock 模型，非真实供应商）', () => {
++  test('基于会议记录生成纪要草稿并确认', async ({ page }) => {
++    test.setTimeout(300_000)
++
++    await register(page, uniqueName('e2e-minutes'))
++    const meetingId = await createMeeting(page, `E2E 纪要 ${Date.now()}`)
++
++    await openMeetingTab(page, meetingId, 'records')
++    await addRecord(page, '决议：周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。')
++
++    await openMeetingTab(page, meetingId, 'minutes')
++    await page.getByRole('button', { name: '生成会议纪要', exact: true }).click()
++
++    const editor = page.locator('.minutes-section__editor')
++    await expect(editor).toBeVisible({ timeout: 120_000 })
++    await expect(editor.getByText('灰度发布', { exact: false }).first()).toBeVisible({
++      timeout: 120_000,
++    })
++    await expect(editor.getByText('草稿', { exact: true }).first()).toBeVisible()
++
++    await editor.getByRole('button', { name: '确认', exact: true }).click()
++    await expect(editor.getByText('已确认', { exact: true }).first()).toBeVisible({ timeout: 60_000 })
++
++    // 刷新后点击列表项，确认状态已持久化
++    await page.reload()
++    const item = page.locator('.minutes-section__item').first()
++    await expect(item).toBeVisible({ timeout: 30_000 })
++    await item.click()
++    await expect(
++      page.locator('.minutes-section__editor').getByText('已确认', { exact: true }).first(),
++    ).toBeVisible({ timeout: 30_000 })
++
++    // 直接读取后端，确认“已确认”与内容来自持久化数据
++    const token = await authToken(page)
++    const response = await page.request.get(`${apiBase()}/meetings/${meetingId}/minutes`, {
++      headers: { Authorization: `Bearer ${token}` },
++    })
++    expect(response.ok()).toBeTruthy()
++    const payload = await response.json()
++    const confirmed = (payload.data.items as Array<{ status: string; content: string }>).find(
++      (minutes) => minutes.status === 'confirmed',
++    )
++    expect(confirmed).toBeTruthy()
++    expect(confirmed?.content).toContain('灰度发布')
++  })
++})
