@@ -24,6 +24,7 @@
           />
         </div>
         <input
+          id="knowledge-file"
           ref="fileInputEl"
           type="file"
           accept=".pdf,.docx,.txt"

@@ -35,6 +35,20 @@ async function authToken(page: Page): Promise<string> {
   return token
 }
 
+export { authToken }
+
+/**
+ * 打开左下角「设置」菜单（details 折叠面板）。
+ * 导航重构后知识库/模型配置/记忆中心都是菜单内的 menuitem，不再是独立链接。
+ */
+export async function openSettingsMenu(page: Page): Promise<void> {
+  const details = page.locator('details.workspace__settings')
+  if ((await details.getAttribute('open')) === null) {
+    await page.locator('summary[aria-label="设置菜单"]').click()
+  }
+  await expect(page.getByRole('menu', { name: '设置菜单' })).toBeVisible()
+}
+
 interface ModelConfigResponse {
   llm_source: string
   embedding_source: string
@@ -98,19 +112,19 @@ export async function prepareModelAccess(
   if (!needsLlm && !needsEmbedding) {
     return { ready: true }
   }
+  // Embedding 不支持 BYOK（后端仅接受 LLM 三字段，向量模型由服务端 docker/.env 统一配置）
+  if (needsEmbedding) {
+    return {
+      ready: false,
+      reason: 'BLOCKED: Embedding 不支持自备，需服务端 docker/.env 配置 EMBEDDING_*',
+    }
+  }
 
   const llm = providerSettings('E2E_LLM')
-  const embedding = providerSettings('E2E_EMBEDDING')
   if (needsLlm && !isComplete(llm)) {
     return {
       ready: false,
       reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_LLM_* 自备配置',
-    }
-  }
-  if (needsEmbedding && !isComplete(embedding)) {
-    return {
-      ready: false,
-      reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_EMBEDDING_* 自备配置',
     }
   }
 
@@ -119,11 +133,6 @@ export async function prepareModelAccess(
     payload.llm_api_base = llm.api_base
     payload.llm_api_key = llm.api_key
     payload.llm_model = llm.model
-  }
-  if (needsEmbedding) {
-    payload.embedding_api_base = embedding.api_base
-    payload.embedding_api_key = embedding.api_key
-    payload.embedding_model = embedding.model
   }
 
   let lastStatus = 0

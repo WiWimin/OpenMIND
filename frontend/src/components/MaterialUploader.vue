@@ -17,6 +17,7 @@
       @drop.prevent="onDrop"
     >
       <input
+        id="material-file"
         ref="inputEl"
         class="material-uploader__native"
         type="file"

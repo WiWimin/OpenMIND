@@ -4,6 +4,7 @@ import {
   addRecord,
   createMeeting,
   openMeeting,
+  openSettingsMenu,
   openTab,
   prepareModelAccess,
   register,
@@ -41,26 +42,30 @@ test.describe('会议核心闭环（真实后端 + 真实数据库）', () => {
     await recordItem.getByRole('button', { name: '重点', exact: true }).click()
     await expect(recordItem.locator('.status-badge').filter({ hasText: '重点' })).toBeVisible()
 
-    await page.getByRole('link', { name: '知识库', exact: true }).click()
-    await expect(page.getByRole('heading', { name: '个人知识库', exact: true })).toBeVisible()
+    // 知识库：导航重构后入口是「设置」菜单内的 menuitem（不再是独立链接）
+    await openSettingsMenu(page)
+    await page.getByRole('menuitem', { name: '知识库', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '知识库', exact: true })).toBeVisible()
     await page.locator('#knowledge-file').setInputFiles({
       name: 'e2e-knowledge.txt',
       mimeType: 'text/plain',
       buffer: Buffer.from(knowledgeText, 'utf-8'),
     })
-    await page.getByRole('button', { name: '上传到知识库', exact: true }).click()
-    await expect(page.getByText('已索引', { exact: true }).first()).toBeVisible({
+    // 选中文件即自动上传并索引（无独立「上传到知识库」按钮）
+    await expect(page.getByText('资料已加入知识库', { exact: true })).toBeVisible({
       timeout: 120_000,
     })
     await expect(page.getByText('e2e-knowledge.txt', { exact: true })).toBeVisible()
 
-    await page.locator('#knowledge-query').fill('项目里程碑')
-    await page.getByRole('button', { name: '检索', exact: true }).click()
-    await expect(page.locator('.knowledge-hits')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.knowledge-hits')).toContainText('里程碑')
+    // 输入即检索（400ms 防抖自动触发，无独立「检索」按钮）
+    await page.getByRole('searchbox', { name: '查找资料' }).fill('项目里程碑')
+    await expect(page.locator('.hit-item')).toBeVisible({ timeout: 60_000 })
+    await expect(page.locator('.hit-list')).toContainText('里程碑')
 
-    await page.getByRole('link', { name: '系统设置', exact: true }).click()
-    await page.getByRole('link', { name: '用户记忆中心', exact: true }).click()
+    // 关闭知识库弹窗 → 设置菜单 → 记忆中心（弹窗打开时菜单被遮挡，需先关闭）
+    await page.getByRole('button', { name: '关闭', exact: true }).click()
+    await openSettingsMenu(page)
+    await page.getByRole('menuitem', { name: '记忆中心', exact: true }).click()
     await expect(page.getByRole('heading', { name: '记忆中心', exact: true })).toBeVisible()
     await page.locator('#memory-role').fill('产品经理')
     await page.locator('#memory-scenarios').fill('B2B SaaS 产品规划与跨团队项目推进')
