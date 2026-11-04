@@ -276,11 +276,20 @@ failed → processing   （重试）
 - 失败：置 `failed` 并返回统一错误。
 
 ### 8.2 会中问答 `POST /meetings/{id}/chat`
-- 流程：按 `scope` 检索材料分块 + 当前会议最近记录（有限条数/长度）→ 组装 Prompt → LLM 生成 → 返回 `{answer, sources[], insufficient_evidence}`。
+- 流程：按 `scope` 检索材料分块 + 当前会议最近记录（有限条数/长度）→ 组装 Prompt → LLM 生成 → 返回 `{answer, sources[], insufficient_evidence, file}`。
 - 默认 `current_meeting`；`current_and_history` 只扩展会议材料检索范围，记录始终限当前会议。
 - `knowledge_base` 仅检索当前用户个人知识库，不读取会议材料或会议记录；来源带 `document_id`/`document_name`。
-- 材料、记录与知识库都为空 → `insufficient_evidence=true` 且回答明确说明无法确认。
+- 材料、记录与知识库都为空 → `insufficient_evidence=true`，进入**两段式联网补救**（见下）。
+- `mode`（`plan` 默认 / `build`）：`build` 且证据充分时走 `build_deliverable` 结构化产出（`chat_json`），返回 `file={filename, content}`（Markdown，前端转 DOCX 下载/保存为会议资料/镜像到会议根）；证据不足时不产出文件。
+- 来源 `origin`：`material` / `record` / `web`；`web` 来源携带 `url`/`title`，前端渲染为可点击链接。
 - 不落库（问答历史非 MVP）。
+
+**两段式联网补救（答案层，`ai/websearch/`）**
+- 边界：只在 `insufficient_evidence` 之后触发，**不进入检索层** —— 阈值/Judge 与负样本拦截口径不变；评测脚本固定 `WEB_SEARCH_ENABLED=false`。
+- 链路：`WEB_SEARCH_PROVIDER=bing`（默认，cn.bing.com 页面解析，实测 0.5–1.4s）→ 失败降级 `ddg`（ddgs，需网络可达）→ 拒答回退（原「根据现有材料无法确认」文案）；未知 provider 或任何异常只记 warning，绝不裸报错。
+- 回答结构：前缀「你的资料中未找到相关证据，以下基于联网检索…」+ 基于片段的作答（prompt 要求 `[编号]` 引用、片段不足时明确说明）；`sources` 追加 `origin=web` 条目。
+- 隐私：问题文本会发送至所配置的搜索服务（默认 cn.bing.com）；LLM 未配置的用户在联网路径失败时回退拒答（不因联网引入新的 4xx）。
+- 配置：`WEB_SEARCH_ENABLED` / `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_MAX_RESULTS` / `WEB_SEARCH_TIMEOUT_S`（`docker/.env.example`）。
 
 ### 8.3 整理任务 `POST /meetings/{id}/organize`
 - 输入：`task`（`organize` 整理记录 / `summary` 提炼要点 / `brief` 简短摘要 / `polish` 修正口误建议，默认 `organize`）、可选 `style` 风格、`instruction` 用户附加要求与 `model` 覆盖；输入源三级回退：`text` > `audio_id`（音频转写文本）> `record_ids`（空 = 最近 20 条 ≤8000 字记录），均无内容返回 `422`。

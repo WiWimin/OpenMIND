@@ -625,6 +625,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 可选字段 `model`（string）：覆盖本次对话使用的模型名，来自服务商预设的常用模型清单；模型名是否有效由服务商 API 判定。
 
+可选字段 `mode`（string，默认 `plan`）：`plan` 先讨论/规划；`build` 基于资料直接产出可交付文件（结构化 Markdown，随响应 `file` 字段返回，由前端转 DOCX 下载并可保存为会议资料/写入本地文件夹）。
+
 `context_scope`：`current_meeting`（默认）/ `current_and_history` / `knowledge_base`。它只控制检索范围，不授予权限：
 - `current_meeting`：当前会议材料；
 - `current_and_history`：当前用户全部会议材料，但会议记录仍只取当前会议最近记录（有限条数/长度）；
@@ -638,17 +640,20 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "data": {
     "answer": "根据已有会议材料，上次会议决定……",
     "sources": [
-      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "document_id": null, "document_name": null, "excerpt": "相关原文片段" },
-      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "document_id": null, "document_name": null, "excerpt": "当前会议记录片段" },
-      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": "kdoc_xxx", "document_name": "项目手册.pdf", "excerpt": "知识库原文片段" }
+      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "document_id": null, "document_name": null, "excerpt": "相关原文片段", "origin": "material", "url": null, "title": null },
+      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "document_id": null, "document_name": null, "excerpt": "当前会议记录片段", "origin": "record", "url": null, "title": null },
+      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": "kdoc_xxx", "document_name": "项目手册.pdf", "excerpt": "知识库原文片段", "origin": "material", "url": null, "title": null },
+      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": null, "document_name": null, "excerpt": "联网检索片段……", "origin": "web", "url": "https://example.com/a", "title": "页面标题" }
     ],
-    "insufficient_evidence": false
+    "insufficient_evidence": false,
+    "file": null
   }
 }
 ```
 
-- `sources` 可为空数组，不得伪造引用；来源可以是会议材料分块（`material_id` 有值）、当前会议记录（`record_id` 有值，`material_id` 为 `null`）或个人知识库分块（`document_id` 有值，`meeting_id`/`material_id` 为 `null`）。
-- 证据不足时 `insufficient_evidence = true`。
+- `sources` 可为空数组，不得伪造引用；`origin` 标识来源类别：`material`（会议材料/知识库，`material_id` 或 `document_id` 有值）、`record`（当前会议记录，`record_id` 有值）、`web`（联网检索，`url`/`title` 有值）。
+- 证据不足时 `insufficient_evidence = true`，并进入**两段式联网补救**：先在回答开头告知「你的会议资料中未找到相关证据」，再基于联网检索片段作答（`origin=web` 来源）；联网关闭、无结果或失败时回退为原拒答文案，绝不裸报错。联网仅发生在答案层，不改变检索层阈值/Judge 口径；问题文本会发送至所配置的搜索服务（默认 cn.bing.com）。
+- `mode=build` 且证据充分时 `file` 返回 `{ "filename": "xxx.md", "content": "Markdown 正文" }`；`plan` 模式或证据不足时为 `null`。
 
 ### 5.8 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
 
