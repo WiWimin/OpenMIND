@@ -11,6 +11,7 @@
           class="minutes-page__chat"
           agent-name="AI智能处理"
           welcome-title="AI智能处理"
+          :meeting-id="meeting.meeting_id"
           :on-send="handleSend"
           :on-task="handleAgentTask"
           :disabled="!meeting.meeting_id"
@@ -258,11 +259,13 @@ async function askReply(
       context_scope: 'current_meeting',
       include_sources: withSources,
       model: selectedModel.value || undefined,
+      mode: chatMode.value,
     },
     signal,
   )
   return {
     content: result.answer,
+    file: result.file ?? undefined,
     sources: withSources
       ? result.sources.slice(0, 3).map((source) => ({
           label: sourceLabel(source),

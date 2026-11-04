@@ -1,8 +1,8 @@
 # RAG 检索质量评测报告
 
-- 执行时间：2026-11-04T00:17:10+08:00
+- 执行时间：2026-11-04T23:14:47+08:00
 - Embedding：`Qwen/Qwen3-Embedding-0.6B` dim=1024
-- 固定配置：top_k=5、min_score=0.3、chunk=800/120；RAG Judge：enabled=True、judge_min_score=0.6（低分带 LLM 复核）
+- 固定配置：top_k=5、min_score=0.3、chunk=800/120；RAG Judge：enabled=True、judge_min_score=0.6（低分带 LLM 复核）；web_search=False（评测口径固定关闭）
 - 灌入路径：HTTP API `http://localhost:8000/api/v1`；检索路径：应用层 VectorRetriever（与生产同实现，含 user_id SQL 下推，不经 LLM、无裸 SQL）
 - 数据集：`backend/scripts/eval/dataset.json` sha256=94fade3532166780（语料 18 篇）
 - 三段准入：①维度一致 ②连续 embedding ③检索冒烟 — 全部通过

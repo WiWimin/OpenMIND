@@ -1,4 +1,4 @@
-import type { OrganizeStructured } from './chat'
+import type { ChatFile, OrganizeStructured } from './chat'
 
 export interface AgentQuickAction {
   label: string
@@ -16,6 +16,8 @@ export interface AgentReply {
   content: string
   sources?: AgentSource[]
   note?: string
+  /** Build 模式产出的可交付文件 */
+  file?: ChatFile
   /** 结构化回复：summary（要点卡片）/ polish（口误修改建议） */
   kind?: 'summary' | 'polish'
   structured?: OrganizeStructured
@@ -39,6 +41,7 @@ export interface AgentChatMessage {
   streaming: boolean
   sources?: AgentSource[]
   note?: string
+  file?: ChatFile
   error?: boolean
   regenerateText?: string
   task?: string

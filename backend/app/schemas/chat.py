@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,15 @@ class ChatRequest(BaseModel):
     include_sources: bool = True
     # 可选：覆盖本次对话使用的模型名，必须已在模型配置中登记
     model: str | None = Field(default=None, max_length=100)
+    # 对话模式：plan=先讨论规划；build=基于资料直接产出可交付文件（附件）
+    mode: Literal["plan", "build"] = "plan"
+
+
+class ChatFile(BaseModel):
+    """Build 模式产出的可交付文件（Markdown 正文，由前端转 DOCX 下载/上传/镜像）。"""
+
+    filename: str
+    content: str
 
 
 class ChatSource(BaseModel):
@@ -27,12 +36,18 @@ class ChatSource(BaseModel):
     document_id: str | None = None
     document_name: str | None = None
     excerpt: str
+    # 来源类别：material（材料/知识库）| record（会议记录）| web（联网检索）
+    origin: str = "material"
+    url: str | None = None
+    title: str | None = None
 
 
 class ChatResponse(BaseModel):
     answer: str
     sources: list[ChatSource]
     insufficient_evidence: bool
+    # Build 模式产出（plan 模式或无证据时为 null）
+    file: ChatFile | None = None
 
 
 class OrganizeTask(StrEnum):

@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     # 判定“答不了”则整体拒答（拦截分数够但无关的负样本）；Judge 不可用时回退分数判定
     rag_judge_enabled: bool = True
     rag_judge_min_score: float = 0.6
+    # 联网检索（答案层后置补救）：资料无证据时先告知再联网作答；
+    # 只影响答案层，不改变检索层阈值/Judge 口径；评测固定关闭
+    web_search_enabled: bool = True
+    web_search_provider: str = "bing"  # bing（本环境可达）| ddg
+    web_search_max_results: int = 5
+    web_search_timeout_s: float = 10.0
     asr_api_base: str = ""
     asr_api_key: str = ""
     asr_model: str = ""

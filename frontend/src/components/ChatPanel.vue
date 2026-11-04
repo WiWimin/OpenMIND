@@ -50,8 +50,14 @@
             :key="sourceIndex"
             :excerpt="source.excerpt"
             :reference="sourceReference(source)"
+            :url="source.url"
           />
         </div>
+        <ChatFileCard
+          v-if="turn.result.file"
+          :meeting-id="meetingId"
+          :file="turn.result.file"
+        />
       </li>
     </ul>
   </div>
@@ -62,6 +68,7 @@ import { nextTick, ref } from 'vue'
 
 import * as chatApi from '@/api/chat'
 import AppButton from '@/components/AppButton.vue'
+import ChatFileCard from '@/components/ChatFileCard.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
@@ -92,6 +99,7 @@ const turns = ref<ChatTurn[]>([])
 
 function sourceReference(source: ChatSource): string {
   return (
+    source.url ||
     source.document_name ||
     source.document_id ||
     source.material_id ||

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.ai.chat import ChatService, RecordContext, Source
 from app.ai.extraction import (
     ActionItemCandidate,
@@ -151,6 +153,123 @@ def test_chat_insufficient_evidence() -> None:
 
     assert answer.insufficient_evidence is True
     assert answer.sources == []
+
+
+def test_chat_web_fallback_when_no_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    """两段式联网补救：先告知资料无证据，再基于联网片段作答。"""
+    from app.ai.chat import service as chat_service_module
+    from app.ai.websearch import WebResult
+
+    monkeypatch.setattr(
+        chat_service_module,
+        "web_search",
+        lambda query: [
+            WebResult(
+                title="权威页面",
+                url="https://example.com/a",
+                snippet="这是联网检索到的片段",
+            )
+        ],
+    )
+    service = ChatService(FakeLLM(text="联网回答正文"), FakeRetriever([]))
+    answer = service.answer("有人知道吗？", user_id="u1")
+
+    assert answer.insufficient_evidence is True
+    assert answer.answer.startswith("你的会议资料中未找到相关证据")
+    assert "联网回答正文" in answer.answer
+    assert len(answer.sources) == 1
+    assert answer.sources[0].origin == "web"
+    assert answer.sources[0].url == "https://example.com/a"
+    assert answer.sources[0].title == "权威页面"
+
+
+def test_chat_web_no_results_keeps_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ai.chat import service as chat_service_module
+
+    monkeypatch.setattr(chat_service_module, "web_search", lambda query: [])
+    service = ChatService(FakeLLM(), FakeRetriever([]))
+    answer = service.answer("有人知道吗？", user_id="u1")
+
+    assert answer.insufficient_evidence is True
+    assert answer.answer == "根据现有材料无法确认该问题的答案。"
+    assert answer.sources == []
+
+
+def test_chat_web_llm_failure_falls_back_to_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """联网命中但 LLM 不可用（未配置/超时）→ 回退拒答，不裸报错。"""
+    from app.ai.chat import service as chat_service_module
+    from app.ai.websearch import WebResult
+    from app.core.exceptions import AppError
+
+    monkeypatch.setattr(
+        chat_service_module,
+        "web_search",
+        lambda query: [WebResult(title="t", url="https://e.com", snippet="s")],
+    )
+
+    class BoomLLM:
+        def chat(self, messages):  # noqa: ANN001
+            raise AppError(
+                "MODEL_CONFIG_REQUIRED", "未配置大模型（LLM）", http_status=400
+            )
+
+    service = ChatService(BoomLLM(), FakeRetriever([]))  # type: ignore[arg-type]
+    answer = service.answer("有人知道吗？", user_id="u1")
+
+    assert answer.answer == "根据现有材料无法确认该问题的答案。"
+    assert answer.sources == []
+    assert answer.insufficient_evidence is True
+
+
+def test_chat_build_mode_produces_file() -> None:
+    """Build 模式：基于资料产出结构化文件，summary 作为回答。"""
+
+    chunks = [
+        SimpleNamespace(
+            meeting_id="meet-1",
+            material_id="mat-1",
+            record_id=None,
+            excerpt="Q3 预算：市场投放 120 万。",
+        )
+    ]
+
+    class BuildLLM:
+        def chat_json(self, messages, *, schema, **kwargs):  # noqa: ANN001, ANN003
+            assert "可交付文件" in messages[0]["content"]
+            return schema.model_validate(
+                {
+                    "summary": "已生成 Q3 预算清单文件。",
+                    "filename": "q3-budget.md",
+                    "content_md": "# Q3 预算\n\n- 市场投放 120 万",
+                }
+            )
+
+    service = ChatService(BuildLLM(), FakeRetriever(chunks))  # type: ignore[arg-type]
+    answer = service.answer("生成预算清单", user_id="u1", mode="build")
+
+    assert answer.file is not None
+    assert answer.file.filename == "q3-budget.md"
+    assert "市场投放 120 万" in answer.file.content_md
+    assert answer.answer == "已生成 Q3 预算清单文件。"
+    assert answer.insufficient_evidence is False
+
+
+def test_chat_plan_mode_has_no_file() -> None:
+    chunks = [
+        SimpleNamespace(
+            meeting_id="meet-1",
+            material_id="mat-1",
+            record_id=None,
+            excerpt="相关内容",
+        )
+    ]
+    service = ChatService(FakeLLM(text="普通回答"), FakeRetriever(chunks))
+    answer = service.answer("问题", user_id="u1", mode="plan")
+
+    assert answer.file is None
+    assert answer.answer == "普通回答"
 
 
 def test_chat_uses_limited_record_context_with_source() -> None:

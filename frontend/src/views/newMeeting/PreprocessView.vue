@@ -64,6 +64,7 @@
           ref="chatRef"
           class="preprocess__chat"
           agent-name="AI会议助手"
+          :meeting-id="meetingId"
           :show-welcome="false"
           :on-send="handleSend"
           :disabled="!meetingId"
@@ -218,6 +219,9 @@ watch(meetingId, () => {
 })
 
 function sourceLabel(source: ChatSource): string {
+  if (source.origin === 'web') {
+    return source.title ? `联网 · ${source.title}` : '联网检索'
+  }
   if (source.document_name) {
     return source.document_name
   }
@@ -319,17 +323,22 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
         context_scope: 'current_meeting',
         include_sources: true,
         model,
+        mode: chatMode.value,
       },
       signal,
     )
 
     return {
       content: result.answer,
+      file: result.file ?? undefined,
       sources: result.sources.slice(0, 3).map((source) => ({
         label: sourceLabel(source),
         detail: excerpt(source.excerpt, 64),
       })),
-      note: result.insufficient_evidence ? '证据不足，回答仅供参考。' : undefined,
+      note:
+        result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
+          ? '证据不足，回答仅供参考。'
+          : undefined,
     }
   } catch (caught) {
     throw new Error(resolveErrorMessage(caught, 'Agent 处理失败，请稍后重试。'))

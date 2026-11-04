@@ -95,8 +95,80 @@ def test_chat_with_sources(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
             "document_id": None,
             "document_name": None,
             "excerpt": "相关原文片段",
+            "origin": "material",
+            "url": None,
+            "title": None,
         }
     ]
+
+
+def test_chat_web_sources_mapped(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeChat:
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None, **kwargs):
+            return ChatAnswer(
+                answer="你的会议资料中未找到相关证据。\n\n联网回答……",
+                sources=[
+                    Source(
+                        None,
+                        None,
+                        None,
+                        "联网片段",
+                        origin="web",
+                        url="https://example.com/a",
+                        title="权威页面",
+                    )
+                ],
+                insufficient_evidence=True,
+            )
+
+    monkeypatch.setattr(
+        ai_chat_service, "_chat_service", lambda db, user_id, model=None: FakeChat()
+    )
+
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    response = client.post(
+        f"/api/v1/meetings/{meeting['meeting_id']}/chat",
+        json={"question": "有人知道吗？", "include_sources": True},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    source = response.json()["data"]["sources"][0]
+    assert source["origin"] == "web"
+    assert source["url"] == "https://example.com/a"
+    assert source["title"] == "权威页面"
+    assert response.json()["data"]["insufficient_evidence"] is True
+
+
+def test_chat_build_mode_returns_file(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ai.chat import FileAttachment
+
+    class FakeChat:
+        def answer(self, question, *, user_id, scope, current_meeting_id, records=None,
+                   mode="plan", **kwargs):
+            assert mode == "build"
+            return ChatAnswer(
+                answer="已生成文件。",
+                sources=[],
+                insufficient_evidence=False,
+                file=FileAttachment(filename="plan.md", content_md="# 计划\n\n- 事项"),
+            )
+
+    monkeypatch.setattr(
+        ai_chat_service, "_chat_service", lambda db, user_id, model=None: FakeChat()
+    )
+
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    response = client.post(
+        f"/api/v1/meetings/{meeting['meeting_id']}/chat",
+        json={"question": "生成计划", "mode": "build", "include_sources": False},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["file"] == {"filename": "plan.md", "content": "# 计划\n\n- 事项"}
+    assert data["answer"] == "已生成文件。"
 
 
 def test_chat_include_sources_false(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -150,6 +150,13 @@
                 <span v-if="source.detail">{{ source.detail }}</span>
               </span>
             </div>
+
+            <!-- Build 模式产出：下载 DOCX + 保存到会议资料 + 写入本地文件夹（各自独立重试） -->
+            <ChatFileCard
+              v-if="message.file && meetingId"
+              :meeting-id="meetingId"
+              :file="message.file"
+            />
           </div>
         </article>
 
@@ -278,6 +285,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import assistantParrotUrl from '@/assets/ip/assistant-parrot.png'
+import ChatFileCard from '@/components/ChatFileCard.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
@@ -297,6 +305,8 @@ const props = withDefaults(
     subtitle?: string
     welcomeTitle?: string
     greeting?: string
+    /** 当前会议（Build 模式文件保存到会议资料/本地文件夹时必传） */
+    meetingId?: string
     quickActions?: AgentQuickAction[]
     onSend: AgentSendHandler
     /** 快捷任务处理器：quickAction 带 task 时调用，走后端专用实现链 */
@@ -313,6 +323,7 @@ const props = withDefaults(
     subtitle: '',
     welcomeTitle: '',
     greeting: '',
+    meetingId: '',
     quickActions: () => [],
     onTask: undefined,
     placeholder: '描述目标，或选中内容后提问…',
@@ -605,6 +616,7 @@ async function runTurn(
     }
     assistant.sources = normalized.sources
     assistant.note = normalized.note
+    assistant.file = normalized.file
   } catch (caught) {
     pending.value = false
     assistant.streaming = false

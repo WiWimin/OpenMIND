@@ -134,6 +134,7 @@ def chat(
     context_scope: str,
     include_sources: bool,
     model: str | None = None,
+    mode: str = "plan",
 ) -> ChatAnswer:
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     return _chat_service(db, user_id, model).answer(
@@ -141,6 +142,7 @@ def chat(
         user_id=user_id,
         scope=context_scope,
         current_meeting_id=meeting_id,
+        mode=mode,
         records=(
             []
             if context_scope == "knowledge_base"

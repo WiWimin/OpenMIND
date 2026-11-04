@@ -7,6 +7,8 @@
 - 三段准入：① config↔DB 向量维度一致 ② 连续 2 次 embedding 成功
   ③ 检索冒烟（首查 top-1 命中且 ≥min_score、1 条负样本被拒）；
 - 维度变更边界：不一致即中止（先执行 scripts/reindex_all.py 重建，无兼容降级）；
+- 联网固定关闭（`WEB_SEARCH_ENABLED=false` 在导入 app 配置前写入，
+  检索层口径与答案层联网解耦，见验收方案 v2 第 2 点）；
 - 清理：默认 finally 级联删除 eval 用户数据与 storage 文件（--keep 跳过）；
 - 退出码：0=Go（准入指标全达标） 2=No-Go（未达标，报告含错误分析） 1=执行错误。
 
@@ -21,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import uuid
@@ -28,6 +31,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+
+# 评测口径固定：关闭联网（必须早于 app 配置首次读取）
+os.environ["WEB_SEARCH_ENABLED"] = "false"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -376,7 +382,8 @@ def write_report(dataset: dict, meta: dict, m: dict, negatives: list,
     lines.append(f"- 固定配置：top_k={TOP_K}、min_score={MIN_SCORE}、"
                  f"chunk={meta['chunk_size']}/{meta['chunk_overlap']}；"
                  f"RAG Judge：enabled={meta['judge_enabled']}、"
-                 f"judge_min_score={meta['judge_min_score']}（低分带 LLM 复核）")
+                 f"judge_min_score={meta['judge_min_score']}（低分带 LLM 复核）；"
+                 f"web_search={meta['web_search_enabled']}（评测口径固定关闭）")
     lines.append(f"- 灌入路径：HTTP API `{API_BASE}`；检索路径：应用层 VectorRetriever"
                  "（与生产同实现，含 user_id SQL 下推，不经 LLM、无裸 SQL）")
     lines.append(f"- 数据集：`backend/scripts/eval/dataset.json` "
@@ -532,6 +539,7 @@ def main() -> int:
                 "chunk_size": 800, "chunk_overlap": 120,
                 "judge_enabled": settings.rag_judge_enabled,
                 "judge_min_score": settings.rag_judge_min_score,
+                "web_search_enabled": settings.web_search_enabled,
                 "dataset_sha": sha256_file(DATASET_PATH),
                 "stages": "①维度一致 ②连续 embedding ③检索冒烟 — 全部通过",
                 "consistency": consistency,
