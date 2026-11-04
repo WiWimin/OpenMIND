@@ -1,0 +1,19 @@
+PASS 音频上传并转写 | 201/transcribed
+PASS 音频类型限制 415 | 415/FILE_TYPE_NOT_SUPPORTED
+PASS 音频大小限制 413 | 413/FILE_TOO_LARGE
+PASS 实时会话创建 | 201/processing
+PASS 分片1上传并转写 | 200/seg=1
+PASS 分片序号不连续 422 | 422/VALIDATION_ERROR
+PASS 分片失败记录 error 且不中断 | 200/err=音频转写服务异常
+PASS 分片重试成功 | 200/text=y
+PASS 分段标记 | 200
+PASS 结束合并为 transcribed | 200/transcribed
+PASS 临时分片目录已清理 | /storage/audio/aud_3149ab74c6384861be5d47198e614b40
+PASS 转写编辑并按行重拆段 | 200/seg=3
+PASS 确认生成会议记录 | 200/confirmed
+PASS 重复确认幂等 | 200
+PASS 已确认音频不可删除 409 | 409/BUSINESS_RULE_VIOLATION
+PASS 跨用户访问音频 404 | 404
+PASS 未确认音频可删除 | 200
+
+SUMMARY total=17 passed=17 failed=0

@@ -1,0 +1,43 @@
+﻿
+Running 1 test using 1 worker
+
+[1/1] [chromium] 鈥?e2e\core-flow.spec.ts:15:3 鈥?浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?+ 鐪熷疄鏁版嵁搴擄級 鈥?娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?  1) [chromium] 鈥?e2e\core-flow.spec.ts:15:3 鈥?浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?+ 鐪熷疄鏁版嵁搴擄級 鈥?娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+    Test timeout of 300000ms exceeded.
+
+    Error: locator.click: Test timeout of 300000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: '鏂板缓浼氳', exact: true }).getByRole('button', { name: '淇濆瓨', exact: true })
+
+
+       at support.ts:164
+
+      162 |   await dialog.locator('#meeting-title').fill(title)
+      163 |   await dialog.locator('#meeting-topic').fill(topic)
+    > 164 |   await dialog.getByRole('button', { name: '淇濆瓨', exact: true }).click()
+          |                                                                 ^
+      165 |   await expect(dialog).toBeHidden()
+      166 |   await expect(
+      167 |     page.getByRole('button', { name: new RegExp(escapeRegExp(title)) }).first(),
+        at createMeeting (D:\浼犳櫤鏉痋OpenMIND\frontend\e2e\support.ts:164:65)
+        at D:\浼犳櫤鏉痋OpenMIND\frontend\e2e\core-flow.spec.ts:28:5
+
+    attachment #1: screenshot (image/png) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    test-results\core-flow-浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?鐪熷疄鏁版嵁搴擄級-娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?chromium\test-failed-1.png
+    鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+    Error Context: test-results\core-flow-浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?鐪熷疄鏁版嵁搴擄級-娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?chromium\error-context.md
+
+    attachment #3: trace (application/zip) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    test-results\core-flow-浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?鐪熷疄鏁版嵁搴擄級-娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\core-flow-浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?鐪熷疄鏁版嵁搴擄級-娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?chromium\trace.zip
+
+    鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+
+  Slow test file: [chromium] 鈥?e2e\core-flow.spec.ts (5.0m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  1 failed
+    [chromium] 鈥?e2e\core-flow.spec.ts:15:3 鈥?浼氳鏍稿績闂幆锛堢湡瀹炲悗绔?+ 鐪熷疄鏁版嵁搴擄級 鈥?娉ㄥ唽銆佸缓浼氥€佽祫鏂欍€佽褰曟爣璁般€佺煡璇嗗簱涓庤蹇?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

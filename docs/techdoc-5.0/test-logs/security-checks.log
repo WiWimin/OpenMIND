@@ -1,0 +1,16 @@
+PASS 未登录访问 401 | 401/AUTH_REQUIRED
+PASS 跨用户访问会议 404 | 404
+PASS 材料类型限制 415 | 415/FILE_TYPE_NOT_SUPPORTED
+PASS 材料大小限制 413 | 413/FILE_TOO_LARGE
+PASS 路径穿越被中和（201 且无越界文件） | 201/escape=False
+PASS BYOK 明文不泄漏
+PASS JWT 过期 401 | 401/AUTH_REQUIRED
+PASS 会议归档成功 | 200
+PASS 归档后写入 409 | 409/BUSINESS_RULE_VIOLATION
+PASS 行动项提取 | 200/1
+PASS 确认后转任务 | 201
+PASS 重复转任务幂等（同一 task_id） | tsk_40e574be67024e10959ff04dc64cb9b5 vs tsk_40e574be67024e10959ff04dc64cb9b5
+PASS 非法任务流转 todo->completed 409 | 409/BUSINESS_RULE_VIOLATION
+PASS 合法任务流转 todo->in_progress | 200
+
+SUMMARY total=14 passed=14 failed=0

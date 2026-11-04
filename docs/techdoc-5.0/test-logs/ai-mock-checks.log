@@ -1,0 +1,24 @@
+PASS 默认模型来源=global（测试环境 fallback=true） | global
+PASS BYOK 保存成功 | 200
+PASS BYOK 来源=user | user
+PASS 密钥掩码回传 | sk-...7890
+PASS 明文密钥不回传
+PASS LLM 正常-会前准备 | 200
+PASS LLM 异常 429 -> RATE_LIMITED | 429/RATE_LIMITED
+PASS LLM 异常 500 -> INTERNAL_ERROR | 500/INTERNAL_ERROR
+PASS LLM 异常 401 -> MODEL_CONFIG_INVALID | 400/MODEL_CONFIG_INVALID
+PASS LLM 异常 402 -> MODEL_QUOTA_EXCEEDED | 402/MODEL_QUOTA_EXCEEDED
+PASS LLM 异常 invalid_json -> MODEL_OUTPUT_INVALID | 502/MODEL_OUTPUT_INVALID
+PASS Embedding 正常-材料已索引 | 201/processed
+PASS Embedding 维度错误-材料 failed | 201/failed
+PASS RAG 问答返回答案 | 200
+PASS RAG 返回来源 | sources=1
+PASS RAG Top-K<=5 | sources=1
+PASS knowledge_base 无证据-拒答 | True
+PASS 整理链 summary 结构化 | 200
+PASS 整理链 brief 正文 | 200
+PASS 整理链 polish 结构化列表 | 200
+PASS 整理链 organize 正文 | 200
+PASS 删除 BYOK 后回退 global | global
+
+SUMMARY total=22 passed=22 failed=0
