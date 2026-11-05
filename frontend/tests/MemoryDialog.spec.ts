@@ -2,7 +2,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as memoryApi from '@/api/memory'
-import * as templatesApi from '@/api/templates'
 import MemoryDialog from '@/components/settings/MemoryDialog.vue'
 import type { UserMemory } from '@/types/memory'
 
@@ -10,10 +9,6 @@ vi.mock('@/api/memory', () => ({
   getMemory: vi.fn(),
   saveMemory: vi.fn(),
   clearMemory: vi.fn(),
-}))
-
-vi.mock('@/api/templates', () => ({
-  listTemplates: vi.fn(),
 }))
 
 const memory: UserMemory = {
@@ -32,7 +27,6 @@ describe('MemoryDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(memoryApi.getMemory).mockResolvedValue(memory)
-    vi.mocked(templatesApi.listTemplates).mockResolvedValue([])
   })
 
   it('loads and renders the memory fields', async () => {
@@ -45,6 +39,8 @@ describe('MemoryDialog', () => {
       'B2B SaaS 产品规划',
     )
     expect((wrapper.find('#memory-style').element as HTMLTextAreaElement).value).toBe('结论先行')
+    // 默认纪要模板入口已从记忆中心移除
+    expect(wrapper.find('#memory-minutes-template').exists()).toBe(false)
   })
 
   it('saves the memory fields', async () => {
@@ -60,7 +56,7 @@ describe('MemoryDialog', () => {
       role: '资深产品经理',
       work_scenarios: 'B2B SaaS 产品规划',
       communication_style: '结论先行',
-      preferred_minutes_template: 'standard',
+      preferred_minutes_template: null,
     })
   })
 

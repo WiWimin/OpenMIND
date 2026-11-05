@@ -63,7 +63,8 @@
         <AgentChat
           ref="chatRef"
           class="preprocess__chat"
-          agent-name="AI会议助手"
+          agent-name="杂乱文档，先规整再入库"
+          mascot-size="8rem"
           :meeting-id="meetingId"
           :show-welcome="false"
           :on-send="handleSend"

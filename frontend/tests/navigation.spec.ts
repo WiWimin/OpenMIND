@@ -17,13 +17,17 @@ describe('navigation config', () => {
     expect(module?.key).toBe('new-meeting')
   })
 
-  it('routes the top-level new-meeting entry to the create page', () => {
+  it('keeps the new-meeting entry as a create-dialog action instead of a route', () => {
     const module = NAV_MODULES.find((item) => item.key === 'new-meeting')
-    expect(module?.routeName).toBe('new-meeting-create')
-    expect(findModuleByRouteName('new-meeting-create')?.key).toBe('new-meeting')
+    // 顶部导航渲染为按钮，点击弹出创建会议窗口；路由名仅作为模块归属参考
+    expect(module?.routeName).toBe('new-meeting')
+    expect(module?.match).toContain('new-meeting')
+    expect(findModuleByRouteName('new-meeting-create')).toBeUndefined()
   })
 
-  it('keeps the meeting detail under meeting management', () => {
-    expect(findModuleByRouteName('meeting-detail')?.key).toBe('meetings')
+  it('drops the removed meeting detail route from the meetings module', () => {
+    const module = NAV_MODULES.find((item) => item.key === 'meetings')
+    expect(module?.match).toEqual(['meetings'])
+    expect(findModuleByRouteName('meeting-detail')).toBeUndefined()
   })
 })

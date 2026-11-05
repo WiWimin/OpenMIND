@@ -37,9 +37,9 @@ export const NAV_MODULES: NavModule[] = [
   {
     key: 'new-meeting',
     label: '新建会议',
-    routeName: ROUTE_NAMES.newMeetingCreate,
+    // 该入口不走路由：顶部导航渲染为按钮，点击弹出创建会议窗口
+    routeName: ROUTE_NAMES.newMeeting,
     match: [
-      ROUTE_NAMES.newMeetingCreate,
       ROUTE_NAMES.newMeeting,
       ROUTE_NAMES.preprocess,
       ROUTE_NAMES.asr,
@@ -81,13 +81,13 @@ export const NAV_MODULES: NavModule[] = [
     key: 'meetings',
     label: '会议管理',
     routeName: ROUTE_NAMES.meetings,
-    match: [ROUTE_NAMES.meetings, ROUTE_NAMES.meetingDetail],
+    match: [ROUTE_NAMES.meetings],
     icon: 'video',
     items: [
       {
         label: '会议列表',
         routeName: ROUTE_NAMES.meetings,
-        match: [ROUTE_NAMES.meetings, ROUTE_NAMES.meetingDetail],
+        match: [ROUTE_NAMES.meetings],
         icon: 'list',
         hint: '全部会议与材料',
       },

@@ -34,11 +34,11 @@
     </header>
 
     <div
-      v-if="showWelcome && messages.length === 0 && (welcomeTitle || greeting || quickActions.length)"
+      v-if="showWelcome && messages.length === 0 && (welcomeTitle || greeting || quickActions.length || $slots['welcome-extra'])"
       class="agent-welcome"
     >
-      <div class="agent-welcome__intro">
-        <h2 class="agent-welcome__title">{{ displayWelcomeTitle }}</h2>
+      <div v-if="showWelcomeTitle || greeting" class="agent-welcome__intro">
+        <h2 v-if="showWelcomeTitle" class="agent-welcome__title">{{ displayWelcomeTitle }}</h2>
         <MarkdownView v-if="greeting" class="agent-welcome__text" :content="greeting" />
       </div>
 
@@ -190,7 +190,8 @@
       <div class="agent-composer">
         <img
           v-if="showMascot"
-          :src="assistantParrotUrl"
+          :src="mascotSrc"
+          :style="{ height: mascotSize }"
           class="agent-composer__mascot"
           alt=""
           aria-hidden="true"
@@ -318,6 +319,12 @@ const props = withDefaults(
     contextText?: string
     /** 是否显示空态欢迎区（标题/问候语/快捷操作卡）；关闭后空态为纯空白 */
     showWelcome?: boolean
+    /** 是否显示欢迎区大标题（关闭后仅保留快捷操作卡与问候语） */
+    showWelcomeTitle?: boolean
+    /** 输入框上方鹦鹉形象（默认内置图，可按页面替换） */
+    mascotSrc?: string
+    /** 鹦鹉趴在输入框上沿的高度 */
+    mascotSize?: string
   }>(),
   {
     subtitle: '',
@@ -332,6 +339,9 @@ const props = withDefaults(
     inputId: 'agent-chat-input',
     contextText: '',
     showWelcome: true,
+    showWelcomeTitle: true,
+    mascotSrc: assistantParrotUrl,
+    mascotSize: '4.5rem',
   },
 )
 

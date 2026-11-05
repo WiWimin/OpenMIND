@@ -130,14 +130,27 @@
               :label="meetingBadgeMeta(activeMeeting?.status).label"
               :tone="meetingBadgeMeta(activeMeeting?.status).tone"
             />
-            <AppButton
-              variant="ghost"
-              size="sm"
-              class="meeting-files-view__open"
-              @click="openWorkspace"
-            >
-              打开会议工作台
-            </AppButton>
+            <div v-if="activeMeeting" class="meeting-files-view__actions">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="activeMeeting.status === 'archived' || busy"
+                @click="openEdit"
+              >
+                编辑
+              </AppButton>
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="activeMeeting.status === 'archived' || busy"
+                @click="askArchive"
+              >
+                归档
+              </AppButton>
+              <AppButton variant="danger" size="sm" :disabled="busy" @click="askDelete">
+                删除
+              </AppButton>
+            </div>
           </div>
           <MeetingFilesPanel v-if="activeMeeting" :meeting-id="activeMeeting.meeting_id" />
         </div>
@@ -189,23 +202,50 @@
       @confirm="confirmDeleteCategory"
       @cancel="showDeleteCategory = false"
     />
+
+    <!-- 编辑会议（自会议文件列表进入） -->
+    <MeetingFormDialog
+      :open="showEdit"
+      :meeting="editTarget"
+      :loading="savingEdit"
+      :error="editError"
+      :categories="categories"
+      @submit="submitEdit"
+      @cancel="showEdit = false"
+    />
+
+    <!-- 归档会议确认 -->
+    <ConfirmDialog
+      :open="showArchive"
+      title="归档会议"
+      :message="`归档后「${activeMeeting?.title ?? ''}」将变为只读，确定归档吗？`"
+      confirm-text="归档"
+      :loading="archiving"
+      @confirm="confirmArchive"
+      @cancel="showArchive = false"
+    />
+
+    <!-- 新建会议窗口 -->
+    <CreateMeetingDialog ref="createDialog" />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
 import AppBreadcrumb from '@/components/AppBreadcrumb.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
 import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
+import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -295,6 +335,7 @@ type ExplorerView = 'root' | 'category' | 'meeting'
 
 const toast = useToast()
 const router = useRouter()
+const route = useRoute()
 const ws = useLocalWorkspace()
 
 const status = ref<StatusFilter>('')
@@ -329,6 +370,16 @@ const deletingMeeting = ref(false)
 
 const showDeleteCategory = ref(false)
 const deleteCategoryTarget = ref<MeetingCategory | null>(null)
+
+/* 编辑 / 归档：会议文件列表页内的会议操作（原会议详情页能力） */
+const showEdit = ref(false)
+const editTarget = ref<Meeting | null>(null)
+const savingEdit = ref(false)
+const editError = ref<unknown>(null)
+const showArchive = ref(false)
+const archiving = ref(false)
+
+const busy = computed(() => savingEdit.value || archiving.value || deletingMeeting.value)
 
 const creatingCategory = ref(false)
 const newCategoryName = ref('')
@@ -423,14 +474,94 @@ function goCategory(): void {
   view.value = 'category'
 }
 
-function openWorkspace(): void {
+/* ===== 会议操作（原会议详情页的编辑/归档/删除） ===== */
+function openEdit(): void {
   if (!activeMeeting.value) {
     return
   }
-  void router.push({
-    name: ROUTE_NAMES.meetingDetail,
-    params: { meetingId: activeMeeting.value.meeting_id },
-  })
+  editTarget.value = activeMeeting.value
+  editError.value = null
+  showEdit.value = true
+}
+
+async function submitEdit(payload: MeetingFormPayload): Promise<void> {
+  const target = editTarget.value
+  if (!target) {
+    return
+  }
+  savingEdit.value = true
+  editError.value = null
+  try {
+    const updated = await meetingsApi.updateMeeting(target.meeting_id, {
+      title: payload.title,
+      topic: payload.topic,
+      meeting_time: payload.meeting_time,
+    })
+    if (payload.categoryId !== undefined) {
+      assignCategory(updated.meeting_id, payload.categoryId || null)
+    }
+    showEdit.value = false
+    editTarget.value = null
+    activeMeeting.value = updated
+    toast.success('会议信息已更新')
+    await load()
+    refreshCategories()
+  } catch (caught) {
+    editError.value = caught
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+function askArchive(): void {
+  if (activeMeeting.value) {
+    showArchive.value = true
+  }
+}
+
+async function confirmArchive(): Promise<void> {
+  if (!activeMeeting.value) {
+    return
+  }
+  archiving.value = true
+  try {
+    activeMeeting.value = await meetingsApi.archiveMeeting(activeMeeting.value.meeting_id)
+    showArchive.value = false
+    toast.success('会议已归档')
+    await load()
+  } catch (caught) {
+    toast.error(caught instanceof Error ? caught.message : '归档失败，请稍后重试')
+  } finally {
+    archiving.value = false
+  }
+}
+
+function askDelete(): void {
+  if (activeMeeting.value) {
+    askDeleteMeeting(activeMeeting.value)
+  }
+}
+
+/**
+ * 深链：/meetings?meeting=<id> 直接打开该会议的文件列表（主页「我的会议」、任务跳转用）。
+ * 进入后补全所属分类，保证面包屑为 会议管理 > 分类 > 会议。
+ */
+async function openFromQuery(): Promise<void> {
+  const meetingId = String(route.query.meeting ?? '')
+  if (!meetingId) {
+    return
+  }
+  try {
+    const meeting = await meetingsApi.getMeeting(meetingId)
+    const categoryId = categoryOf(meeting.meeting_id)
+    activeCategory.value = categoryId
+      ? (categories.value.find((item) => item.id === categoryId) ?? null)
+      : null
+    enterMeeting(meeting)
+  } catch {
+    toast.error('会议不存在或无权访问')
+    goRoot()
+  }
 }
 
 async function load(): Promise<void> {
@@ -449,9 +580,11 @@ function setStatus(next: StatusFilter): void {
   void load()
 }
 
+const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
+
 function openCreate(): void {
-  // 新建统一走独立创建页（含本地存储位置选择），创建完成后进入会议流程页
-  void router.push({ name: ROUTE_NAMES.newMeetingCreate })
+  // 新建统一走创建会议窗口（弹窗），创建完成后进入会议流程页
+  createDialog.value?.open()
 }
 
 function askDeleteMeeting(meeting: Meeting): void {
@@ -576,8 +709,18 @@ function goTemplates(): void {
 
 onMounted(() => {
   refreshCategories()
-  void load()
+  void load().then(() => openFromQuery())
 })
+
+// 深链：从主页「我的会议」/任务跳转过来时直接进入该会议的文件列表
+watch(
+  () => route.query.meeting,
+  (value) => {
+    if (value) {
+      void openFromQuery()
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -951,7 +1094,10 @@ onMounted(() => {
   font-weight: 650;
 }
 
-.meeting-files-view__open {
+.meeting-files-view__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
 }
 

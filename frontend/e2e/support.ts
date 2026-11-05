@@ -166,9 +166,9 @@ export async function createMeeting(
   title: string,
   topic = 'Playwright 端到端验收',
 ): Promise<void> {
-  // 新建统一走独立创建页（含本地存储位置选择；未连接本地文件夹时选择器自动隐藏）
-  await page.goto('/new-meeting/create')
-  await expect(page).toHaveURL(/\/new-meeting\/create/)
+  // 新建统一走创建会议窗口（弹窗）：顶部导航/主页的「新建会议」都弹出该窗口
+  await page.goto('/dashboard')
+  await page.getByRole('button', { name: '新建会议', exact: true }).first().click()
   await page.locator('#meeting-title').fill(title)
   await page.locator('#meeting-topic').fill(topic)
   await page.getByRole('button', { name: '创建', exact: true }).click()
@@ -178,26 +178,52 @@ export async function createMeeting(
 
 export async function openMeeting(page: Page, title: string): Promise<string> {
   const current = new URL(page.url())
-  if (current.pathname === '/new-meeting') {
-    // 创建后的流程页携带 meetingId，直接进入会议详情
-    const meetingId = current.searchParams.get('meetingId')
-    if (meetingId) {
-      await page.goto(`/meetings/${meetingId}`)
-      await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
-      return page.url()
-    }
+  const flowMeetingId =
+    current.pathname === '/new-meeting' ? current.searchParams.get('meetingId') : null
+
+  if (flowMeetingId) {
+    // 会议详情页已删除：创建后统一进会议管理的该会议文件列表
+    await page.goto(`/meetings?meeting=${flowMeetingId}`)
+  } else {
+    await page.goto('/meetings')
+    // 会议默认按会议名建文件夹：先进同名文件夹，再点会议行
+    await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(title)}`) }).first().click()
+    await page.getByRole('button', { name: title, exact: true }).first().click()
   }
-  await page
-    .getByRole('button', { name: new RegExp(escapeRegExp(title)) })
-    .first()
-    .click()
-  await expect(page).toHaveURL(/\/meetings\/[^/]+$/)
+
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   return page.url()
 }
 
-export async function openTab(page: Page, label: string): Promise<void> {
-  await page.getByRole('tab', { name: label, exact: true }).click()
+/** 从会议管理深链（?meeting=）或流程页（?meetingId=）URL 中取 meetingId */
+export function meetingIdOf(url: string): string {
+  const parsed = new URL(url)
+  return parsed.searchParams.get('meeting') ?? parsed.searchParams.get('meetingId') ?? ''
+}
+
+export type StageName = 'preprocess' | 'asr' | 'minutes'
+
+const STAGE_PATHS: Record<StageName, string> = {
+  preprocess: '/new-meeting/preprocess',
+  asr: '/new-meeting/asr',
+  minutes: '/new-meeting/minutes',
+}
+
+/** 打开会议流程页（资料预处理 / 录音转写 / 会后智能处理） */
+export async function openStage(page: Page, stage: StageName, meetingId: string): Promise<void> {
+  await page.goto(`${STAGE_PATHS[stage]}?meetingId=${meetingId}`)
+}
+
+/**
+ * 打开会议管理中该会议的「导入资料」弹窗（内含本地会议工作区面板）。
+ * 原会议详情页已删除，本地工作区面板只在该弹窗内可用。
+ */
+export async function openImportPanel(page: Page, title: string): Promise<void> {
+  await page.goto('/meetings')
+  await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(title)}`) }).first().click()
+  const row = page.locator('.meeting-row').filter({ hasText: title })
+  await row.getByRole('button', { name: '导入', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: `导入资料 · ${title}` })).toBeVisible()
 }
 
 export async function uploadTextMaterial(
@@ -218,9 +244,11 @@ export async function uploadTextMaterial(
 }
 
 export async function addRecord(page: Page, content: string): Promise<void> {
-  await page.locator('#record-content').fill(content)
+  // 录音转写页 → 转写内容流 → 手动补充记录
+  await page.getByRole('button', { name: '补充记录', exact: true }).click()
+  await page.locator('#asr-composer').fill(content)
   await page.getByRole('button', { name: '保存记录', exact: true }).click()
-  await expect(page.getByText(content, { exact: true })).toBeVisible()
+  await expect(page.locator('.stream__text').filter({ hasText: content })).toBeVisible()
 }
 
 export async function login(page: Page, name: string): Promise<void> {

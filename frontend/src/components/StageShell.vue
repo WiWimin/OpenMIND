@@ -87,6 +87,9 @@
         <slot :meeting="meeting" :meeting-id="meeting.meeting_id" />
       </template>
     </div>
+
+    <!-- 新建会议窗口 -->
+    <CreateMeetingDialog ref="createDialog" />
   </section>
 </template>
 
@@ -96,6 +99,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
 import AppButton from '@/components/AppButton.vue'
+import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -120,6 +124,7 @@ const meetingId = ref(String(route.query.meetingId ?? ''))
 const meeting = ref<Meeting | null>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
+const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
 
 const steps = computed(() => {
   const query = meetingId.value ? { meetingId: meetingId.value } : {}
@@ -205,8 +210,8 @@ function onSelect(event: Event): void {
 }
 
 function openCreate(): void {
-  // 新建统一走独立创建页（含本地存储位置选择），创建完成后进入会议流程页
-  void router.push({ name: ROUTE_NAMES.newMeetingCreate })
+  // 新建统一走创建会议窗口（弹窗），创建完成后进入会议流程页
+  createDialog.value?.open()
 }
 
 watch(

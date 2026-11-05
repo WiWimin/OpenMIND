@@ -29,7 +29,6 @@
         </span>
         <div>
           <h2 class="task-suggestion__title">AI 任务建议</h2>
-          <p class="task-suggestion__hint">根据待办任务的截止时间整理</p>
         </div>
       </header>
 
@@ -269,12 +268,6 @@ onMounted(() => {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 650;
-}
-
-.task-suggestion__hint {
-  margin: 1px 0 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
 }
 
 .task-suggestion__list {

@@ -30,38 +30,18 @@
       type="datetime-local"
     />
 
-    <div v-if="categories.length > 0" class="form-field">
-      <label class="form-field__label" for="meeting-category">会议分类</label>
-      <select id="meeting-category" v-model="form.categoryId" class="form-field__select">
-        <option value="">未分类</option>
-        <option v-for="category in categories" :key="category.id" :value="category.id">
-          {{ category.name }}
-        </option>
+    <!-- 会议管理文件夹：单下拉 + 嵌套选项；未选择时以会议名为名自动建文件夹 -->
+    <div class="form-field">
+      <label class="form-field__label" for="meeting-folder">存储文件夹</label>
+      <select id="meeting-folder" v-model="form.categoryId" class="form-field__select">
+        <option value="">{{ isEditing ? '未分类' : '默认：以会议名新建文件夹' }}</option>
+        <optgroup v-if="categories.length > 0" label="会议管理 / 已有文件夹">
+          <option v-for="category in categories" :key="category.id" :value="category.id">
+            &#12288;{{ category.name }}
+          </option>
+        </optgroup>
       </select>
-      <p class="form-field__hint">分类决定会议在会议列表中的文件夹归属。</p>
     </div>
-
-    <!-- 未连接本地文件夹：创建页内提供授权入口（首次用户也能完成“新建时选文件夹”） -->
-    <div v-if="!isEditing && wsSupported && !storageVisible" class="meeting-form__storage-cta">
-      <AppButton variant="ghost" :loading="connecting" @click="connectWorkspace">
-        {{ wsNeedsPermission ? '恢复本地文件夹权限' : '选择本地文件夹' }}
-      </AppButton>
-      <p class="form-field__hint">
-        {{
-          wsNeedsPermission
-            ? '权限已过期，恢复后可选择本地存储位置'
-            : '选择后可指定会议资料的本地存储位置，并自动导入文件夹中已有资料'
-        }}
-      </p>
-    </div>
-
-    <!-- 本地存储位置：路径即会议根；未选择默认 <会议名>/（仅创建时） -->
-    <FolderPathPicker
-      v-if="!isEditing"
-      v-model="form.localPath"
-      :default-label="defaultStorageLabel"
-      :visible="storageVisible"
-    />
 
     <ErrorMessage v-if="error" :error="error" />
 
@@ -75,24 +55,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 import AppButton from '@/components/AppButton.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
-import FolderPathPicker from '@/components/FolderPathPicker.vue'
 import FormField from '@/components/FormField.vue'
-import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
-import { useToast } from '@/composables/useToast'
 import type { CreateMeetingPayload, Meeting } from '@/types/meeting'
 import { fromDatetimeLocal, toDatetimeLocal } from '@/utils/datetime'
-import { isLocalWorkspaceSupported } from '@/utils/localFileSystem'
 import { categoryOf, type MeetingCategory } from '@/utils/meetingCategories'
 
 export interface MeetingFormPayload extends CreateMeetingPayload {
-  /** 过渡期分类（localStorage），后端分类表上线后由 API 承接 */
+  /** 会议管理中的文件夹归属（未选择时由创建流程按会议名新建） */
   categoryId?: string
-  /** 本地存储根路径段（新建会议时选择；缺省 = 授权目录/<会议名>/） */
-  localPath?: string[]
 }
 
 const props = withDefaults(
@@ -117,48 +91,17 @@ const props = withDefaults(
 
 const emit = defineEmits<{ submit: [payload: MeetingFormPayload]; cancel: [] }>()
 
-const ws = useLocalWorkspace()
-const toast = useToast()
-
 const form = reactive({
   title: '',
   topic: '',
   meeting_time: '',
   categoryId: '',
-  localPath: [] as string[],
 })
 const errors = reactive({ title: '' })
 
 const isEditing = computed(() => props.meeting !== null)
 const title = computed(() => (isEditing.value ? '编辑会议' : '新建会议'))
 const submitLabel = computed(() => (isEditing.value ? '保存' : '创建'))
-const defaultStorageLabel = computed(() =>
-  form.title.trim()
-    ? `默认：授权目录/${form.title.trim()}/`
-    : '默认：授权目录/<会议名>/',
-)
-/** 已连接本地文件夹时才展示存储位置选择 */
-const storageVisible = computed(() => ws.status.value === 'connected')
-/** 已支持但未连接：创建页展示授权入口 */
-const wsSupported = computed(() => isLocalWorkspaceSupported())
-const wsNeedsPermission = computed(() => ws.status.value === 'needs-permission')
-const connecting = ref(false)
-
-/** 创建页内授权本地文件夹（新授权 / 权限过期一键恢复），成功后展示存储位置选择 */
-async function connectWorkspace(): Promise<void> {
-  connecting.value = true
-  try {
-    const granted = wsNeedsPermission.value ? await ws.restore() : await ws.connect()
-    if (!granted) {
-      toast.error('未获得本地文件夹权限，无法选择存储位置（可稍后重试）')
-    }
-  } catch (caught) {
-    console.warn('[meeting-form] 本地文件夹授权失败', caught)
-    toast.error('本地文件夹授权失败，请重试')
-  } finally {
-    connecting.value = false
-  }
-}
 
 function reset(): void {
   form.title = props.meeting?.title ?? ''
@@ -168,7 +111,6 @@ function reset(): void {
     props.meeting?.meeting_id != null
       ? (categoryOf(props.meeting.meeting_id) ?? '')
       : (form.categoryId ?? '')
-  form.localPath = []
   errors.title = ''
 }
 
@@ -194,7 +136,6 @@ function submit(): void {
     topic: form.topic.trim() || undefined,
     meeting_time: fromDatetimeLocal(form.meeting_time),
     categoryId: form.categoryId || undefined,
-    ...(form.localPath.length > 0 ? { localPath: [...form.localPath] } : {}),
   })
 }
 </script>
@@ -261,13 +202,6 @@ function submit(): void {
   margin-top: var(--space-2);
 }
 
-.meeting-form__storage-cta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
 .form-field {
   display: flex;
   flex-direction: column;
@@ -295,12 +229,6 @@ function submit(): void {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: var(--focus-ring);
-}
-
-.form-field__hint {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
 }
 
 @media (max-width: 480px) {

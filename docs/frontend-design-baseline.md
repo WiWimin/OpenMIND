@@ -256,7 +256,7 @@ frontend/src/
 | `/new-meeting/minutes` | `newMeeting/MinutesGenerateView.vue` | 新建会议 → 纪要生成 | 素材信号、Agent、纪要编辑/确认/导出 | 接近参考图 5，但缺「四张处理卡」与进度侧栏 |
 | `/meetings` | `meetings/MeetingManageView.vue` | 会议管理 → 历史会议列表 | 统计、状态筛选、会议表、分页 | 缺搜索、参会人、资料/纪要/待办列 |
 | `/meetings/folder` | `meetings/FolderConfigView.vue` | 会议管理 → 本地文件夹配置 | 目录授权、导入/导出说明 | 独立页面，参考图无对应 |
-| `/meetings/:meetingId` | `meetings/MeetingDetailView.vue` | 会议管理 → 详情 | 材料/准备/记录/音频/纪要/问题/收尾 | 功能全但信息密度高，适合作为「详情」而非主工作台 |
+| `/meetings/:meetingId` | —（重定向 → `/meetings?meeting=<id>`） | 会议管理 → 该会议文件列表 | 会议资料/录音/纪要/记录四组 + 编辑/归档/删除 | 原会议详情页已删除：会前准备、记录问答、纪要与行动项分别在三个阶段页（纪要/行动项在会后页产出区） |
 | `/tasks` | `TasksView.vue` | 任务管理 → 任务总览 | 统计、任务列表、AI 建议 | 缺优先级/负责人/来源会议名/新建任务 |
 | `/tasks/archive` | `tasks/TaskArchiveView.vue` | 任务管理 → 已归档任务 | 已完成任务 | 简单复用 |
 | `/knowledge` | `KnowledgeView.vue` | 知识库 → 文档管理 | 上传、检索、文档列表、删除 | 缺分类、分块数、重新索引、卡片视图 |

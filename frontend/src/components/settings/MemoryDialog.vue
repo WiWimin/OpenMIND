@@ -14,9 +14,6 @@
       <ErrorMessage v-else-if="loadError" :error="loadError" retryable @retry="load" />
 
       <form v-else class="memory-form" @submit.prevent="save">
-        <p class="memory-form__note">
-          记忆只用于调整表达与重点，不覆盖事实、来源或业务规则。
-        </p>
         <FormField id="memory-role" v-model="role" label="职业 / 角色" placeholder="例如：产品经理" />
         <FormTextarea
           id="memory-scenarios"
@@ -31,12 +28,6 @@
           label="表达偏好"
           :rows="3"
           placeholder="例如：结论先行、简洁、少用术语"
-        />
-        <FormSelect
-          id="memory-minutes-template"
-          v-model="preferredTemplate"
-          label="默认纪要模板"
-          :options="templateOptions"
         />
 
         <ErrorMessage v-if="formError" :error="formError" />
@@ -66,37 +57,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 
 import * as memoryApi from '@/api/memory'
-import * as templatesApi from '@/api/templates'
 import AppButton from '@/components/AppButton.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormField from '@/components/FormField.vue'
-import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import memoryParrotUrl from '@/assets/ip/memory-parrot.png'
 import { useToast } from '@/composables/useToast'
-import type { MeetingTemplate } from '@/types/template'
 import type { UserMemory } from '@/types/memory'
 import { formatDateTime } from '@/utils/datetime'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
-
-const templateOptions = computed(() => [
-  { value: '', label: '不设置默认模板' },
-  { value: 'standard', label: '标准结构' },
-  { value: 'concise', label: '简洁结构' },
-  { value: 'task_list', label: '任务清单' },
-  ...templates.value.map((template) => ({
-    value: template.template_id,
-    label: `${template.name}（${template.category ?? '通用'}）`,
-  })),
-])
 
 const toast = useToast()
 const loading = ref(false)
@@ -108,24 +85,12 @@ const confirmClearOpen = ref(false)
 const role = ref('')
 const workScenarios = ref('')
 const communicationStyle = ref('')
-const preferredTemplate = ref('')
 const updatedAt = ref('')
-const templates = ref<MeetingTemplate[]>([])
-
-async function loadTemplates(): Promise<void> {
-  try {
-    templates.value = await templatesApi.listTemplates()
-  } catch {
-    // 模板清单加载失败时仅显示内置结构选项
-    templates.value = []
-  }
-}
 
 function applyMemory(memory: UserMemory): void {
   role.value = memory.role
   workScenarios.value = memory.work_scenarios
   communicationStyle.value = memory.communication_style
-  preferredTemplate.value = memory.preferred_minutes_template ?? ''
   updatedAt.value = memory.updated_at ? formatDateTime(memory.updated_at) : ''
 }
 
@@ -149,7 +114,7 @@ async function save(): Promise<void> {
       role: role.value.trim(),
       work_scenarios: workScenarios.value.trim(),
       communication_style: communicationStyle.value.trim(),
-      preferred_minutes_template: preferredTemplate.value || null,
+      preferred_minutes_template: null,
     })
     applyMemory(memory)
     toast.success('记忆已保存')
@@ -186,7 +151,6 @@ watch(
   (open) => {
     if (open) {
       void load()
-      void loadTemplates()
     }
   },
   { immediate: true },
@@ -222,13 +186,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.memory-form__note {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  line-height: 1.6;
 }
 
 .memory-form__actions {

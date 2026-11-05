@@ -384,8 +384,8 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 
 | 路径 | 名称 | 组件 |
 | --- | --- | --- |
-| `/meetings` | `meetings` | `views/meetings/MeetingListView.vue` |
-| `/meetings/:meetingId` | `meeting-detail` | `views/meetings/MeetingDetailView.vue` |
+| `/meetings` | `meetings` | `views/meetings/MeetingManageView.vue` |
+| `/meetings/:meetingId` | —（重定向） | → `/meetings?meeting=<id>`，进入该会议的文件列表（原 `MeetingDetailView` 已删除） |
 
 ##### 6.2 列表筛选与分页前后端对应
 
@@ -404,16 +404,16 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 ##### 6.3 会议列表页（`MeetingListView.vue`）
 
 - **组件**：`MeetingList`、`MeetingCard`、`Pagination`、`CreateMeetingButton`（筛选组件：MVP 支持 `status`，`design-baseline.md` D-17）。
-- **交互**：进入即加载；翻页重新请求；点击进入详情；「新建」打开表单。
+- **交互**：进入即加载；翻页重新请求；点击进入该会议的文件列表（`?meeting=<id>` 深链）；「新建」打开创建会议弹窗。
 - **Pinia**：`items/pagination/filters/loading/error`。
 - **所调 API**：`GET /meetings`、`POST /meetings`。
 
-##### 6.4 会议详情页（`MeetingDetailView.vue`）
+##### 6.4 会议文件列表（`MeetingManageView` 的会议视图 + `MeetingFilesPanel`）
 
-- **组件**：`MeetingHeader`、`MeetingTabs`（材料/准备/记录/纪要/任务/问题子区域占位）、`ConfirmDialog`。
-- **交互**：加载基础信息；「编辑/归档/删除」操作；各 Tab 懒加载对应模块组件。
-- **Pinia**：`current/loading/error`。
-- **所调 API**：`GET/PATCH/DELETE /meetings/{id}`、`POST /meetings/{id}/archive`。
+- **组件**：`MeetingManageView`（`view='meeting'`）+ `MeetingFilesPanel`（会议资料 / 录音 / 纪要 / 会议记录四组 + 文本预览）；头部操作 **编辑 / 归档 / 删除**（编辑复用 `MeetingFormDialog`）。
+- **交互**：`/meetings?meeting=<id>` 深链直接进入（主页「我的会议」、任务「跳转来源会议」）；面包屑 `会议管理 > 分类 > 会议`；原会议详情页已删除，会前准备/记录/问答/纪要与行动项等能力分别在资料预处理、录音转写、会后智能处理三个阶段页。
+- **Pinia**：列表态在 `MeetingManageView` 的 `useAsyncList`；文件分组由 `MeetingFilesPanel` 各自拉取。
+- **所调 API**：`GET /meetings/{id}`、`PATCH/DELETE /meetings/{id}`、`POST /meetings/{id}/archive`、`GET /meetings/{id}/materials|audio|minutes|records`。
 
 ##### 6.5 会议表单（`components/MeetingFormDialog.vue`）
 
@@ -439,7 +439,7 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 | M02-06 | 归档接口与只读约束 | A | M02-04 | 归档后编辑被拒 |
 | M02-07 | 删除接口与关联清理 | A | M02-04 | 事务内清理，符合 `database.md 七`（删除与数据一致性策略） |
 | M02-08 | 会议列表页 + 分页 | C | M02-05 | 列表/翻页可用；空态/错误态友好 |
-| M02-09 | 会议详情页 + Tab 占位 | C | M02-05 | 加载基础信息；操作按钮可用 |
+| M02-09 | 会议文件列表（原会议详情页）+ 编辑/归档/删除 | C | M02-05 | `?meeting=<id>` 深链进入；编辑/归档/删除可用 |
 | M02-10 | 会议表单弹窗 | C | M02-05 | 校验正确；按 `error_code` 提示 |
 | M02-11 | 路由接入 + 导航守卫 | C | M01-07 | 未登录跳转登录页 |
 | M02-12 | 接口集成测试（含跨用户隔离） | A | M02-05 | 用户 A 不能读写用户 B 的会议 |
@@ -481,7 +481,7 @@ M03 依赖 M02（会议归属）；M03 的解析文本/分块供 M04 检索、M0
 | GET | `/api/v1/materials/{material_id}` | 查看材料及处理状态 |
 | DELETE | `/api/v1/materials/{material_id}` | 删除资料及关联索引 |
 
-> `api.md 四.3` 已提供「材料列表」接口，会议详情页材料列表按该接口实现。
+> `api.md 四.3` 已提供「材料列表」接口，会议文件列表的「会议资料」分组按该接口实现。
 
 #### 4. 技术栈与边界理由
 

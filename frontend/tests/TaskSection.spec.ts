@@ -110,8 +110,8 @@ describe('TaskSection', () => {
     await jump?.trigger('click')
 
     expect(pushMock).toHaveBeenCalledWith({
-      name: 'meeting-detail',
-      params: { meetingId: 'mtg_1' },
+      name: 'meetings',
+      query: { meeting: 'mtg_1' },
     })
   })
 

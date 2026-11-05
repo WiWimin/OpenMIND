@@ -3,9 +3,10 @@ import { expect, test } from '@playwright/test'
 import {
   addRecord,
   createMeeting,
+  meetingIdOf,
   openMeeting,
   openSettingsMenu,
-  openTab,
+  openStage,
   prepareModelAccess,
   register,
   uniqueName,
@@ -13,7 +14,7 @@ import {
 } from './support'
 
 test.describe('会议核心闭环（真实后端 + 真实数据库）', () => {
-  test('注册、建会、资料、记录标记、知识库与记忆', async ({ page, request }) => {
+  test('注册、建会、资料、记录、知识库与记忆', async ({ page, request }) => {
     test.setTimeout(300_000)
 
     const userName = uniqueName('e2e-core')
@@ -27,20 +28,20 @@ test.describe('会议核心闭环（真实后端 + 真实数据库）', () => {
     test.skip(!modelAccess.ready, modelAccess.reason ?? '模型配置不可用')
 
     await createMeeting(page, meetingTitle)
-    await openMeeting(page, meetingTitle)
+    const meetingUrl = await openMeeting(page, meetingTitle)
+    const meetingId = meetingIdOf(meetingUrl)
 
+    // 资料：原会议详情页已删除，上传改在「资料预处理」页
+    await openStage(page, 'preprocess', meetingId)
     await uploadTextMaterial(
       page,
       'e2e-material.txt',
       '会议资料：本周需要确认上线范围与风险。\n待确认：灰度发布是否在周五进行。\n里程碑：十月完成集成验收。',
     )
 
-    await openTab(page, '记录')
+    // 记录：原「记录」标签改到「录音转写」页的转写内容流
+    await openStage(page, 'asr', meetingId)
     await addRecord(page, recordText)
-
-    const recordItem = page.locator('.record-item').filter({ hasText: recordText })
-    await recordItem.getByRole('button', { name: '重点', exact: true }).click()
-    await expect(recordItem.locator('.status-badge').filter({ hasText: '重点' })).toBeVisible()
 
     // 知识库：导航重构后入口是「设置」菜单内的 menuitem（不再是独立链接）
     await openSettingsMenu(page)
