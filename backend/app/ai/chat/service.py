@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.ai.llm import LLMClient
 from app.ai.prompts import build_chat, build_deliverable, build_web_chat
+from app.ai.structured import run_structured
 from app.ai.websearch import WebResult, web_search
 from app.core.exceptions import AppError
 
@@ -23,6 +24,18 @@ class BuildDeliverable(BaseModel):
     summary: str = Field(description="给用户的简短说明（1-3 句）")
     filename: str = Field(description="文件名（不含路径，建议 .md 后缀）")
     content_md: str = Field(description="文件正文，Markdown 格式")
+
+
+def _validate_deliverable(value: BuildDeliverable) -> list[str]:
+    """业务字段校验：文件名与正文非空，文件名不含路径。"""
+    errors: list[str] = []
+    if not value.filename.strip():
+        errors.append("filename 不能为空")
+    if "/" in value.filename or "\\" in value.filename:
+        errors.append("filename 不应包含路径分隔符")
+    if not value.content_md.strip():
+        errors.append("content_md 不能为空")
+    return errors
 
 
 @dataclass(frozen=True)
@@ -105,7 +118,8 @@ class ChatService:
         attachment: FileAttachment | None = None
         if mode == "build":
             # Build：基于资料直接产出可交付文件（结构化输出），summary 作为回答
-            deliverable = self.llm.chat_json(
+            deliverable = run_structured(
+                lambda msgs: self.llm.chat_json(msgs, schema=BuildDeliverable),
                 build_deliverable(
                     {
                         "question": question,
@@ -113,7 +127,9 @@ class ChatService:
                         "memory_context": memory_context,
                     }
                 ),
-                schema=BuildDeliverable,
+                BuildDeliverable,
+                scene="chat_build",
+                validator=_validate_deliverable,
             )
             answer = deliverable.summary
             attachment = FileAttachment(

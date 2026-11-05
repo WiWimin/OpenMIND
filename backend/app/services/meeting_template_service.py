@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.parsers import parse_bytes
 from app.ai.prompts import build_template_draft
+from app.ai.structured import run_structured
 from app.core.config import get_settings
 from app.core.exceptions import AppError, resource_not_found
 from app.models.meeting_template import MeetingTemplate
@@ -267,6 +268,13 @@ class _GeneratedTemplate(BaseModel):
     content_text: str
 
 
+def _validate_template_draft(value: _GeneratedTemplate) -> list[str]:
+    """业务字段校验：正文非空（名称为空时由「未命名模板」兜底，不在校验层拦截）。"""
+    if not value.content_text.strip():
+        return ["content_text 不能为空"]
+    return []
+
+
 def generate_template_draft(db: Session, user_id: str, description: str) -> dict[str, str]:
     """按需求描述让 LLM 生成模板草稿，返回候选结果，不入库（用户确认后另行保存）。"""
     text = (description or "").strip()
@@ -278,11 +286,16 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.minutes)
     client = build_llm_client(config)
     prompt = build_template_draft(text)
+    messages = [{"role": "user", "content": prompt}]
     try:
-        draft = client.chat_json(
-            [{"role": "user", "content": prompt}],
-            schema=_GeneratedTemplate,
-            temperature=0.4,
+        draft = run_structured(
+            lambda msgs: client.chat_json(
+                msgs, schema=_GeneratedTemplate, temperature=0.4
+            ),
+            messages,
+            _GeneratedTemplate,
+            scene="template_draft",
+            validator=_validate_template_draft,
         )
     except AppError as exc:
         raise AppError(
@@ -290,6 +303,7 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
             f"AI 生成模板失败：{exc.message}",
             http_status=exc.http_status,
             retryable=exc.retryable,
+            details=exc.details,
         ) from None
 
     name = draft.name.strip()[:_MAX_NAME_CHARS] or "未命名模板"

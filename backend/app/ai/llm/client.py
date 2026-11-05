@@ -10,6 +10,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.ai.http_client import ModelHTTPClient
+from app.ai.structured import normalize_json_text, validation_error_summary
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 
@@ -155,14 +156,18 @@ class LLMClient(ModelHTTPClient):
     ) -> BaseModel:
         kwargs.setdefault("response_format", {"type": "json_object"})
         result = self.chat(messages, model=model, **kwargs)
+        # 解析预处理：剥离 markdown 围栏、截取括号范围，再做 schema 校验
+        raw = normalize_json_text(result.text)
         try:
-            return schema.model_validate_json(result.text)
-        except ValidationError:
+            return schema.model_validate_json(raw)
+        except ValidationError as exc:
             raise AppError(
                 "MODEL_OUTPUT_INVALID",
                 "模型输出无法解析",
                 http_status=502,
                 retryable=False,
+                # 字段路径 + 规则错误（不含模型原文），供业务层修复重试与规范日志使用
+                details={"validation": validation_error_summary(exc)},
             ) from None
 
     def _ensure_configured(self) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 
 class ChatContextScope(StrEnum):
@@ -55,6 +55,44 @@ class OrganizeTask(StrEnum):
     summary = "summary"  # 提炼要点（JSON：结论/讨论/待办/待确认）
     brief = "brief"  # 简短摘要（正文输出）
     polish = "polish"  # 修正口误（JSON diff 建议）
+
+
+class SummaryKeyDiscussion(BaseModel):
+    topic: str = Field(min_length=1)
+    points: list[str] = Field(default_factory=list)
+
+
+class SummaryActionItem(BaseModel):
+    task: str = Field(min_length=1)
+    assignee: str | None = None
+    deadline: str | None = None
+    # 提示词固定输出 high/medium/low；缺字段由 schema 拦截并进入修复重试
+    priority: str
+    # 非法取值（非 high/medium/low）由业务校验拦截
+    source_quote: str | None = None
+
+
+class SummaryStructured(BaseModel):
+    """summary 任务的结构化输出契约（对齐前端 `types/chat.ts SummaryStructured`）。"""
+
+    conclusion: list[str] = Field(default_factory=list)
+    key_discussions: list[SummaryKeyDiscussion] = Field(default_factory=list)
+    action_items: list[SummaryActionItem] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class PolishSuggestion(BaseModel):
+    """polish 单条修改建议（对齐前端 `types/chat.ts PolishSuggestion`）。"""
+
+    location: str
+    original: str
+    suggested: str
+    reason: str
+    confidence: str
+
+
+class PolishSuggestions(RootModel[list[PolishSuggestion]]):
+    """polish 任务的结构化输出契约（JSON 数组根）。"""
 
 
 class OrganizeRequest(BaseModel):
