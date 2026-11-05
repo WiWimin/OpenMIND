@@ -9,7 +9,11 @@
 export interface LocalDirHandle {
   kind: 'directory'
   name: string
-  values: () => AsyncIterableIterator<{ kind: 'file' | 'directory'; name: string }>
+  values: () => AsyncIterableIterator<{
+    kind: 'file' | 'directory'
+    name: string
+    getFile?: () => Promise<File>
+  }>
   getDirectoryHandle: (
     name: string,
     options?: { create?: boolean },
@@ -98,6 +102,27 @@ export async function clearStoredHandle(): Promise<void> {
   await withStore('readwrite', (store) => store.delete(HANDLE_KEY) as IDBRequest<undefined>)
 }
 
+const MEETING_ROOT_PREFIX = 'meeting-root:'
+
+/** 读取会议的本地存储根（路径段数组）；未设置返回 null */
+export async function loadMeetingRoot(meetingId: string): Promise<string[] | null> {
+  try {
+    const value = await withStore<string[] | undefined>('readonly', (store) =>
+      store.get(MEETING_ROOT_PREFIX + meetingId) as IDBRequest<string[] | undefined>,
+    )
+    return value ?? null
+  } catch {
+    return null
+  }
+}
+
+/** 持久化会议的本地存储根（新建会议时的存储位置选择） */
+export async function storeMeetingRoot(meetingId: string, segments: string[]): Promise<void> {
+  await withStore('readwrite', (store) =>
+    store.put(segments, MEETING_ROOT_PREFIX + meetingId) as IDBRequest<IDBValidKey>,
+  )
+}
+
 export async function pickDirectory(): Promise<LocalDirHandle | null> {
   const picker = (window as PickerWindow).showDirectoryPicker
   if (!picker) {
@@ -142,16 +167,73 @@ export function isWriteAllowed(state: PermissionState): boolean {
   return state === 'granted'
 }
 
-/** 逐级创建子目录并返回最深一级 */
-async function ensureDirPath(
+/** 逐级解析子目录；create=true 时逐级创建，false 时路径不存在抛 NotFound */
+async function resolveDirPath(
   root: LocalDirHandle,
   segments: string[],
+  create: boolean,
 ): Promise<LocalDirHandle> {
   let dir = root
   for (const segment of segments) {
-    dir = await dir.getDirectoryHandle(segment, { create: true })
+    dir = await dir.getDirectoryHandle(segment, create ? { create: true } : undefined)
   }
   return dir
+}
+
+/** 逐级创建子目录并返回最深一级 */
+async function ensureDirPath(root: LocalDirHandle, segments: string[]): Promise<LocalDirHandle> {
+  return resolveDirPath(root, segments, true)
+}
+
+/** 列出子路径下的一级子目录名（升序，只读不创建）；路径不存在时抛 NotFound */
+export async function listSubdirs(root: LocalDirHandle, segments: string[]): Promise<string[]> {
+  const dir = await resolveDirPath(root, segments, false)
+  const names: string[] = []
+  for await (const entry of dir.values()) {
+    if (entry.kind === 'directory') {
+      names.push(entry.name)
+    }
+  }
+  return names.sort((left, right) => left.localeCompare(right))
+}
+
+/** 逐级确保目录存在（创建会议时落默认会议名文件夹） */
+export async function ensureLocalDir(root: LocalDirHandle, segments: string[]): Promise<void> {
+  await ensureDirPath(root, segments)
+}
+
+export interface LocalFileEntry {
+  name: string
+  file: File
+  size: number
+}
+
+/**
+ * 读取路径下第一层文件（不递归子目录，按名称排序）。
+ * limit 控制最多读取的文件数；读满且仍有更多文件时 truncated=true。
+ * 路径不存在时抛 NotFound（由调用方决定降级方式）。
+ */
+export async function readFilesAt(
+  root: LocalDirHandle,
+  segments: string[],
+  limit = 50,
+): Promise<{ files: LocalFileEntry[]; truncated: boolean }> {
+  const dir = await resolveDirPath(root, segments, false)
+  const files: LocalFileEntry[] = []
+  let truncated = false
+  for await (const entry of dir.values()) {
+    if (entry.kind !== 'file' || !entry.getFile) {
+      continue
+    }
+    if (files.length >= limit) {
+      truncated = true
+      break
+    }
+    const file = await entry.getFile()
+    files.push({ name: entry.name, file, size: file.size })
+  }
+  files.sort((left, right) => left.name.localeCompare(right.name))
+  return { files, truncated }
 }
 
 /** 向指定子路径写入一个 Blob 文件；失败抛错由调用方决定降级策略 */

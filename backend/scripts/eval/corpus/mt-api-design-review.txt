@@ -1,0 +1,1 @@
+API 设计评审意见：列表接口统一分页参数 page 与 page_size，上限 100。错误响应采用统一结构 status、error_code、message、retryable。批量接口单次不超过 50 条。所有写接口须支持幂等键 Idempotency-Key 头。评审要求补充 429 限流的错误码语义说明。

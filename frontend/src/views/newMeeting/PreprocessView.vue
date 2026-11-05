@@ -28,8 +28,8 @@
               <h2 class="aside-section__title">会前准备稿</h2>
             </div>
             <StatusBadge
-              :label="lastPreparation.status === 'confirmed' ? '已确认' : '草稿'"
-              :tone="lastPreparation.status === 'confirmed' ? 'success' : 'info'"
+              :label="preparationStatusMeta[lastPreparation.status]?.label ?? lastPreparation.status"
+              :tone="preparationStatusMeta[lastPreparation.status]?.tone ?? 'neutral'"
             />
           </div>
 
@@ -63,7 +63,9 @@
         <AgentChat
           ref="chatRef"
           class="preprocess__chat"
-          agent-name="AI会议助手"
+          agent-name="杂乱文档，先规整再入库"
+          mascot-size="8rem"
+          :meeting-id="meetingId"
           :show-welcome="false"
           :on-send="handleSend"
           :disabled="!meetingId"
@@ -129,6 +131,7 @@ import type { AgentReply } from '@/types/agent'
 import type { ChatMode, ChatSource } from '@/types/chat'
 import type { MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
+import { preparationStatusMeta } from '@/utils/statusLabels'
 import { resolveErrorMessage } from '@/utils/errors'
 
 const route = useRoute()
@@ -217,6 +220,9 @@ watch(meetingId, () => {
 })
 
 function sourceLabel(source: ChatSource): string {
+  if (source.origin === 'web') {
+    return source.title ? `联网 · ${source.title}` : '联网检索'
+  }
   if (source.document_name) {
     return source.document_name
   }
@@ -268,7 +274,6 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
     materialsKey.value += 1
     void mirrorMeetingFile({
       meetingId: meetingId.value,
-      kind: 'materials',
       fileName: payload.file.name,
       content: payload.file,
     })
@@ -319,17 +324,22 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
         context_scope: 'current_meeting',
         include_sources: true,
         model,
+        mode: chatMode.value,
       },
       signal,
     )
 
     return {
       content: result.answer,
+      file: result.file ?? undefined,
       sources: result.sources.slice(0, 3).map((source) => ({
         label: sourceLabel(source),
         detail: excerpt(source.excerpt, 64),
       })),
-      note: result.insufficient_evidence ? '证据不足，回答仅供参考。' : undefined,
+      note:
+        result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
+          ? '证据不足，回答仅供参考。'
+          : undefined,
     }
   } catch (caught) {
     throw new Error(resolveErrorMessage(caught, 'Agent 处理失败，请稍后重试。'))

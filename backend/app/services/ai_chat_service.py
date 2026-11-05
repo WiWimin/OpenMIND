@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-import re
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -9,9 +8,14 @@ from sqlalchemy.orm import Session
 from app.ai.chat import ChatAnswer, ChatService, RecordContext
 from app.ai.prompts import build_organize
 from app.ai.rag import VectorRetriever
+from app.ai.structured import run_structured
 from app.core.exceptions import AppError
 from app.repositories import record_repository
-from app.schemas.chat import OrganizeTask
+from app.schemas.chat import (
+    OrganizeTask,
+    PolishSuggestions,
+    SummaryStructured,
+)
 from app.services import audio_service, meeting_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
@@ -20,8 +24,39 @@ from app.services.model_config_service import (
     resolve_model_config,
 )
 
+logger = logging.getLogger(__name__)
+
 # 参与结构化解析的任务：LLM 原始输出需为 JSON
 _STRUCTURED_TASKS = {OrganizeTask.summary, OrganizeTask.polish}
+
+_PRIORITY_VALUES = {"high", "medium", "low"}
+_CONFIDENCE_VALUES = {"high", "medium", "low"}
+
+
+def _validate_summary(value: SummaryStructured) -> list[str]:
+    """summary 业务字段校验：任务非空、优先级取值合法、原文摘录非空白。"""
+    errors: list[str] = []
+    for index, item in enumerate(value.action_items):
+        if not item.task.strip():  # pragma: no cover — schema min_length 已拦截
+            errors.append(f"action_items.{index}.task 不能为空")
+        if item.priority not in _PRIORITY_VALUES:
+            errors.append(f"action_items.{index}.priority 必须是 high/medium/low")
+        if item.source_quote is not None and not item.source_quote.strip():
+            errors.append(f"action_items.{index}.source_quote 为空时应使用 null")
+    return errors
+
+
+def _validate_polish(value: PolishSuggestions) -> list[str]:
+    """polish 业务字段校验：原文/建议非空、置信度取值合法。"""
+    errors: list[str] = []
+    for index, item in enumerate(value.root):
+        if not item.original.strip():
+            errors.append(f"{index}.original 不能为空")
+        if not item.suggested.strip():
+            errors.append(f"{index}.suggested 不能为空")
+        if item.confidence not in _CONFIDENCE_VALUES:
+            errors.append(f"{index}.confidence 必须是 high/medium/low")
+    return errors
 
 
 @dataclass(frozen=True)
@@ -41,33 +76,6 @@ def _chat_service(db: Session, user_id: str, model_override: str | None = None) 
 
 def _run_organize_llm(messages: list[dict[str, str]], config: ModelConfig) -> str:
     return build_llm_client(config).chat(messages).text
-
-
-def _strip_json_fence(raw: str) -> str:
-    cleaned = raw.strip()
-    cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    return cleaned.strip()
-
-
-def _parse_structured(raw: str) -> dict | list | None:
-    """容错解析 LLM 输出的 JSON：剥离代码块标记，失败时截取首尾括号重试。"""
-    cleaned = _strip_json_fence(raw)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        starts = [i for i in (cleaned.find("{"), cleaned.find("[")) if i != -1]
-        ends = [i for i in (cleaned.rfind("}"), cleaned.rfind("]")) if i != -1]
-        if not starts or not ends:
-            return None
-        start, end = min(starts), max(ends)
-        if end <= start:
-            return None
-        try:
-            parsed = json.loads(cleaned[start : end + 1])
-        except json.JSONDecodeError:
-            return None
-    return parsed if isinstance(parsed, (dict, list)) else None
 
 
 def _recent_record_context(
@@ -134,6 +142,7 @@ def chat(
     context_scope: str,
     include_sources: bool,
     model: str | None = None,
+    mode: str = "plan",
 ) -> ChatAnswer:
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     return _chat_service(db, user_id, model).answer(
@@ -141,6 +150,7 @@ def chat(
         user_id=user_id,
         scope=context_scope,
         current_meeting_id=meeting_id,
+        mode=mode,
         records=(
             []
             if context_scope == "knowledge_base"
@@ -183,9 +193,49 @@ def organize(
             "instruction": instruction,
         }
     )
-    raw = _run_organize_llm(messages, config)
-    structured = _parse_structured(raw) if task in _STRUCTURED_TASKS else None
-    content = "" if structured is not None else (raw.strip() or "（未生成有效内容）")
+    if task not in _STRUCTURED_TASKS:
+        raw = _run_organize_llm(messages, config)
+        return OrganizeOutcome(
+            task=task,
+            content=raw.strip() or "（未生成有效内容）",
+            structured=None,
+            source_record_ids=source_ids,
+        )
+
+    # summary/polish：结构化管线（预处理 → schema+业务校验 → 1 次修复重试 → 降级原文）
+    raw_texts: list[str] = []
+
+    def _fetch(current: list[dict[str, str]]) -> str:
+        raw = _run_organize_llm(current, config)
+        raw_texts.append(raw)
+        return raw
+
+    if task is OrganizeTask.summary:
+        parsed = run_structured(
+            _fetch,
+            messages,
+            SummaryStructured,
+            scene="organize_summary",
+            validator=_validate_summary,
+            on_failure="degrade",
+        )
+        structured: dict | list | None = (
+            parsed.model_dump() if parsed is not None else None
+        )
+    else:
+        parsed_polish = run_structured(
+            _fetch,
+            messages,
+            PolishSuggestions,
+            scene="organize_polish",
+            validator=_validate_polish,
+            on_failure="degrade",
+        )
+        structured = parsed_polish.model_dump() if parsed_polish is not None else None
+
+    # 降级时返回首次尝试的原文（修复重试的输出不作为兜底正文）
+    fallback = raw_texts[0] if raw_texts else ""
+    content = "" if structured is not None else (fallback.strip() or "（未生成有效内容）")
     return OrganizeOutcome(
         task=task,
         content=content,

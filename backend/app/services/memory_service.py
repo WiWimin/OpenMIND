@@ -15,6 +15,10 @@ def _clean(value: str | None) -> str | None:
     return text or None
 
 
+# 注入 prompt 的用户画像总长上限（字符），防止记忆内容挤占会议业务资料上下文
+_MAX_MEMORY_CONTEXT_CHARS = 500
+
+
 def get_memory(db: Session, user_id: str) -> UserMemory | None:
     return memory_repository.get_by_user(db, user_id)
 
@@ -71,6 +75,29 @@ def preferred_minutes_template(db: Session, user_id: str) -> str | None:
     return memory.preferred_minutes_template if memory else None
 
 
+def _clip_context(parts: list[str], limit: int = _MAX_MEMORY_CONTEXT_CHARS) -> str:
+    """按字段顺序拼接并限制总长：超限时当前字段按剩余空间截断并加省略号后停止。
+
+    字段按整行语义截断（不保留半行），保证画像不挤占会议业务资料的上下文窗口。
+    """
+    out: list[str] = []
+    used = 0
+    for part in parts:
+        separator = 1 if out else 0  # 换行符计入总长
+        remaining = limit - used - separator
+        if remaining <= 0:
+            break
+        if len(part) <= remaining:
+            line = part
+        else:
+            line = part[: max(remaining - 1, 0)] + "…"
+        out.append(line)
+        used += separator + len(line)
+        if len(line) < len(part):
+            break  # 已截断，后续字段整体丢弃
+    return "\n".join(out)
+
+
 def memory_context_for(db: Session, user_id: str, purpose: str) -> str:
     memory = get_memory(db, user_id)
     if memory is None:
@@ -86,4 +113,4 @@ def memory_context_for(db: Session, user_id: str, purpose: str) -> str:
             parts.append(f"表达偏好：{memory.communication_style}")
     elif purpose in {"minutes", "chat"} and memory.communication_style:
         parts.append(f"表达偏好：{memory.communication_style}")
-    return "\n".join(parts)
+    return _clip_context(parts)

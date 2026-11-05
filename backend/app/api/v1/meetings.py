@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData, MeetingDeleteResult
 from app.schemas.meeting import (
     MeetingCreate,
@@ -13,7 +14,6 @@ from app.schemas.meeting import (
     MeetingUpdate,
 )
 from app.services import meeting_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -22,22 +22,19 @@ router = APIRouter(prefix="/meetings", tags=["meetings"])
 def list_meetings(
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
     meeting_status: Annotated[MeetingStatus | None, Query(alias="status")] = None,
 ) -> Envelope[ListData[MeetingRead]]:
     items, total = meeting_service.list_meetings(
         db,
         current_user.user_id,
         status=meeting_status.value if meeting_status else None,
-        page=page,
-        page_size=page_size,
+        page=params.page,
+        page_size=params.page_size,
     )
-    data = ListData[MeetingRead](
-        items=[MeetingRead.model_validate(item) for item in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items, MeetingRead, page=params.page, page_size=params.page_size, total=total
     )
-    return Envelope(data=data)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=Envelope[MeetingRead])

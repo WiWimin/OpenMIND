@@ -1,0 +1,333 @@
+{
+  "version": 1,
+  "description": "OpenMIND RAG 检索评测集：知识库 scope 10 篇 + 会议材料 scope 8 篇，每篇 2 条标注问题（文档级期望 doc_key + chunk 级内容断言），负样本 8 条按 domain_irrelevant / out_of_domain / noise 分类。",
+  "fixed_config": {
+    "top_k": 5,
+    "min_score": 0.3,
+    "chunk_size": 800,
+    "chunk_overlap": 120,
+    "retrieval_path": "app layer VectorRetriever (same implementation as production chat/search)",
+    "ingest_path": "backend HTTP API /api/v1/*"
+  },
+  "admission": {
+    "knowledge_base.hit_at_5": 0.85,
+    "current_meeting.hit_at_5": 0.8,
+    "overall.mrr": 0.5,
+    "negatives.interception_rate": 1.0,
+    "note": "首轮为基线，未达标时报告须给出错误分析，不自动放宽阈值"
+  },
+  "corpus": [
+    {
+      "doc_key": "kb-leave",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-leave-policy.txt",
+      "questions": [
+        {
+          "question": "员工工龄 12 年，每年有几天年假？",
+          "expect_chunk_contains": "工龄 10-20 年每年 10 天"
+        },
+        {
+          "question": "年假最晚可以顺延到什么时候？",
+          "expect_chunk_contains": "次年 3 月 31 日"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-expense",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-expense-policy.txt",
+      "questions": [
+        {
+          "question": "一线城市住宿每晚报销上限是多少？",
+          "expect_chunk_contains": "一线城市每晚不超过 600 元"
+        },
+        {
+          "question": "报销单提交的时限是多久？",
+          "expect_chunk_contains": "行程结束后 15 个工作日内"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-meeting-room",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-meeting-room-rules.txt",
+      "questions": [
+        {
+          "question": "预订后多久无人使用会被自动释放？",
+          "expect_chunk_contains": "开始后 15 分钟"
+        },
+        {
+          "question": "超过 30 人的会议应预订什么场地？",
+          "expect_chunk_contains": "多功能厅"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-oncall",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-oncall-rotation.txt",
+      "questions": [
+        {
+          "question": "值班人员响应告警的时限是多久？",
+          "expect_chunk_contains": "15 分钟内响应告警"
+        },
+        {
+          "question": "P0 级故障的通知方式有什么要求？",
+          "expect_chunk_contains": "立即电话通知技术负责人"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-pricing",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-product-pricing.txt",
+      "questions": [
+        {
+          "question": "专业版一年多少钱？",
+          "expect_chunk_contains": "专业版每年 29800 元"
+        },
+        {
+          "question": "年付有折扣吗？",
+          "expect_chunk_contains": "年付按 8.5 折结算"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-sla",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-support-sla.txt",
+      "questions": [
+        {
+          "question": "普通问题的解决时限是多久？",
+          "expect_chunk_contains": "8 个工作小时内解决"
+        },
+        {
+          "question": "未达可用性承诺如何补偿？",
+          "expect_chunk_contains": "双倍时长补偿服务期"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-security",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-security-spec.txt",
+      "questions": [
+        {
+          "question": "密码多久强制更换一次？",
+          "expect_chunk_contains": "每 90 天强制更换"
+        },
+        {
+          "question": "机密数据导出有什么要求？",
+          "expect_chunk_contains": "导出须经数据 owner 审批"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-release",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-release-process.txt",
+      "questions": [
+        {
+          "question": "什么时候禁止发布？",
+          "expect_chunk_contains": "禁止周五下午发布"
+        },
+        {
+          "question": "灰度发布的首轮流量比例是多少？",
+          "expect_chunk_contains": "先放 5% 流量观察 30 分钟"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-onboarding",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-onboarding-checklist.txt",
+      "questions": [
+        {
+          "question": "入职第一天需要完成哪些事项？",
+          "expect_chunk_contains": "合同签署、工牌领取与账号开通"
+        },
+        {
+          "question": "转正评估在什么时候进行？",
+          "expect_chunk_contains": "入职第 3 个月"
+        }
+      ]
+    },
+    {
+      "doc_key": "kb-insurance",
+      "scope": "knowledge_base",
+      "file": "corpus/kb-health-insurance.txt",
+      "questions": [
+        {
+          "question": "门诊报销比例是多少？",
+          "expect_chunk_contains": "按 80% 报销"
+        },
+        {
+          "question": "哪些项目不在报销范围内？",
+          "expect_chunk_contains": "牙科美容与体检套餐不在报销范围"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-kickoff",
+      "scope": "current_meeting",
+      "file": "corpus/mt-kickoff-agenda.txt",
+      "questions": [
+        {
+          "question": "技术架构评审安排在几点？",
+          "expect_chunk_contains": "10:45 技术架构评审"
+        },
+        {
+          "question": "会议的产出物是什么？",
+          "expect_chunk_contains": "产出物为排期表与风险清单"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-budget",
+      "scope": "current_meeting",
+      "file": "corpus/mt-q3-budget.txt",
+      "questions": [
+        {
+          "question": "信息流广告预算是多少？",
+          "expect_chunk_contains": "信息流广告 70 万"
+        },
+        {
+          "question": "评审对云资源的结论是什么？",
+          "expect_chunk_contains": "云资源引入竞价实例优化"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-api-design",
+      "scope": "current_meeting",
+      "file": "corpus/mt-api-design-review.txt",
+      "questions": [
+        {
+          "question": "分页参数的上限是多少？",
+          "expect_chunk_contains": "上限 100"
+        },
+        {
+          "question": "写接口要求支持什么以保证幂等？",
+          "expect_chunk_contains": "幂等键 Idempotency-Key 头"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-market",
+      "scope": "current_meeting",
+      "file": "corpus/mt-market-research.txt",
+      "questions": [
+        {
+          "question": "客户最关注的因素排第一位的是什么？",
+          "expect_chunk_contains": "数据安全"
+        },
+        {
+          "question": "调研的样本量是多少？",
+          "expect_chunk_contains": "480 份问卷与 32 场访谈"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-sprint",
+      "scope": "current_meeting",
+      "file": "corpus/mt-sprint-plan.txt",
+      "questions": [
+        {
+          "question": "本迭代的周期是哪几天？",
+          "expect_chunk_contains": "11 月 4 日至 11 月 15 日"
+        },
+        {
+          "question": "关键依赖是什么？",
+          "expect_chunk_contains": "模型网关于 11 月 8 日前完成压测"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-risk",
+      "scope": "current_meeting",
+      "file": "corpus/mt-risk-register.txt",
+      "questions": [
+        {
+          "question": "R1 风险的应对措施是什么？",
+          "expect_chunk_contains": "切换备用供应商并限制批量"
+        },
+        {
+          "question": "风险多久复盘一次？",
+          "expect_chunk_contains": "每周五复盘更新等级"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-feedback",
+      "scope": "current_meeting",
+      "file": "corpus/mt-customer-feedback.txt",
+      "questions": [
+        {
+          "question": "高频问题排第一的是什么？",
+          "expect_chunk_contains": "导出格式不支持 PDF"
+        },
+        {
+          "question": "客户满意度是多少？",
+          "expect_chunk_contains": "满意度 4.6 分"
+        }
+      ]
+    },
+    {
+      "doc_key": "mt-restructure",
+      "scope": "current_meeting",
+      "file": "corpus/mt-org-restructure.txt",
+      "questions": [
+        {
+          "question": "合并后的部门负责人是谁？",
+          "expect_chunk_contains": "由李华负责"
+        },
+        {
+          "question": "旧需求受理入口何时关闭？",
+          "expect_chunk_contains": "旧入口于 11 月 20 日关闭"
+        }
+      ]
+    }
+  ],
+  "negatives": [
+    {
+      "question": "公司食堂下周的菜单是什么？",
+      "category": "domain_irrelevant",
+      "note": "域内话题但无任何语料覆盖"
+    },
+    {
+      "question": "年会定在几月几号举办？",
+      "category": "domain_irrelevant",
+      "note": "域内话题但无任何语料覆盖"
+    },
+    {
+      "question": "隔壁组的 HC 还招人吗？",
+      "category": "domain_irrelevant",
+      "note": "域内话题但无任何语料覆盖"
+    },
+    {
+      "question": "上海明天的天气怎么样？",
+      "category": "out_of_domain",
+      "note": "超出语料业务域"
+    },
+    {
+      "question": "怎么做红烧肉比较好吃？",
+      "category": "out_of_domain",
+      "note": "超出语料业务域"
+    },
+    {
+      "question": "2026 年世界杯冠军是谁？",
+      "category": "out_of_domain",
+      "note": "超出语料业务域"
+    },
+    {
+      "question": "asdfghjkl 一二三四五？",
+      "category": "noise",
+      "note": "无语义噪声输入"
+    },
+    {
+      "question": "嗯嗯啊啊那个这个……",
+      "category": "noise",
+      "note": "无语义噪声输入"
+    }
+  ]
+}

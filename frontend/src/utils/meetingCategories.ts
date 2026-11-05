@@ -77,15 +77,6 @@ export function deleteCategory(categoryId: string): void {
   }
 }
 
-export function renameCategory(categoryId: string, name: string): void {
-  const list = loadCategories()
-  const category = list.find((item) => item.id === categoryId)
-  if (category) {
-    category.name = name.trim()
-    saveCategories(list)
-  }
-}
-
 export function categoryOf(meetingId: string): string | null {
   return loadMap()[meetingId] ?? null
 }

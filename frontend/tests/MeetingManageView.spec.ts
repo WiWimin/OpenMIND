@@ -9,10 +9,14 @@ import * as recordsApi from '@/api/records'
 import type { Meeting } from '@/types/meeting'
 import MeetingManageView from '@/views/meetings/MeetingManageView.vue'
 
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
+const { pushMock, routeState } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  routeState: { query: {} as Record<string, string> },
+}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: pushMock }),
+  useRoute: () => routeState,
   RouterLink: { template: '<a><slot /></a>' },
 }))
 
@@ -68,6 +72,7 @@ describe('MeetingManageView', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     window.localStorage.clear()
+    routeState.query = {}
     vi.mocked(meetingsApi.listMeetings).mockResolvedValue(listOf(meetings))
     vi.mocked(materialsApi.listMaterials).mockResolvedValue(listOf([]))
     vi.mocked(audioApi.listAudio).mockResolvedValue(listOf([]))
@@ -110,8 +115,23 @@ describe('MeetingManageView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('项目启动会')
-    expect(wrapper.text()).toContain('打开会议工作台')
+    // 会议操作（编辑/归档/删除）已从会议详情页搬进文件列表页
+    expect(wrapper.findAll('.meeting-files-view__actions button').map((node) => node.text())).toEqual(
+      ['编辑', '归档', '删除'],
+    )
     expect(wrapper.text()).toContain('会议资料')
+    expect(wrapper.find('.meeting-files-panel').exists()).toBe(true)
+  })
+
+  it('opens a meeting file list directly from the ?meeting= deep link', async () => {
+    routeState.query = { meeting: 'mtg_2' }
+    vi.mocked(meetingsApi.getMeeting).mockResolvedValue(meetings[1])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(meetingsApi.getMeeting).toHaveBeenCalledWith('mtg_2')
+    expect(wrapper.find('.meeting-files-view__title').text()).toBe('需求评审会')
     expect(wrapper.find('.meeting-files-panel').exists()).toBe(true)
   })
 
@@ -161,17 +181,18 @@ describe('MeetingManageView', () => {
     })
   })
 
-  it('creates a meeting and assigns the selected category', async () => {
-    vi.mocked(meetingsApi.createMeeting).mockResolvedValue({
-      ...meetings[0],
-      meeting_id: 'mtg_new',
-      title: '第 1 次周会',
-    })
+  it('opens the create dialog when clicking 新建会议', async () => {
     const wrapper = mountView()
     await flushPromises()
 
+    expect(wrapper.find('.meeting-form').exists()).toBe(false)
+
     const createButton = wrapper.findAll('button').find((button) => button.text() === '新建会议')
     await createButton?.trigger('click')
-    expect(wrapper.findComponent({ name: 'MeetingFormDialog' }).exists()).toBe(true)
+    await flushPromises()
+
+    // 新建统一走创建会议窗口（弹窗），不再跳转创建页
+    expect(wrapper.find('.meeting-form').exists()).toBe(true)
+    expect(pushMock).not.toHaveBeenCalled()
   })
 })

@@ -2,31 +2,33 @@
   <div class="workspace">
     <header class="workspace__topbar">
       <RouterLink class="workspace__brand" :to="{ name: ROUTE_NAMES.dashboard }">
-        <span class="workspace__mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <path
-              d="M4 7.5A2.5 2.5 0 0 1 6.5 5h6.2c.4 0 .79.1 1.13.28l4.9 2.6c.78.42 1.27 1.24 1.27 2.13v6.49A2.5 2.5 0 0 1 17.5 19H6.5A2.5 2.5 0 0 1 4 16.5v-9Z"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
-            <path d="m13 9 4.5-2.4v7L13 11.2V9Z" fill="currentColor" opacity="0.9" />
-          </svg>
-        </span>
+        <img class="workspace__mark" :src="logoUrl" alt="" aria-hidden="true" draggable="false" />
         <span class="workspace__wordmark">OpenMIND</span>
-        <span class="workspace__tag">AI 会议助理</span>
       </RouterLink>
 
       <nav class="workspace__topnav" aria-label="一级导航">
-        <RouterLink
-          v-for="module in topModules"
-          :key="module.key"
-          class="workspace__topnav-link"
-          :class="{ 'workspace__topnav-link--active': activeModule?.key === module.key }"
-          :to="{ name: module.routeName }"
-        >
-          <NavIcon class="workspace__topnav-icon" :name="module.icon" :size="16" />
-          {{ module.label }}
-        </RouterLink>
+        <template v-for="module in topModules" :key="module.key">
+          <!-- 新建会议：弹出创建窗口（与主页/会议管理/阶段页同一入口），不走路由跳转 -->
+          <button
+            v-if="module.key === 'new-meeting'"
+            type="button"
+            class="workspace__topnav-link workspace__topnav-link--button"
+            :class="{ 'workspace__topnav-link--active': activeModule?.key === module.key }"
+            @click="openCreate"
+          >
+            <NavIcon class="workspace__topnav-icon" :name="module.icon" :size="16" />
+            {{ module.label }}
+          </button>
+          <RouterLink
+            v-else
+            class="workspace__topnav-link"
+            :class="{ 'workspace__topnav-link--active': activeModule?.key === module.key }"
+            :to="{ name: module.routeName }"
+          >
+            <NavIcon class="workspace__topnav-icon" :name="module.icon" :size="16" />
+            {{ module.label }}
+          </RouterLink>
+        </template>
       </nav>
 
       <div class="workspace__topbar-actions">
@@ -83,9 +85,14 @@
             </svg>
           </summary>
           <div class="workspace__menu" role="menu" aria-label="账户菜单">
-            <p class="workspace__menu-head">
-              <strong>{{ auth.user?.name ?? '当前用户' }}</strong>
-              <span>个人工作区</span>
+            <p class="workspace__menu-head workspace__menu-head--user">
+              <span class="workspace__avatar workspace__avatar--lg" aria-hidden="true">
+                {{ initial }}
+              </span>
+              <span class="workspace__menu-head-copy">
+                <strong>{{ auth.user?.name ?? '当前用户' }}</strong>
+                <span>个人工作区</span>
+              </span>
             </p>
             <button
               type="button"
@@ -130,9 +137,10 @@
             v-for="link in QUICK_LINKS"
             :key="link.key"
             class="workspace__quick-link"
-            :class="{ 'workspace__quick-link--active': activeModule?.key === link.key }"
+            :class="{ 'workspace__quick-link--active': isQuickActive(link.hash) }"
             :title="asideCollapsed ? link.label : undefined"
-            :to="{ name: link.routeName }"
+            :to="{ name: ROUTE_NAMES.dashboard, hash: link.hash }"
+            @click="onQuickLinkClick(link)"
           >
             <NavIcon class="workspace__quick-icon" :name="link.icon" :size="17" />
             <span class="workspace__quick-label">{{ link.label }}</span>
@@ -204,6 +212,7 @@
     <ModelConfigDialog :open="activePanel === 'model'" @close="closePanel()" />
     <MemoryDialog :open="activePanel === 'memory'" @close="closePanel()" />
     <KnowledgeDialog :open="activePanel === 'knowledge'" @close="closePanel()" />
+    <CreateMeetingDialog ref="createDialog" />
 
     <ToastHost />
   </div>
@@ -219,18 +228,22 @@ import { listTasks } from '@/api/tasks'
 import KnowledgeDialog from '@/components/settings/KnowledgeDialog.vue'
 import MemoryDialog from '@/components/settings/MemoryDialog.vue'
 import ModelConfigDialog from '@/components/settings/ModelConfigDialog.vue'
+import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import ToastHost from '@/components/ToastHost.vue'
+import logoUrl from '@/assets/logo.jpeg'
 import { NAV_MODULES, findModuleByRouteName } from '@/constants/navigation'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 
-// 左侧固定快捷入口（跨模块跳转），与一级导航解耦
+// 左侧固定快捷入口：跳转到主页对应分区（我的会议 / 待办任务），与一级导航解耦
 const QUICK_LINKS = [
-  { key: 'meetings', label: '会议', icon: 'video', routeName: ROUTE_NAMES.meetings },
-  { key: 'tasks', label: '任务', icon: 'tasks', routeName: ROUTE_NAMES.tasks },
+  { key: 'meetings', label: '会议', icon: 'video', hash: '#my-meetings' },
+  { key: 'tasks', label: '任务', icon: 'tasks', hash: '#todo-tasks' },
 ] as const
+
+type QuickLink = (typeof QUICK_LINKS)[number]
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -241,20 +254,30 @@ function openSettingsPanel(panel: 'model' | 'memory' | 'knowledge'): void {
   closeMenus()
   openPanel(panel)
 }
+
+// 顶部「新建会议」：弹出创建会议窗口（与主页/会议管理/阶段页共用同一弹窗）
+const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
+
+function openCreate(): void {
+  closeMenus()
+  createDialog.value?.open()
+}
 const noticeEl = ref<HTMLDetailsElement | null>(null)
 const menuEl = ref<HTMLDetailsElement | null>(null)
 const settingsEl = ref<HTMLDetailsElement | null>(null)
 const isLoggingOut = ref(false)
 
-// 左侧导航栏折叠：全局生效，选择记忆在本地（默认展开）
+// 左侧导航栏折叠：默认隐藏，点击 > 展开；选择记忆在本地（无记录时默认折叠）
 const ASIDE_COLLAPSED_KEY = 'openmind.asideCollapsed'
 const asideCollapsed = ref(readAsideCollapsed())
 
 function readAsideCollapsed(): boolean {
   try {
-    return window.localStorage.getItem(ASIDE_COLLAPSED_KEY) === '1'
+    const stored = window.localStorage.getItem(ASIDE_COLLAPSED_KEY)
+    // 无本地记录（首次访问）或上次为折叠时，一律默认折叠
+    return stored === null ? true : stored === '1'
   } catch {
-    return false
+    return true
   }
 }
 
@@ -270,6 +293,18 @@ function toggleAside(): void {
 const initial = computed(() => (auth.user?.name ?? '?').slice(0, 1).toUpperCase())
 
 const activeModule = computed(() => findModuleByRouteName(String(route.name ?? '')))
+
+// 侧边栏入口按主页锚点（我的会议 / 待办任务）高亮
+function isQuickActive(hash: string): boolean {
+  return route.name === ROUTE_NAMES.dashboard && route.hash === hash
+}
+
+// 已停留在目标锚点时路由不会变化，导航不会重新触发，这里手动补一次滚动
+function onQuickLinkClick(link: QuickLink): void {
+  if (isQuickActive(link.hash)) {
+    document.querySelector(link.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 
 // 系统设置入口收纳进左下角“设置”菜单，顶部一级导航不再展示
 const topModules = NAV_MODULES.filter((module) => module.key !== 'system')
@@ -354,15 +389,12 @@ async function handleLogout(): Promise<void> {
 }
 
 .workspace__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   width: 1.9rem;
   height: 1.9rem;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  object-fit: cover;
   border-radius: 9px;
-  box-shadow: 0 4px 12px rgba(21, 94, 239, 0.26);
+  box-shadow: 0 2px 8px rgba(21, 94, 239, 0.18);
 }
 
 .workspace__wordmark {
@@ -371,18 +403,6 @@ async function handleLogout(): Promise<void> {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--color-foreground);
-}
-
-.workspace__tag {
-  padding: 2px 7px;
-  color: var(--color-primary-strong);
-  font-size: 0.625rem;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  background: var(--color-primary-soft);
-  border: 1px solid rgba(21, 94, 239, 0.14);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
 }
 
 .workspace__topnav {
@@ -424,6 +444,16 @@ async function handleLogout(): Promise<void> {
 .workspace__topnav-link:hover {
   color: var(--color-primary-strong);
   background: var(--color-primary-soft);
+}
+
+/* 顶部导航里的按钮型入口（新建会议弹窗）：还原按钮默认样式 */
+.workspace__topnav-link--button {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 550;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
 .workspace__topnav-link--active,
@@ -532,14 +562,23 @@ async function handleLogout(): Promise<void> {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  color: var(--color-primary-strong);
-  font-size: 0.75rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  color: #ffffff;
+  font-size: 0.875rem;
   font-weight: 700;
-  background: var(--color-primary-soft);
-  border: 1px solid rgba(21, 94, 239, 0.16);
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  border: 2px solid #ffffff;
   border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(21, 94, 239, 0.28);
+}
+
+.workspace__avatar--lg {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(21, 94, 239, 0.3);
 }
 
 .workspace__user {
@@ -615,6 +654,26 @@ async function handleLogout(): Promise<void> {
 .workspace__menu-head span {
   color: var(--color-muted-foreground);
   font-size: 0.6875rem;
+}
+
+/* 账户菜单头部：大号渐变头像 + 姓名/副标题 */
+.workspace__menu-head--user {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.workspace__menu-head--user .workspace__avatar {
+  flex: 0 0 auto;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.workspace__menu-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .workspace__menu-item {
@@ -946,10 +1005,6 @@ async function handleLogout(): Promise<void> {
   .workspace__topnav {
     -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
-  }
-
-  .workspace__tag {
-    display: none;
   }
 
   .workspace__body {

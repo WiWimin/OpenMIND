@@ -4,8 +4,13 @@ import re
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[。！？!?])\s*|\n+")
 
+CHUNK_SIZE = 800
+CHUNK_OVERLAP = 120
 
-def split_text(text: str, *, chunk_size: int = 800, overlap: int = 120) -> list[str]:
+
+def split_text(
+    text: str, *, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP
+) -> list[str]:
     if overlap < 0 or overlap >= chunk_size:
         raise ValueError("overlap 必须满足 0 <= overlap < chunk_size")
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()

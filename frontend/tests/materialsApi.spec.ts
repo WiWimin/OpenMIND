@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { deleteMaterial, getMaterial, listMaterials, uploadMaterial } from '@/api/materials'
+import { deleteMaterial, listMaterials, uploadMaterial } from '@/api/materials'
 import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ListData } from '@/types/api'
 import type { Material } from '@/types/material'
@@ -40,13 +40,6 @@ describe('materials api', () => {
 
     await expect(listMaterials('mtg_1', { page: 1 })).resolves.toEqual(list)
     expect(get).toHaveBeenCalledWith('/meetings/mtg_1/materials', { params: { page: 1 } })
-  })
-
-  it('unwraps a success envelope for a material', async () => {
-    get.mockResolvedValue(response({ status: 'success', data: material }))
-
-    await expect(getMaterial('mat_1')).resolves.toEqual(material)
-    expect(get).toHaveBeenCalledWith('/materials/mat_1')
   })
 
   it('uploads a material as multipart form data', async () => {

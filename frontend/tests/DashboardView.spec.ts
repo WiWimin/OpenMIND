@@ -32,7 +32,6 @@ vi.mock('@/api/meetings', () => ({
 
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
-  getTask: vi.fn(),
   updateTask: vi.fn(),
   cancelTask: vi.fn(),
 }))
@@ -128,47 +127,25 @@ describe('DashboardView', () => {
     expect(wrapper.findAll('.home__task')).toHaveLength(1)
   })
 
-  it('opens the create dialog from the intro CTA and creates a meeting', async () => {
+  it('opens the create dialog from the intro CTA', async () => {
     mockMeetings([meeting])
     mockTasks([task])
-    vi.mocked(meetingsApi.createMeeting).mockResolvedValue(meeting)
 
     const wrapper = mountView()
     await flushPromises()
 
-    const cta = wrapper.get('.home__cta')
-    await cta.trigger('click')
-    expect(wrapper.find('.meeting-form').exists()).toBe(true)
-
-    await wrapper.get('#meeting-title').setValue('项目周会')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-
-    expect(meetingsApi.createMeeting).toHaveBeenCalledWith({
-      title: '项目周会',
-      topic: undefined,
-      meeting_time: undefined,
-    })
-    expect(pushMock).toHaveBeenCalledWith({
-      name: 'new-meeting',
-      query: { meetingId: 'mtg_1' },
-    })
     expect(wrapper.find('.meeting-form').exists()).toBe(false)
-  })
 
-  it('opens the create dialog when arriving with ?create=1', async () => {
-    mockMeetings([])
-    mockTasks([])
-    routeState.query = { create: '1' }
-
-    const wrapper = mountView()
+    await wrapper.get('.home__cta').trigger('click')
     await flushPromises()
 
+    // 新建统一走创建会议窗口（弹窗），不再跳转创建页
     expect(wrapper.find('.meeting-form').exists()).toBe(true)
-    expect(replaceMock).toHaveBeenCalledWith({ query: {} })
+    expect(pushMock).not.toHaveBeenCalled()
+    expect(meetingsApi.createMeeting).not.toHaveBeenCalled()
   })
 
-  it('navigates to the meeting detail when a meeting row is clicked', async () => {
+  it('opens the meeting file list in meeting management when a meeting row is clicked', async () => {
     mockMeetings([meeting])
     mockTasks([task])
 
@@ -177,9 +154,10 @@ describe('DashboardView', () => {
 
     await wrapper.get('.home__meeting').trigger('click')
 
+    // 会议详情页已删除：跳到会议管理中该会议的文件列表
     expect(pushMock).toHaveBeenCalledWith({
-      name: 'meeting-detail',
-      params: { meetingId: 'mtg_1' },
+      name: 'meetings',
+      query: { meeting: 'mtg_1' },
     })
   })
 

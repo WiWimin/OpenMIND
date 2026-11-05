@@ -34,6 +34,7 @@ vi.mock('@/api/auth', () => ({
 
 vi.mock('@/api/meetings', () => ({
   listMeetings: vi.fn(),
+  createMeeting: vi.fn(),
 }))
 
 vi.mock('@/api/tasks', () => ({
@@ -119,11 +120,29 @@ describe('WorkspaceLayout', () => {
     vi.mocked(authApi.logout).mockResolvedValue(undefined)
     const { auth, wrapper } = mountLayout()
 
-    await wrapper.get('button').trigger('click')
+    const logout = wrapper.findAll('button').find((node) => node.text().includes('退出登录'))
+    await logout?.trigger('click')
     await flushPromises()
 
     expect(authApi.logout).toHaveBeenCalledTimes(1)
     expect(auth.isAuthenticated).toBe(false)
     expect(pushMock).toHaveBeenCalledWith({ name: 'login' })
+  })
+
+  it('opens the create dialog from the top-nav 新建会议 entry', async () => {
+    const { wrapper } = mountLayout()
+    await flushPromises()
+
+    expect(wrapper.find('.meeting-form').exists()).toBe(false)
+
+    const entry = wrapper
+      .findAll('.workspace__topnav-link')
+      .find((node) => node.text() === '新建会议')
+    await entry?.trigger('click')
+    await flushPromises()
+
+    // 顶部导航的「新建会议」不跳路由，直接弹出创建会议窗口
+    expect(wrapper.find('.meeting-form').exists()).toBe(true)
+    expect(pushMock).not.toHaveBeenCalled()
   })
 })

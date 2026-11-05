@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.ai.preparation import PreparationDraft, PreparationService
-from app.core.exceptions import AppError
+from app.core.exceptions import resource_not_found
 from app.models.meeting import Meeting
 from app.models.preparation import Preparation
 from app.repositories import material_repository, preparation_repository
@@ -16,6 +16,7 @@ from app.services.model_config_service import (
     resolve_model_config,
 )
 from app.utils.ids import new_id
+from app.utils.pagination import paginate_by
 
 _STATUS_DRAFT = "draft"
 _STATUS_CONFIRMED = "confirmed"
@@ -42,10 +43,6 @@ def generate_draft(
         memory_context=memory_context,
         template_instructions=template_instructions,
     )
-
-
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "准备稿不存在或不可访问", http_status=404)
 
 
 def _history_snippets(
@@ -114,18 +111,20 @@ def list_preparations(
     db: Session, *, meeting_id: str, user_id: str, page: int, page_size: int
 ) -> tuple[list[Preparation], int]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    offset = (page - 1) * page_size
-    items = preparation_repository.list_by_meeting(
-        db, meeting_id, limit=page_size, offset=offset
+    return paginate_by(
+        preparation_repository.list_by_meeting,
+        preparation_repository.count_by_meeting,
+        db,
+        meeting_id,
+        page=page,
+        page_size=page_size,
     )
-    total = preparation_repository.count_by_meeting(db, meeting_id)
-    return items, total
 
 
 def get_owned_preparation(db: Session, preparation_id: str, user_id: str) -> Preparation:
     preparation = preparation_repository.get_owned(db, preparation_id, user_id)
     if preparation is None:
-        raise _not_found()
+        raise resource_not_found("准备稿")
     return preparation
 
 

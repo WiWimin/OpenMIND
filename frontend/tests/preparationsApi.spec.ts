@@ -5,7 +5,6 @@ import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import {
   confirmPreparation,
   generatePreparation,
-  getPreparation,
   listPreparations,
   updatePreparation,
 } from '@/api/preparations'
@@ -58,13 +57,6 @@ describe('preparations api', () => {
 
     await expect(listPreparations('mtg_1')).resolves.toEqual(list)
     expect(get).toHaveBeenCalledWith('/meetings/mtg_1/preparations', { params: {} })
-  })
-
-  it('gets a preparation', async () => {
-    get.mockResolvedValue(response({ status: 'success', data: preparation }))
-
-    await expect(getPreparation('prep_1')).resolves.toEqual(preparation)
-    expect(get).toHaveBeenCalledWith('/preparations/prep_1')
   })
 
   it('updates a preparation', async () => {

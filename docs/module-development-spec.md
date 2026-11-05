@@ -130,12 +130,12 @@
 | M01 认证 | `api/v1/auth.py` `[已实现]`、`services/auth_service.py` `[已实现]` | `views/auth/` `[已实现]`、`api/auth.ts` `[已实现]`、`stores/auth.ts` `[已实现]` |
 | M02 会议 | `api/v1/meetings.py` `[已实现]`、`services/meeting_service.py` `[已实现]` | `DashboardView.vue`、`views/meetings/` `[已实现]`、`api/meetings.ts` `[已实现]` |
 | M03 资料 | `api/v1/materials.py` `[已实现]`、`services/material_service.py` `[已实现]`、`ai/parsers/` `[已实现]` | `components/MaterialSection.vue`、`api/materials.ts` `[已实现]` |
-| M04 AI/RAG | `ai/llm/`、`ai/embeddings/`、`ai/rag/`、`ai/chat/`、`ai/prompts/` `[已实现]`；BYOK 设置与生效来源 | `views/settings/ModelSettingsView.vue`、`api/settings.ts` `[已实现]` |
-| M05 会前准备 | `api/v1/preparations.py` `[已实现]`、`ai/preparation/` `[已实现]` | `components/PreparationSection.vue`、`api/preparations.ts` `[已实现]` |
-| M06 记录+问答 | `api/v1/records.py`、`api/v1/ai_chat.py`、`ai/chat/` `[已实现]` | `components/{RecordSection,ChatPanel,AiAssistantDrawer}.vue`、`api/records.ts` `[已实现]` |
+| M04 AI/RAG | `ai/llm/`、`ai/embeddings/`、`ai/rag/`、`ai/chat/`、`ai/prompts/` `[已实现]`；BYOK 设置与生效来源 | `components/settings/ModelConfigDialog.vue`、`api/settings.ts` `[已实现]` |
+| M05 会前准备 | `api/v1/preparations.py` `[已实现]`、`ai/preparation/` `[已实现]` | `views/newMeeting/PreprocessView.vue`、`api/preparations.ts` `[已实现]` |
+| M06 记录+问答 | `api/v1/records.py`、`api/v1/ai_chat.py`、`ai/chat/` `[已实现]` | `views/newMeeting/AsrView.vue`、`components/AgentChat.vue`、`api/records.ts` `[已实现]` |
 | M07 纪要+行动项 | `api/v1/minutes.py`、`api/v1/action_items.py`、`ai/minutes/`、`ai/extraction/` `[已实现]` | `components/{MinutesSection,ActionItemSection}.vue`、`api/minutes.ts` `[已实现]` |
 | M08 任务 | `api/v1/tasks.py` `[已实现]`、`services/task_service.py` `[已实现]` | `views/TasksView.vue`、`components/TaskSection.vue`、`api/tasks.ts` `[已实现]` |
-| M09 问题 | `api/v1/issues.py` `[已实现]`、`services/issue_service.py` `[已实现]`、`ai/extraction/` `[已实现]` | `components/IssuesSection.vue`、`api/issues.ts` `[已实现]` |
+| M09 问题 | `api/v1/issues.py` `[已实现]`、`services/issue_service.py` `[已实现]`、`ai/extraction/` `[已实现]` | 前端 UI 已按产品决策移除（`api/issues.ts` 已删除）；后端 API 保留（`api.md 5.16`） |
 
 - `[已实现]`：`api/v1/*`、`core/*`、`db/*`、`alembic/`、`models/`、`schemas/`、`repositories/`、`services/`、`ai/*`；前端 `api/client.ts`、`router/index.ts`、`stores/`、`components/`、`views/`、`types/`。
 - 前端 axios 实例与错误规范化见 `frontend/src/api/client.ts`（`[已实现]`）。
@@ -384,8 +384,8 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 
 | 路径 | 名称 | 组件 |
 | --- | --- | --- |
-| `/meetings` | `meetings` | `views/meetings/MeetingListView.vue` |
-| `/meetings/:meetingId` | `meeting-detail` | `views/meetings/MeetingDetailView.vue` |
+| `/meetings` | `meetings` | `views/meetings/MeetingManageView.vue` |
+| `/meetings/:meetingId` | —（重定向） | → `/meetings?meeting=<id>`，进入该会议的文件列表（原 `MeetingDetailView` 已删除） |
 
 ##### 6.2 列表筛选与分页前后端对应
 
@@ -401,19 +401,19 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 - 越权：用户 A 请求用户 B 的会议详情/编辑/删除均返回 `404 RESOURCE_NOT_FOUND`（`api.md 一.6`）。
 - 空态/错误态：空列表、非法参数、后端错误均有友好前端提示。
 
-##### 6.3 会议列表页（`MeetingListView.vue`）
+##### 6.3 会议列表页（`MeetingManageView.vue`）
 
 - **组件**：`MeetingList`、`MeetingCard`、`Pagination`、`CreateMeetingButton`（筛选组件：MVP 支持 `status`，`design-baseline.md` D-17）。
-- **交互**：进入即加载；翻页重新请求；点击进入详情；「新建」打开表单。
+- **交互**：进入即加载；翻页重新请求；点击进入该会议的文件列表（`?meeting=<id>` 深链）；「新建」打开创建会议弹窗。
 - **Pinia**：`items/pagination/filters/loading/error`。
 - **所调 API**：`GET /meetings`、`POST /meetings`。
 
-##### 6.4 会议详情页（`MeetingDetailView.vue`）
+##### 6.4 会议文件列表（`MeetingManageView` 的会议视图 + `MeetingFilesPanel`）
 
-- **组件**：`MeetingHeader`、`MeetingTabs`（材料/准备/记录/纪要/任务/问题子区域占位）、`ConfirmDialog`。
-- **交互**：加载基础信息；「编辑/归档/删除」操作；各 Tab 懒加载对应模块组件。
-- **Pinia**：`current/loading/error`。
-- **所调 API**：`GET/PATCH/DELETE /meetings/{id}`、`POST /meetings/{id}/archive`。
+- **组件**：`MeetingManageView`（`view='meeting'`）+ `MeetingFilesPanel`（会议资料 / 录音 / 纪要 / 会议记录四组 + 文本预览）；头部操作 **编辑 / 归档 / 删除**（编辑复用 `MeetingFormDialog`）。
+- **交互**：`/meetings?meeting=<id>` 深链直接进入（主页「我的会议」、任务「跳转来源会议」）；面包屑 `会议管理 > 分类 > 会议`；原会议详情页已删除，会前准备/记录/问答/纪要与行动项等能力分别在资料预处理、录音转写、会后智能处理三个阶段页。
+- **Pinia**：列表态在 `MeetingManageView` 的 `useAsyncList`；文件分组由 `MeetingFilesPanel` 各自拉取。
+- **所调 API**：`GET /meetings/{id}`、`PATCH/DELETE /meetings/{id}`、`POST /meetings/{id}/archive`、`GET /meetings/{id}/materials|audio|minutes|records`。
 
 ##### 6.5 会议表单（`components/MeetingFormDialog.vue`）
 
@@ -439,7 +439,7 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 | M02-06 | 归档接口与只读约束 | A | M02-04 | 归档后编辑被拒 |
 | M02-07 | 删除接口与关联清理 | A | M02-04 | 事务内清理，符合 `database.md 七`（删除与数据一致性策略） |
 | M02-08 | 会议列表页 + 分页 | C | M02-05 | 列表/翻页可用；空态/错误态友好 |
-| M02-09 | 会议详情页 + Tab 占位 | C | M02-05 | 加载基础信息；操作按钮可用 |
+| M02-09 | 会议文件列表（原会议详情页）+ 编辑/归档/删除 | C | M02-05 | `?meeting=<id>` 深链进入；编辑/归档/删除可用 |
 | M02-10 | 会议表单弹窗 | C | M02-05 | 校验正确；按 `error_code` 提示 |
 | M02-11 | 路由接入 + 导航守卫 | C | M01-07 | 未登录跳转登录页 |
 | M02-12 | 接口集成测试（含跨用户隔离） | A | M02-05 | 用户 A 不能读写用户 B 的会议 |
@@ -481,7 +481,7 @@ M03 依赖 M02（会议归属）；M03 的解析文本/分块供 M04 检索、M0
 | GET | `/api/v1/materials/{material_id}` | 查看材料及处理状态 |
 | DELETE | `/api/v1/materials/{material_id}` | 删除资料及关联索引 |
 
-> `api.md 四.3` 已提供「材料列表」接口（标注 `[提案]`），会议详情页材料列表按该接口实现，待团队确认后转正式。
+> `api.md 四.3` 已提供「材料列表」接口，会议文件列表的「会议资料」分组按该接口实现。
 
 #### 4. 技术栈与边界理由
 
@@ -502,7 +502,7 @@ M03 依赖 M02（会议归属）；M03 的解析文本/分块供 M04 检索、M0
 
 #### 6. 前端子模块
 
-- **6.1 会议详情材料区**：上传、材料列表（`api.md 四.3` [提案]）、状态展示。
+- **6.1 会议详情材料区**：上传、材料列表（`api.md 四.3`）、状态展示。
 - **6.2 材料状态轮询/刷新**：`processing_status` 展示。
 - **6.3 API 封装**：`api/materials.ts`。
 
@@ -520,12 +520,12 @@ M03 依赖 M02（会议归属）；M03 的解析文本/分块供 M04 检索、M0
 | M03-04 | `api/v1/materials.py` 路由 | A | M03-03 | 上传/查看/删除可用 |
 | M03-05 | 解析管线（`ai/parsers/`）+ 状态流转 | B | M03-04 | 解析成功/失败状态正确 |
 | M03-06 | 材料区前端（上传/列表/状态） | C | M03-04 | 上传与状态展示可用 |
-| M03-07 | 材料列表接口（`api.md 四.3` [提案]） | A | M03-04 | 实现后 OpenAPI 同步 |
+| M03-07 | 材料列表接口（`api.md 四.3`） | A | M03-04 | 实现后 OpenAPI 同步 |
 | M03-08 | 解析与越权测试 | A/B | M03-05 | 解析失败态与跨用户隔离正确 |
 
 #### 9. 风险与注意事项
 
-- 材料列表接口已提案（`api.md 四.3`），待团队确认；上传白名单为 `pdf/docx/txt`、≤ `MAX_UPLOAD_MB`（D-16）。
+- 材料列表接口已实现（`api.md 四.3`）；上传白名单为 `pdf/docx/txt`、≤ `MAX_UPLOAD_MB`（D-16）。
 - 删除材料须同步清理分块/索引（`database.md 七`（删除与数据一致性策略））。
 
 ---
@@ -701,7 +701,7 @@ M04 消费 M03 的解析文本；为 M05（准备）、M06（问答）、M07（�
 
 #### 7. 风险与注意事项
 
-- 记录删除接口已在 `api.md 四.11` 提出（`[提案]`），待确认是否纳入 MVP。
+- 记录删除接口见 `api.md 四.11`（已实现）。
 - 问答响应字段（`answer/sources/insufficient_evidence`）以 `api.md 五` 示例与 OpenAPI 为准。
 
 ---
@@ -736,7 +736,7 @@ AI 生成/提取（`api.md 五`）：
 | POST | `/api/v1/action-items/{action_id}/confirm` | 确认行动项 |
 | POST | `/api/v1/action-items/{action_id}/convert-to-task` | 转为任务 |
 
-> `api.md 五.11–5.14` 已提案纪要读取/编辑/确认接口（`GET /meetings/{id}/minutes`、`GET /minutes/{id}`、`PATCH /minutes/{id}`、`POST /minutes/{id}/confirm`），待团队确认后转正式。
+> `api.md 五.11–5.14` 纪要读取/编辑/确认接口已实现（`GET /meetings/{id}/minutes`、`GET /minutes/{id}`、`PATCH /minutes/{id}`、`POST /minutes/{id}/confirm`）。
 
 #### 3. 后端子模块
 
@@ -748,7 +748,7 @@ AI 生成/提取（`api.md 五`）：
 
 #### 4. 前端子模块
 
-- **4.1 纪要页**（`views/minutes/`）：生成、展示、编辑/确认（`api.md 五.11–5.14` [提案]）。
+- **4.1 纪要页**（`views/newMeeting/MinutesGenerateView.vue`）：生成、展示、编辑/确认（`api.md 五.11–5.14`）。
 - **4.2 行动项确认/编辑/转任务入口**。
 
 #### 5. 数据与状态
@@ -772,7 +772,7 @@ AI 生成/提取（`api.md 五`）：
 
 #### 7. 风险与注意事项
 
-- 纪要读取/编辑/确认接口已提案（`api.md 五.11–5.14`），待团队确认。
+- 纪要读取/编辑/确认接口已实现（`api.md 五.11–5.14`）。
 - 行动项重复提取不去重（可能产生重复候选）；转任务以 `action_id` 唯一幂等（`design-baseline.md` D-15）。
 - 「候选与确认分离」是本模块底线（`database.md 一`）。
 
@@ -937,7 +937,7 @@ AI 提取（`api.md 五`）：
 | 六 行动项与个人任务 | M07（行动项）、M08（任务） | A |
 | 七 未解决问题 | M09 | A |
 
-> 本文不新增接口；材料列表、纪要读取/编辑/确认已在 `api.md 四.3`、`五.11–5.14` 提出（`[提案]`）。
+> 本文不新增接口；材料列表、纪要读取/编辑/确认已在 `api.md 四.3`、`五.11–5.14` 实现。
 
 ### 4.3 建议开发顺序
 
@@ -960,7 +960,6 @@ AI 提取（`api.md 五`）：
 
 | 项 | 说明 |
 | --- | --- |
-| `[提案]` 接口是否采纳 | 材料列表、纪要读取/编辑/确认、记录删除、行动项详情/删除（`api.md` 标注 `[提案]`） |
 | MIME 嗅探 / 音频转写 | 超出当前 MVP |
 | 向量索引类型 | HNSW/IVFFlat 待数据量确定 |
 | 并发编辑冲突 | MVP 仅保证 `version` 递增，不做乐观锁 |

@@ -5,7 +5,10 @@ import {
   apiBase,
   authToken,
   createMeeting,
-  openMeetingTab,
+  meetingIdOf,
+  openMeeting,
+  openStage,
+  prepareModelAccess,
   register,
   uniqueName,
 } from './support'
@@ -13,21 +16,27 @@ import {
 const TASK_TITLE = '完成灰度发布检查清单'
 
 test.describe('任务业务闭环', () => {
-  test('行动项确认→转任务→状态更新→刷新持久化', async ({ page }) => {
-    test.setTimeout(300_000)
+  test('行动项确认→转任务→状态更新→刷新持久化', async ({ page, request }) => {
+    test.setTimeout(600_000)
 
     await register(page, uniqueName('e2e-task'))
-    const meetingId = await createMeeting(page, `E2E 任务闭环 ${Date.now()}`)
+    const access = await prepareModelAccess(page, request)
+    test.skip(!access.ready, access.reason ?? '模型配置不可用')
 
-    // 1) 新增记录，作为行动项提取输入
-    await openMeetingTab(page, meetingId, 'records')
+    const meetingTitle = `E2E 任务闭环 ${Date.now()}`
+    await createMeeting(page, meetingTitle)
+    const meetingId = meetingIdOf(await openMeeting(page, meetingTitle))
+
+    // 1) 新增记录，作为行动项提取输入（阶段页「录音转写」）
+    await openStage(page, 'asr', meetingId)
     await addRecord(page, '决议：周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。')
 
-    // 2) “纪要”标签页提取行动项候选
-    await openMeetingTab(page, meetingId, 'minutes')
-    await page.getByRole('button', { name: '提取行动项', exact: true }).click()
+    // 2) 阶段页「会后智能处理」经 Agent 提取行动项（产出区自动切到「行动项」标签）
+    await openStage(page, 'minutes', meetingId)
+    await page.locator('.agent-composer__input').fill('请提取待办任务与行动项。')
+    await page.getByRole('button', { name: '发送消息', exact: true }).click()
     const firstItem = page.locator('.action-item').first()
-    await expect(firstItem).toBeVisible({ timeout: 60_000 })
+    await expect(firstItem).toBeVisible({ timeout: 120_000 })
     await expect(firstItem).toContainText(TASK_TITLE)
 
     // 3) 用户确认行动项
@@ -51,7 +60,7 @@ test.describe('任务业务闭环', () => {
     await expect(taskItem).toBeVisible({ timeout: 30_000 })
 
     // 6) 更新任务状态（todo → in_progress）
-    const statusSelect = taskItem.locator('select[aria-label="任务状态"]')
+    const statusSelect = taskItem.locator('.task-item__status-select')
     await expect(statusSelect).toHaveValue('todo')
     await statusSelect.selectOption('in_progress')
     await expect(statusSelect).toHaveValue('in_progress')
@@ -60,7 +69,7 @@ test.describe('任务业务闭环', () => {
     await page.reload()
     const reloadedItem = page.locator('.task-item').filter({ hasText: TASK_TITLE }).first()
     await expect(reloadedItem).toBeVisible({ timeout: 30_000 })
-    const reloadedStatus = reloadedItem.locator('select[aria-label="任务状态"]')
+    const reloadedStatus = reloadedItem.locator('.task-item__status-select')
     await expect(reloadedStatus).toHaveValue('in_progress')
 
     // 7.1) 直接读取后端，确认状态不是前端提示或按钮态
@@ -77,10 +86,17 @@ test.describe('任务业务闭环', () => {
     expect(taskPayload.data.title).toBe(TASK_TITLE)
     expect(taskPayload.data.status).toBe('in_progress')
 
-    // 8) 回到会议详情确认行动项仍为“已转任务”
-    await page.goto(`/meetings/${meetingId}?tab=minutes`)
-    const convertedItem = page.locator('.action-item').filter({ hasText: TASK_TITLE }).first()
-    await expect(convertedItem).toBeVisible({ timeout: 30_000 })
-    await expect(convertedItem.locator('.action-item__done')).toHaveText('已转任务')
+    // 8) 行动项状态持久化：读取后端 action-items。
+    //    原会议详情页已删除、产出区为会话态 UI，故以 API 断言替代原详情页 UI 回查。
+    const itemsResponse = await page.request.get(`${apiBase()}/meetings/${meetingId}/action-items`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(itemsResponse.ok()).toBeTruthy()
+    const itemsPayload = await itemsResponse.json()
+    const converted = (
+      itemsPayload.data.items as Array<{ content: string; status: string }>
+    ).find((item) => item.content.includes(TASK_TITLE))
+    expect(converted).toBeTruthy()
+    expect(converted?.status).toBe('converted')
   })
 })

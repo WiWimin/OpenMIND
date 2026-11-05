@@ -33,7 +33,7 @@
     />
 
     <!-- 我的会议 -->
-    <section class="home__panel">
+    <section id="my-meetings" class="home__panel">
       <header class="home__panel-head">
         <h2 class="home__panel-title">我的会议</h2>
         <RouterLink class="home__panel-link" :to="{ name: ROUTE_NAMES.meetings }">
@@ -80,7 +80,7 @@
     </section>
 
     <!-- 待办任务 -->
-    <section class="home__panel">
+    <section id="todo-tasks" class="home__panel">
       <header class="home__panel-head">
         <h2 class="home__panel-title">待办任务</h2>
         <RouterLink class="home__panel-link" :to="{ name: ROUTE_NAMES.tasks }">
@@ -125,13 +125,7 @@
       </ul>
     </section>
 
-    <MeetingFormDialog
-      :open="showForm"
-      :loading="saving"
-      :error="saveError"
-      @submit="createMeeting"
-      @cancel="closeForm"
-    />
+    <CreateMeetingDialog ref="createDialog" />
   </section>
 </template>
 
@@ -143,17 +137,16 @@ import { listMeetings } from '@/api/meetings'
 import { listTasks, updateTask } from '@/api/tasks'
 import mascotUrl from '@/assets/homepage-ip.png'
 import AppButton from '@/components/AppButton.vue'
+import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 import { useMeetingsStore } from '@/stores/meetings'
-import type { CreateMeetingPayload } from '@/types/meeting'
 import type { PersonalTask } from '@/types/task'
 import { formatDate } from '@/utils/datetime'
 import { meetingStatusMeta } from '@/utils/statusLabels'
@@ -175,10 +168,7 @@ const tasks = ref<PersonalTask[]>([])
 const tasksLoading = ref(true)
 const tasksError = ref<unknown>(null)
 const savingTaskId = ref<string | null>(null)
-
-const showForm = ref(false)
-const saving = ref(false)
-const saveError = ref<unknown>(null)
+const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
 
 const userName = computed(() => auth.user?.name ?? '朋友')
 
@@ -259,55 +249,38 @@ async function completeTask(task: PersonalTask): Promise<void> {
 }
 
 function openCreate(): void {
-  saveError.value = null
-  showForm.value = true
-}
-
-function closeForm(): void {
-  showForm.value = false
+  // 新建统一走创建会议窗口（弹窗），创建完成后进入会议流程页
+  createDialog.value?.open()
 }
 
 function openDetail(meetingId: string): void {
-  void router.push({ name: ROUTE_NAMES.meetingDetail, params: { meetingId } })
-}
-
-async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
-  saving.value = true
-  saveError.value = null
-  try {
-    const created = await store.createMeeting(payload)
-    showForm.value = false
-    toast.success('会议已创建，进入会议流程')
-    await router.push({
-      name: ROUTE_NAMES.newMeeting,
-      query: { meetingId: created.meeting_id },
-    })
-    void loadStats()
-  } catch (caught) {
-    saveError.value = caught
-  } finally {
-    saving.value = false
-  }
+  // 跳到会议管理中该会议的文件列表（下一级），不再进独立的会议详情页
+  void router.push({ name: ROUTE_NAMES.meetings, query: { meeting: meetingId } })
 }
 
 onMounted(() => {
   void loadStats()
   void loadTasks()
   void store.fetchList()
-  if (route.query.create === '1') {
-    openCreate()
-    void router.replace({ query: {} })
-  }
+  scrollToHashSection()
 })
+
+// 侧边栏「会议 / 任务」按锚点跳到主页对应分区
+function scrollToHashSection(): void {
+  if (!route.hash) {
+    return
+  }
+  // 页面有切换动效，等挂载/过渡后再滚动
+  window.requestAnimationFrame(() => {
+    document.querySelector(route.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
 
 // /dashboard 与 /meetings 复用同一组件实例，路由变化在这里联动
 watch(
   () => route.fullPath,
   () => {
-    if (route.query.create === '1') {
-      openCreate()
-      void router.replace({ query: {} })
-    }
+    scrollToHashSection()
   },
 )
 </script>
@@ -440,6 +413,8 @@ watch(
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+  /* 侧边栏锚点跳转时避开顶部 56px 吸顶导航 */
+  scroll-margin-top: 5rem;
 }
 
 .home__panel-head {

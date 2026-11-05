@@ -64,13 +64,6 @@ export async function deleteAudio(audioId: string): Promise<DeletedResult<'audio
   return unwrapData(data)
 }
 
-export async function getAudio(audioId: string): Promise<MeetingAudio> {
-  const { data } = await http.get<ApiSuccess<MeetingAudio> | MeetingAudio>(
-    `/audio/${audioId}`,
-  )
-  return unwrapData(data)
-}
-
 /* ============================ 实时录音：分片边录边转 ============================ */
 
 export async function startLiveAudio(

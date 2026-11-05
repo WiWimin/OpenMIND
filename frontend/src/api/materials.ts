@@ -41,11 +41,6 @@ export async function uploadMaterial(
   return unwrapData(data)
 }
 
-export async function getMaterial(materialId: string): Promise<Material> {
-  const { data } = await http.get<ApiSuccess<Material> | Material>(`/materials/${materialId}`)
-  return unwrapData(data)
-}
-
 export async function deleteMaterial(materialId: string): Promise<DeletedResult<'material_id'>> {
   const { data } = await http.delete<
     ApiSuccess<DeletedResult<'material_id'>> | DeletedResult<'material_id'>

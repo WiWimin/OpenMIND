@@ -6,11 +6,66 @@
 
     <template #default="{ meeting }">
       <div class="minutes-page">
+        <!-- 产出区：生成纪要 / 提取行动项后出现，提供编辑确认与转任务入口 -->
+        <section
+          v-if="showProduce"
+          class="minutes-page__produce"
+          :class="{ 'minutes-page__produce--collapsed': produceCollapsed }"
+        >
+          <header class="minutes-page__produce-head">
+            <div class="minutes-page__produce-tabs" role="tablist" aria-label="会后产出">
+              <button
+                type="button"
+                class="minutes-page__produce-tab"
+                :class="{ 'minutes-page__produce-tab--active': produceTab === 'minutes' }"
+                role="tab"
+                :aria-selected="produceTab === 'minutes'"
+                @click="produceTab = 'minutes'"
+              >
+                纪要
+              </button>
+              <button
+                type="button"
+                class="minutes-page__produce-tab"
+                :class="{ 'minutes-page__produce-tab--active': produceTab === 'actions' }"
+                role="tab"
+                :aria-selected="produceTab === 'actions'"
+                @click="produceTab = 'actions'"
+              >
+                行动项
+              </button>
+            </div>
+            <button
+              type="button"
+              class="minutes-page__produce-toggle"
+              :aria-expanded="!produceCollapsed"
+              @click="produceCollapsed = !produceCollapsed"
+            >
+              {{ produceCollapsed ? '展开' : '收起' }}
+            </button>
+          </header>
+          <div v-show="!produceCollapsed" class="minutes-page__produce-body">
+            <MinutesSection
+              v-if="produceTab === 'minutes'"
+              :key="`minutes-${meeting.meeting_id}`"
+              :meeting-id="meeting.meeting_id"
+            />
+            <ActionItemSection
+              v-else
+              :key="`actions-${meeting.meeting_id}`"
+              :meeting-id="meeting.meeting_id"
+            />
+          </div>
+        </section>
+
         <AgentChat
           ref="chatRef"
           class="minutes-page__chat"
-          agent-name="AI智能处理"
-          welcome-title="AI智能处理"
+          agent-name="纪要萃取，一羽搞定"
+          :show-welcome-title="false"
+          :mascot-src="mascotUrl"
+          mascot-size="8rem"
+          :meeting-id="meeting.meeting_id"
           :on-send="handleSend"
           :on-task="handleAgentTask"
           :disabled="!meeting.meeting_id"
@@ -70,7 +125,10 @@ import { useRoute } from 'vue-router'
 import * as actionItemsApi from '@/api/actionItems'
 import * as chatApi from '@/api/chat'
 import * as minutesApi from '@/api/minutes'
+import mascotUrl from '@/assets/ip/functionthree.jpeg'
+import ActionItemSection from '@/components/ActionItemSection.vue'
 import AgentChat from '@/components/AgentChat.vue'
+import MinutesSection from '@/components/MinutesSection.vue'
 import ModePicker from '@/components/ModePicker.vue'
 import ModelPickerPopover from '@/components/ModelPickerPopover.vue'
 import StageShell from '@/components/StageShell.vue'
@@ -93,6 +151,17 @@ const lastMinutes = ref<Minutes | null>(null)
 const chatRef = ref<InstanceType<typeof AgentChat> | null>(null)
 const selectedModel = ref('')
 const selectedTemplateId = ref('')
+
+// 产出区：生成纪要 / 提取行动项后出现（纪要编辑确认与行动项转任务入口）
+const showProduce = ref(false)
+const produceTab = ref<'minutes' | 'actions'>('minutes')
+const produceCollapsed = ref(false)
+
+function openProduce(tab: 'minutes' | 'actions'): void {
+  showProduce.value = true
+  produceTab.value = tab
+  produceCollapsed.value = false
+}
 
 // 支持「模板管理页 → 使用」跳转时通过路由参数预选模板
 const routeTemplateId = String(route.query.templateId ?? '')
@@ -126,7 +195,7 @@ const taskCards: TaskCard[] = [
   {
     key: 'minutes',
     title: '会议纪要',
-    desc: '生成结构化纪要草稿，可在会议详情编辑确认',
+    desc: '帮我生成一篇会议纪要',
     prompt: '请生成会议纪要，并拆解待办任务。',
     tone: 'primary',
     icon: ICON_MINUTES,
@@ -134,7 +203,7 @@ const taskCards: TaskCard[] = [
   {
     key: 'records',
     title: '会议记录',
-    desc: '整理最近的会议记录：去口语冗余、逻辑清晰（仅展示，不覆盖原文）',
+    desc: '帮我整理一下会议记录',
     task: 'organize',
     prompt: '请整理本次会议的会议记录，去除口语冗余，使逻辑清晰。',
     tone: 'accent',
@@ -143,7 +212,7 @@ const taskCards: TaskCard[] = [
   {
     key: 'tasks',
     title: '待办任务',
-    desc: '提取行动项草稿，可确认转为个人任务',
+    desc: '帮我提取待办任务',
     prompt: '请从会议记录中提取待办任务与行动项，标注责任人和截止时间。',
     tone: 'warning',
     icon: ICON_TASKS,
@@ -151,7 +220,7 @@ const taskCards: TaskCard[] = [
   {
     key: 'search',
     title: '会议检索',
-    desc: '检索会议资料与记录，回答附来源',
+    desc: '帮我检索会议内容',
     prompt: '请检索本次会议的记录与资料，总结其中的关键信息，并给出对应来源。',
     tone: 'violet',
     icon: ICON_SEARCH,
@@ -219,9 +288,10 @@ async function generateMinutesReply(text: string, signal: AbortSignal): Promise<
     signal,
   )
   lastMinutes.value = minutes
+  openProduce('minutes')
   return {
     content: minutes.content,
-    note: `已生成${templateLabel(minutes.template)}草稿 v${minutes.version}，可在「会议详情 → 纪要」中编辑与确认。`,
+    note: `已生成${templateLabel(minutes.template)}草稿 v${minutes.version}，可在下方「纪要」标签中编辑与确认。`,
   }
 }
 
@@ -240,9 +310,10 @@ async function extractActionsReply(): Promise<AgentReply> {
     }
   }
   const lines = result.map((item) => formatActionItem(item)).join('\n')
+  openProduce('actions')
   return {
     content: `## 提取到 ${result.length} 个行动项\n\n${lines}`,
-    note: '已保存为行动项草稿，可在「会议详情 → 行动项」中确认并转为个人任务。',
+    note: '已保存为行动项草稿，可在下方「行动项」标签中确认并转为个人任务。',
   }
 }
 
@@ -258,11 +329,13 @@ async function askReply(
       context_scope: 'current_meeting',
       include_sources: withSources,
       model: selectedModel.value || undefined,
+      mode: chatMode.value,
     },
     signal,
   )
   return {
     content: result.answer,
+    file: result.file ?? undefined,
     sources: withSources
       ? result.sources.slice(0, 3).map((source) => ({
           label: sourceLabel(source),
@@ -353,6 +426,10 @@ async function loadLatestMinutes(): Promise<void> {
   try {
     const result = await minutesApi.listMinutes(meetingId.value, { page: 1, page_size: 1 })
     lastMinutes.value = result.items[0] ?? null
+    // 已有纪要 → 进入页面即可直接编辑确认
+    if (lastMinutes.value) {
+      openProduce('minutes')
+    }
   } catch {
     lastMinutes.value = null
   }
@@ -362,6 +439,9 @@ watch(
   meetingId,
   (id) => {
     lastMinutes.value = null
+    showProduce.value = false
+    produceTab.value = 'minutes'
+    produceCollapsed.value = false
     if (!id) {
       return
     }
@@ -386,6 +466,88 @@ watch(
   min-height: 0;
 }
 
+/* 产出区：生成纪要 / 提取行动项后出现（编辑确认与转任务入口） */
+.minutes-page__produce {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  max-height: 42vh;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.minutes-page__produce-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.minutes-page__produce--collapsed {
+  max-height: none;
+}
+
+.minutes-page__produce--collapsed .minutes-page__produce-head {
+  border-bottom: 0;
+}
+
+.minutes-page__produce-tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.minutes-page__produce-tab {
+  padding: 0.3rem var(--space-4);
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.minutes-page__produce-tab:hover {
+  color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+}
+
+.minutes-page__produce-tab--active,
+.minutes-page__produce-tab--active:hover {
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+.minutes-page__produce-toggle {
+  color: var(--color-muted-foreground);
+  font: inherit;
+  font-size: 0.75rem;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.minutes-page__produce-toggle:hover {
+  color: var(--color-primary-strong);
+}
+
+.minutes-page__produce-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+
 /* 高频任务卡片 */
 .task-cards {
   display: grid;
@@ -395,9 +557,11 @@ watch(
 
 .task-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4);
+  /* 宽度不变，只纵向拉长：让卡片内的小字一行排下 */
+  min-height: 6.5rem;
+  padding: var(--space-5) var(--space-4);
   text-align: left;
   font: inherit;
   background: var(--color-surface-strong);
@@ -470,6 +634,10 @@ watch(
   color: var(--color-muted-foreground);
   font-size: 0.75rem;
   line-height: 1.55;
+  /* 小字固定一行，超长省略号截断 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 1400px) {

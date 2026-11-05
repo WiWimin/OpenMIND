@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.ai.minutes import MinutesService
-from app.core.exceptions import AppError
+from app.core.exceptions import resource_not_found
 from app.models.meeting import Meeting
 from app.models.minutes import MeetingMinutes
-from app.models.record import MeetingRecord
-from app.repositories import material_repository, minutes_repository, record_repository
+from app.repositories import material_repository, minutes_repository
 from app.schemas.minutes import MinutesGenerateRequest, MinutesTemplate, MinutesUpdate
 from app.services import meeting_service, meeting_template_service, memory_service
+from app.services.extraction_support import gather_records
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -17,6 +17,7 @@ from app.services.model_config_service import (
     resolve_model_config,
 )
 from app.utils.ids import new_id
+from app.utils.pagination import paginate_by
 
 # 纪要模板标记的内置枚举值（custom 为套用模板清单时的标记，不在此列）
 _ENUM_TEMPLATE_VALUES = {
@@ -25,7 +26,6 @@ _ENUM_TEMPLATE_VALUES = {
 
 _STATUS_DRAFT = "draft"
 _STATUS_CONFIRMED = "confirmed"
-_MAX_RECORDS = 100
 _MAX_MATERIALS = 10
 _MAX_MATERIAL_CHARS = 12000
 
@@ -52,20 +52,6 @@ def generate_text(
         template=template,
         memory_context=memory_context,
         template_instructions=template_instructions,
-    )
-
-
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "纪要不存在或不可访问", http_status=404)
-
-
-def _gather_records(
-    db: Session, meeting_id: str, record_ids: list[str]
-) -> list[MeetingRecord]:
-    if record_ids:
-        return record_repository.list_by_ids(db, meeting_id, record_ids)
-    return record_repository.list_by_meeting(
-        db, meeting_id, limit=_MAX_RECORDS, offset=0
     )
 
 
@@ -97,7 +83,7 @@ def generate_minutes(
     db: Session, *, meeting_id: str, user_id: str, payload: MinutesGenerateRequest
 ) -> MeetingMinutes:
     meeting = meeting_service.get_mutable_meeting(db, meeting_id, user_id)
-    records = _gather_records(db, meeting_id, payload.record_ids)
+    records = gather_records(db, meeting_id, payload.record_ids)
     transcripts = [record.content for record in records]
     record_ids = [record.record_id for record in records]
     marked_records = [
@@ -162,16 +148,20 @@ def list_minutes(
     db: Session, *, meeting_id: str, user_id: str, page: int, page_size: int
 ) -> tuple[list[MeetingMinutes], int]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    offset = (page - 1) * page_size
-    items = minutes_repository.list_by_meeting(db, meeting_id, limit=page_size, offset=offset)
-    total = minutes_repository.count_by_meeting(db, meeting_id)
-    return items, total
+    return paginate_by(
+        minutes_repository.list_by_meeting,
+        minutes_repository.count_by_meeting,
+        db,
+        meeting_id,
+        page=page,
+        page_size=page_size,
+    )
 
 
 def get_owned_minutes(db: Session, minutes_id: str, user_id: str) -> MeetingMinutes:
     minutes = minutes_repository.get_owned(db, minutes_id, user_id)
     if minutes is None:
-        raise _not_found()
+        raise resource_not_found("纪要")
     return minutes
 
 

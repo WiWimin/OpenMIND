@@ -34,11 +34,11 @@
     </header>
 
     <div
-      v-if="showWelcome && messages.length === 0 && (welcomeTitle || greeting || quickActions.length)"
+      v-if="showWelcome && messages.length === 0 && (welcomeTitle || greeting || quickActions.length || $slots['welcome-extra'])"
       class="agent-welcome"
     >
-      <div class="agent-welcome__intro">
-        <h2 class="agent-welcome__title">{{ displayWelcomeTitle }}</h2>
+      <div v-if="showWelcomeTitle || greeting" class="agent-welcome__intro">
+        <h2 v-if="showWelcomeTitle" class="agent-welcome__title">{{ displayWelcomeTitle }}</h2>
         <MarkdownView v-if="greeting" class="agent-welcome__text" :content="greeting" />
       </div>
 
@@ -150,6 +150,13 @@
                 <span v-if="source.detail">{{ source.detail }}</span>
               </span>
             </div>
+
+            <!-- Build 模式产出：下载 DOCX + 保存到会议资料 + 写入本地文件夹（各自独立重试） -->
+            <ChatFileCard
+              v-if="message.file && meetingId"
+              :meeting-id="meetingId"
+              :file="message.file"
+            />
           </div>
         </article>
 
@@ -183,7 +190,8 @@
       <div class="agent-composer">
         <img
           v-if="showMascot"
-          :src="assistantParrotUrl"
+          :src="mascotSrc"
+          :style="{ height: mascotSize }"
           class="agent-composer__mascot"
           alt=""
           aria-hidden="true"
@@ -278,9 +286,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import assistantParrotUrl from '@/assets/ip/assistant-parrot.png'
+import ChatFileCard from '@/components/ChatFileCard.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
+import { formatTime } from '@/utils/datetime'
 import type { PolishSuggestion, SummaryStructured } from '@/types/chat'
 import type {
   AgentChatMessage,
@@ -296,6 +306,8 @@ const props = withDefaults(
     subtitle?: string
     welcomeTitle?: string
     greeting?: string
+    /** 当前会议（Build 模式文件保存到会议资料/本地文件夹时必传） */
+    meetingId?: string
     quickActions?: AgentQuickAction[]
     onSend: AgentSendHandler
     /** 快捷任务处理器：quickAction 带 task 时调用，走后端专用实现链 */
@@ -307,11 +319,18 @@ const props = withDefaults(
     contextText?: string
     /** 是否显示空态欢迎区（标题/问候语/快捷操作卡）；关闭后空态为纯空白 */
     showWelcome?: boolean
+    /** 是否显示欢迎区大标题（关闭后仅保留快捷操作卡与问候语） */
+    showWelcomeTitle?: boolean
+    /** 输入框上方鹦鹉形象（默认内置图，可按页面替换） */
+    mascotSrc?: string
+    /** 鹦鹉趴在输入框上沿的高度 */
+    mascotSize?: string
   }>(),
   {
     subtitle: '',
     welcomeTitle: '',
     greeting: '',
+    meetingId: '',
     quickActions: () => [],
     onTask: undefined,
     placeholder: '描述目标，或选中内容后提问…',
@@ -320,6 +339,9 @@ const props = withDefaults(
     inputId: 'agent-chat-input',
     contextText: '',
     showWelcome: true,
+    showWelcomeTitle: true,
+    mascotSrc: assistantParrotUrl,
+    mascotSize: '4.5rem',
   },
 )
 
@@ -381,14 +403,6 @@ const trimmedContext = computed(() => {
 
 function nextMessageId(): number {
   return ++messageId
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
 }
 
 function onScroll(): void {
@@ -612,6 +626,7 @@ async function runTurn(
     }
     assistant.sources = normalized.sources
     assistant.note = normalized.note
+    assistant.file = normalized.file
   } catch (caught) {
     pending.value = false
     assistant.streaming = false

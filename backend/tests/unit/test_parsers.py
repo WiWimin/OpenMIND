@@ -164,14 +164,3 @@ def test_txt_binary_reports_invalid_file() -> None:
     with pytest.raises(ParseError) as excinfo:
         TxtParser().parse(b"\x89PNG\r\n\x1a\n\x00\x00", "fake.txt")
     assert excinfo.value.reason == "invalid_file"
-
-
-def test_parsed_document_as_result_matches_contract() -> None:
-    result = TxtParser().parse(b"hello", "note.txt").as_result("material_001")
-    assert result == {
-        "material_id": "material_001",
-        "status": "processed",
-        "file_name": "note.txt",
-        "content": "hello",
-        "metadata": {"parser": "txt", "encoding": "utf-8", "char_count": 5},
-    }

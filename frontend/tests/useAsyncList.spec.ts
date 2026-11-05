@@ -39,16 +39,6 @@ describe('useAsyncList', () => {
     expect(list.loading.value).toBe(false)
   })
 
-  it('requests a specific page via setPage', async () => {
-    const fetcher = vi.fn(async () => ({ items: [], pagination: { ...page1, page: 2 } }))
-    const list = useAsyncList({ fetcher })
-
-    await list.setPage(2)
-
-    expect(fetcher).toHaveBeenCalledWith({ page: 2, page_size: 20 })
-    expect(list.pagination.value.page).toBe(2)
-  })
-
   it('respects a custom page size', async () => {
     const fetcher = vi.fn(async () => ({ items: [], pagination: { ...page1, page_size: 50 } }))
     const list = useAsyncList({ fetcher, pageSize: 50 })

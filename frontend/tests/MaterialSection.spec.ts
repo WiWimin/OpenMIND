@@ -9,7 +9,6 @@ import type { Material } from '@/types/material'
 vi.mock('@/api/materials', () => ({
   listMaterials: vi.fn(),
   uploadMaterial: vi.fn(),
-  getMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
 }))
 

@@ -18,8 +18,9 @@ describe('route constants', () => {
     expect(ROUTE_PATHS.dashboard).toBe('/dashboard')
     expect(ROUTE_NAMES.meetings).toBe('meetings')
     expect(ROUTE_PATHS.meetings).toBe('/meetings')
-    expect(ROUTE_NAMES.meetingDetail).toBe('meeting-detail')
-    expect(ROUTE_PATHS.meetingDetail).toBe('/meetings/:meetingId')
+    // 会议详情页已删除：不再有 meeting-detail 路由（/meetings/:meetingId 仅作重定向）
+    expect('meetingDetail' in ROUTE_NAMES).toBe(false)
+    expect('meetingDetail' in ROUTE_PATHS).toBe(false)
   })
 
   it('exposes the new meeting stage routes', () => {

@@ -60,7 +60,8 @@
               <span class="file-list__name">{{ minutesName(item) }}</span>
               <span class="file-list__meta">
                 {{ minutesTemplateMeta[item.template]?.label ?? item.template }} · v{{ item.version }} ·
-                {{ item.status === 'confirmed' ? '已确认' : '草稿' }} · {{ formatDate(item.updated_at) }}
+                {{ minutesStatusMeta[item.status]?.label ?? item.status }} ·
+                {{ formatDate(item.updated_at) }}
               </span>
             </span>
             <button type="button" class="file-list__open" @click="previewMinutes(item)">预览</button>
@@ -80,7 +81,7 @@
           <li v-for="item in records" :key="item.record_id" class="file-list__row">
             <span class="file-list__icon" aria-hidden="true"><NavIcon name="list" :size="15" /></span>
             <span class="file-list__main">
-              <span class="file-list__name">{{ recordTypeLabel(item.record_type) }}记录</span>
+              <span class="file-list__name">{{ recordTypeLabel(item.record_type) }}</span>
               <span class="file-list__meta">{{ excerpt(item.content) }}</span>
             </span>
             <button type="button" class="file-list__open" @click="previewRecord(item)">预览</button>
@@ -116,7 +117,13 @@ import type { Material } from '@/types/material'
 import type { Minutes } from '@/types/minutes'
 import type { MeetingRecord, RecordType } from '@/types/record'
 import { formatDate } from '@/utils/datetime'
-import { audioStatusMeta, materialStatusMeta, minutesTemplateMeta } from '@/utils/statusLabels'
+import {
+  audioStatusMeta,
+  materialStatusMeta,
+  minutesStatusMeta,
+  minutesTemplateMeta,
+  recordTypeMeta,
+} from '@/utils/statusLabels'
 
 const props = defineProps<{ meetingId: string }>()
 
@@ -132,12 +139,6 @@ const recordsError = ref('')
 
 const preview = ref<{ title: string; content: string; markdown: boolean } | null>(null)
 
-const RECORD_TYPE_LABELS: Record<RecordType, string> = {
-  manual: '手动',
-  transcript: '转写',
-  imported: '导入',
-}
-
 function materialStatusOf(item: Material): string {
   return materialStatusMeta[item.processing_status]?.label ?? item.processing_status
 }
@@ -151,7 +152,7 @@ function minutesName(item: Minutes): string {
 }
 
 function recordTypeLabel(type: RecordType): string {
-  return RECORD_TYPE_LABELS[type] ?? type
+  return recordTypeMeta[type]?.label ?? type
 }
 
 function excerpt(text: string): string {
@@ -169,7 +170,7 @@ function previewMinutes(item: Minutes): void {
 
 function previewRecord(item: MeetingRecord): void {
   preview.value = {
-    title: `${recordTypeLabel(item.record_type)}记录 · ${formatDate(item.created_at)}`,
+    title: `${recordTypeLabel(item.record_type)} · ${formatDate(item.created_at)}`,
     content: item.content,
     markdown: false,
   }

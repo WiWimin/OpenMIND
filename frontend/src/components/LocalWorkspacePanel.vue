@@ -21,12 +21,20 @@
     <template v-else>
       <div class="local-workspace__actions">
         <AppButton variant="ghost" :loading="picking" @click="chooseDirectory">
-          选择本地文件夹
+          {{ wsStatus === 'connected' ? '更换文件夹' : '选择本地文件夹' }}
+        </AppButton>
+        <AppButton
+          v-if="wsStatus === 'needs-permission'"
+          variant="ghost"
+          :loading="picking"
+          @click="restorePermission"
+        >
+          恢复权限
         </AppButton>
         <AppButton
           v-if="!readonly"
           :loading="importing"
-          :disabled="!directory || files.length === 0"
+          :disabled="!connected || files.length === 0"
           @click="importFiles"
         >
           导入资料（{{ files.length }}）
@@ -34,15 +42,25 @@
         <AppButton
           v-if="showExport"
           :loading="exporting"
-          :disabled="!directory"
+          :disabled="!connected"
           @click="exportMinutes"
         >
           导出最新纪要
         </AppButton>
       </div>
 
-      <p v-if="directory" class="local-workspace__directory">
-        已选择：<strong>{{ directory.name }}</strong>
+      <div
+        v-if="wsStatus === 'needs-permission'"
+        class="local-workspace__reminder"
+        role="status"
+      >
+        <span class="local-workspace__reminder-text">
+          本地文件夹权限已过期或被撤销，点击「恢复权限」继续，无需重新选择目录
+        </span>
+      </div>
+
+      <p v-if="wsDirectory" class="local-workspace__directory">
+        已选择：<strong>{{ wsDirectory }}</strong>
       </p>
       <p v-if="readonly" class="local-workspace__hint">
         会议已归档，可导出纪要，但不能从本地导入资料。
@@ -72,44 +90,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import * as materialsApi from '@/api/materials'
 import * as minutesApi from '@/api/minutes'
 import AppButton from '@/components/AppButton.vue'
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { ALLOWED_MATERIAL_EXTENSIONS } from '@/constants/upload'
-import { fileExtension } from '@/utils/materialUpload'
+import {
+  isLocalWorkspaceSupported,
+  writeBlobToPath,
+  type LocalDirHandle,
+} from '@/utils/localFileSystem'
+import { isAllowedExtension } from '@/utils/materialUpload'
 
 interface LocalFileEntry {
   name: string
   file: File
   size: number
-}
-
-interface LocalDirectoryEntry {
-  kind: 'file' | 'directory'
-  name: string
-  getFile?: () => Promise<File>
-}
-
-interface LocalWritable {
-  write: (data: Blob) => Promise<void>
-  close: () => Promise<void>
-}
-
-interface LocalFileHandle {
-  getFile: () => Promise<File>
-  createWritable: () => Promise<LocalWritable>
-}
-
-interface LocalDirectoryHandle {
-  name: string
-  values: () => AsyncIterableIterator<LocalDirectoryEntry>
-  getFileHandle: (name: string, options?: { create?: boolean }) => Promise<LocalFileHandle>
-}
-
-interface DirectoryPickerWindow extends Window {
-  showDirectoryPicker?: () => Promise<LocalDirectoryHandle>
 }
 
 const props = withDefaults(
@@ -129,13 +127,14 @@ const props = withDefaults(
 
 const emit = defineEmits<{ imported: [] }>()
 
-const supported = computed(
-  () =>
-    typeof window !== 'undefined' &&
-    typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function',
-)
+/** 全局共享目录句柄（与会议管理页、镜像功能同一份授权） */
+const ws = useLocalWorkspace()
 
-const directory = shallowRef<LocalDirectoryHandle | null>(null)
+const supported = computed(() => isLocalWorkspaceSupported())
+const wsStatus = computed(() => ws.status.value)
+const wsDirectory = computed(() => ws.directoryName.value)
+const connected = computed(() => wsStatus.value === 'connected')
+
 const files = ref<LocalFileEntry[]>([])
 const existingNames = ref<Set<string>>(new Set())
 const picking = ref(false)
@@ -156,15 +155,6 @@ function messageOf(caught: unknown): string {
   return '操作失败，请重试'
 }
 
-function isAbort(caught: unknown): boolean {
-  return (
-    typeof caught === 'object' &&
-    caught !== null &&
-    'name' in caught &&
-    (caught as { name: unknown }).name === 'AbortError'
-  )
-}
-
 function formatSize(size: number): string {
   if (size < 1024) {
     return `${size} B`
@@ -175,7 +165,7 @@ function formatSize(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-async function readFiles(handle: LocalDirectoryHandle): Promise<LocalFileEntry[]> {
+async function readFiles(handle: LocalDirHandle): Promise<LocalFileEntry[]> {
   const result: LocalFileEntry[] = []
   for await (const entry of handle.values()) {
     if (result.length >= 50) {
@@ -184,7 +174,7 @@ async function readFiles(handle: LocalDirectoryHandle): Promise<LocalFileEntry[]
     if (entry.kind !== 'file' || !entry.getFile) {
       continue
     }
-    if (!(ALLOWED_MATERIAL_EXTENSIONS as readonly string[]).includes(fileExtension(entry.name))) {
+    if (!isAllowedExtension(entry.name, ALLOWED_MATERIAL_EXTENSIONS)) {
       continue
     }
     const file = await entry.getFile()
@@ -203,28 +193,74 @@ async function loadExistingMaterials(): Promise<void> {
   }
 }
 
-async function chooseDirectory(): Promise<void> {
-  const picker = (window as DirectoryPickerWindow).showDirectoryPicker
-  if (!picker) {
-    error.value = '当前浏览器不支持本地文件夹访问'
+/** 从共享句柄刷新文件列表（连接/恢复权限/挂载后调用） */
+async function refreshFromRoot(): Promise<void> {
+  const root = ws.rootHandle.value
+  if (!root) {
+    files.value = []
     return
   }
+  files.value = await readFiles(root)
+  await loadExistingMaterials()
+}
+
+onMounted(async () => {
+  await ws.init()
+  if (ws.rootHandle.value) {
+    try {
+      await refreshFromRoot()
+      status.value =
+        files.value.length > 0
+          ? `已读取 ${files.value.length} 个支持的资料文件`
+          : '文件夹中没有 PDF / DOCX / TXT 资料'
+    } catch (caught) {
+      /* 权限过期时等待恢复，不作为错误上报 */
+      if (wsStatus.value === 'connected') {
+        error.value = messageOf(caught)
+      }
+    }
+  }
+})
+
+async function chooseDirectory(): Promise<void> {
   picking.value = true
   error.value = ''
   status.value = ''
   try {
-    const handle = await picker()
-    directory.value = handle
-    files.value = await readFiles(handle)
-    await loadExistingMaterials()
+    const granted = await ws.connect()
+    if (!granted) {
+      if (wsStatus.value === 'needs-permission') {
+        status.value = '本地文件夹权限未授予，点击「恢复权限」重试'
+      }
+      return
+    }
+    await refreshFromRoot()
     status.value =
       files.value.length > 0
         ? `已读取 ${files.value.length} 个支持的资料文件`
         : '文件夹中没有 PDF / DOCX / TXT 资料'
   } catch (caught) {
-    if (!isAbort(caught)) {
-      error.value = messageOf(caught)
+    error.value = messageOf(caught)
+  } finally {
+    picking.value = false
+  }
+}
+
+/** 权限过期后的一键恢复（手势内原生弹窗，无需重新选目录） */
+async function restorePermission(): Promise<void> {
+  picking.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    const granted = await ws.restore()
+    if (!granted) {
+      error.value = '未能恢复权限，请点击「选择本地文件夹」重新授权'
+      return
     }
+    await refreshFromRoot()
+    status.value = '本地文件夹权限已恢复'
+  } catch (caught) {
+    error.value = messageOf(caught)
   } finally {
     picking.value = false
   }
@@ -258,7 +294,7 @@ function markImported(names: string[]): void {
 }
 
 async function importFiles(): Promise<void> {
-  if (!directory.value || files.value.length === 0 || props.readonly) {
+  if (!connected.value || files.value.length === 0 || props.readonly) {
     return
   }
   importing.value = true
@@ -281,7 +317,7 @@ async function importFiles(): Promise<void> {
 
 /** 只导入检测到的新文件，需用户点击确认后才上传 */
 async function importNewFiles(): Promise<void> {
-  if (!directory.value || newFiles.value.length === 0 || props.readonly) {
+  if (!connected.value || newFiles.value.length === 0 || props.readonly) {
     return
   }
   importing.value = true
@@ -309,7 +345,8 @@ function safeFileName(title: string): string {
 }
 
 async function exportMinutes(): Promise<void> {
-  if (!directory.value) {
+  const root = ws.rootHandle.value
+  if (!root || !connected.value) {
     return
   }
   exporting.value = true
@@ -330,13 +367,12 @@ async function exportMinutes(): Promise<void> {
       `${props.meetingTitle || '会议'} · 会议纪要`,
       latest.content,
     )
-    const fileHandle = await directory.value.getFileHandle(
-      safeFileName(props.meetingTitle),
-      { create: true },
+    // 写入会议根（新建会议时选择的存储位置，默认 <会议名>/）
+    const segments = await ws.meetingRootSegments(
+      props.meetingId,
+      props.meetingTitle || '会议',
     )
-    const writable = await fileHandle.createWritable()
-    await writable.write(blob)
-    await writable.close()
+    await writeBlobToPath(root, segments, safeFileName(props.meetingTitle), blob)
     status.value = '最新纪要已导出到本地文件夹'
   } catch (caught) {
     error.value = messageOf(caught)

@@ -4,6 +4,12 @@ export type ChatContextScope = 'current_meeting' | 'current_and_history' | 'know
 /** 对话模式：plan（先规划讨论）/ build（直接生成执行），当前为会话级 UI 状态 */
 export type ChatMode = 'plan' | 'build'
 
+/** Build 模式产出的可交付文件（Markdown 正文；前端转 DOCX 下载/上传/镜像） */
+export interface ChatFile {
+  filename: string
+  content: string
+}
+
 export interface ChatSource {
   meeting_id: string | null
   material_id: string | null
@@ -11,6 +17,12 @@ export interface ChatSource {
   document_id?: string | null
   document_name?: string | null
   excerpt: string
+  /** 来源类别：material（材料/知识库）| record（会议记录）| web（联网检索） */
+  origin?: 'material' | 'record' | 'web'
+  /** 联网来源的原始链接 */
+  url?: string | null
+  /** 联网来源的页面标题 */
+  title?: string | null
 }
 
 export interface ChatPayload {
@@ -19,12 +31,16 @@ export interface ChatPayload {
   include_sources?: boolean
   /** 可选：覆盖本次对话使用的模型名，须在模型配置中已登记 */
   model?: string
+  /** 对话模式：plan=先讨论；build=产出可交付文件（缺省 plan） */
+  mode?: ChatMode
 }
 
 export interface ChatResult {
   answer: string
   sources: ChatSource[]
   insufficient_evidence: boolean
+  /** Build 模式产出（plan 或无证据时为 null） */
+  file?: ChatFile | null
 }
 
 export interface OrganizePayload {

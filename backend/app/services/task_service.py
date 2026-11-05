@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.task import PersonalTask
 from app.repositories import task_repository
 from app.schemas.task import TaskStatus, TaskUpdate
+from app.utils.pagination import paginate_by
 
 _TODO = "todo"
 _IN_PROGRESS = "in_progress"
@@ -20,25 +21,24 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "任务不存在或不可访问", http_status=404)
-
-
 def list_tasks(
     db: Session, *, user_id: str, status: str | None, page: int, page_size: int
 ) -> tuple[list[PersonalTask], int]:
-    offset = (page - 1) * page_size
-    items = task_repository.list_by_user(
-        db, user_id, status=status, limit=page_size, offset=offset
+    return paginate_by(
+        task_repository.list_by_user,
+        task_repository.count_by_user,
+        db,
+        user_id,
+        page=page,
+        page_size=page_size,
+        status=status,
     )
-    total = task_repository.count_by_user(db, user_id, status=status)
-    return items, total
 
 
 def get_owned_task(db: Session, task_id: str, user_id: str) -> PersonalTask:
     task = task_repository.get_owned(db, task_id, user_id)
     if task is None:
-        raise _not_found()
+        raise resource_not_found("任务")
     return task
 
 

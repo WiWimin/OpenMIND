@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData
 from app.schemas.issue import (
     IssueExtractRequest,
@@ -13,13 +12,8 @@ from app.schemas.issue import (
     IssueUpdate,
 )
 from app.services import issue_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(tags=["issues"])
-
-
-def _to_read(issue: object) -> IssueRead:
-    return IssueRead.from_model(issue)
 
 
 @router.post(
@@ -38,7 +32,9 @@ def extract_issues(
         user_id=current_user.user_id,
         record_ids=payload.record_ids,
     )
-    return Envelope(data=IssueExtractResult(items=[_to_read(issue) for issue in issues]))
+    return Envelope(
+        data=IssueExtractResult(items=[IssueRead.model_validate(issue) for issue in issues])
+    )
 
 
 @router.get(
@@ -48,21 +44,18 @@ def list_issues(
     meeting_id: str,
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
 ) -> Envelope[ListData[IssueRead]]:
     items, total = issue_service.list_issues(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
-        page=page,
-        page_size=page_size,
+        page=params.page,
+        page_size=params.page_size,
     )
-    data = ListData[IssueRead](
-        items=[_to_read(issue) for issue in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items, IssueRead, page=params.page, page_size=params.page_size, total=total
     )
-    return Envelope(data=data)
 
 
 @router.patch("/issues/{issue_id}", response_model=Envelope[IssueRead])
@@ -73,4 +66,4 @@ def update_issue(
     current_user: CurrentUser,
 ) -> Envelope[IssueRead]:
     issue = issue_service.update_issue(db, issue_id, current_user.user_id, payload)
-    return Envelope(data=_to_read(issue))
+    return Envelope(data=IssueRead.model_validate(issue))

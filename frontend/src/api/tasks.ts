@@ -16,11 +16,6 @@ export async function listTasks(params: TaskListParams = {}): Promise<ListData<P
   return unwrapData(data)
 }
 
-export async function getTask(taskId: string): Promise<PersonalTask> {
-  const { data } = await http.get<ApiSuccess<PersonalTask> | PersonalTask>(`/tasks/${taskId}`)
-  return unwrapData(data)
-}
-
 export async function updateTask(
   taskId: string,
   payload: UpdateTaskPayload,

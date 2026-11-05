@@ -47,6 +47,21 @@ export function formatDate(
   return formatDateTime(value, { placeholder }).split(' ')[0] ?? placeholder
 }
 
+export function formatTime(
+  value: string | number | null | undefined,
+  options: FormatOptions = {},
+): string {
+  const { placeholder = EMPTY_PLACEHOLDER } = options
+  if (value === null || value === undefined || value === '') {
+    return placeholder
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return placeholder
+  }
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 export function toDatetimeLocal(value: string | null | undefined): string {
   const date = toDate(value)
   if (!date) {

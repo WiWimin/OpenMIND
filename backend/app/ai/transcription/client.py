@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import time
+import subprocess
 from pathlib import Path
 
 import httpx
 
+from app.ai.http_client import ModelHTTPClient
 from app.core.config import get_settings
 from app.core.exceptions import AppError
-
-_BACKOFF_SECONDS = (1, 3)
-_MAX_ATTEMPTS = 3
 
 _MIME_TYPES = {
     "mp3": "audio/mpeg",
@@ -18,18 +16,54 @@ _MIME_TYPES = {
     "webm": "audio/webm",
 }
 
-_QUOTA_HINTS = ("quota", "balance", "insufficient", "billing", "免费额度", "额度", "余额")
+# Chromium/Firefox MediaRecorder 产出的容器格式（Opus 编码），FunASR 无法解码
+# （返回空文本），送 ASR 前必须用 ffmpeg 转为 16k 单声道 wav。
+_TRANSCODE_EXTENSIONS = {"webm", "ogg", "oga", "opus"}
 
 
-def _is_quota_error(response: httpx.Response) -> bool:
+def transcode_to_wav(content: bytes, file_name: str) -> tuple[bytes, str, str]:
+    """把 webm/ogg 音频经 ffmpeg 转为 16kHz 单声道 wav。
+
+    返回 (wav_bytes, 新文件名, mime)；ffmpeg 缺失/失败时抛 FILE_PARSE_FAILED。
+    """
     try:
-        text = response.text.lower()
-    except Exception:
-        return False
-    return any(hint in text for hint in _QUOTA_HINTS)
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", "pipe:0",
+                "-f", "wav", "-ar", "16000", "-ac", "1", "pipe:1",
+            ],
+            input=content,
+            capture_output=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        raise AppError(
+            "FILE_PARSE_FAILED",
+            "服务器未安装 ffmpeg，无法转码 webm/ogg 音频",
+            http_status=500,
+            retryable=False,
+        ) from None
+    except subprocess.TimeoutExpired:
+        raise AppError(
+            "FILE_PARSE_FAILED",
+            "音频转码超时",
+            http_status=500,
+            retryable=False,
+        ) from None
+    if proc.returncode != 0 or not proc.stdout:
+        detail = proc.stderr.decode(errors="replace").strip()[:200]
+        raise AppError(
+            "FILE_PARSE_FAILED",
+            f"音频转码失败：{detail or 'ffmpeg 无输出'}",
+            http_status=500,
+            retryable=False,
+        )
+    return proc.stdout, f"{Path(file_name).stem}.wav", "audio/wav"
 
 
-class TranscriptionClient:
+class TranscriptionClient(ModelHTTPClient):
+    service_label = "音频转写"
+
     def __init__(
         self,
         *,
@@ -39,44 +73,31 @@ class TranscriptionClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         settings = get_settings()
-        self.api_base = (settings.asr_api_base if api_base is None else api_base).rstrip("/")
-        self.api_key = settings.asr_api_key if api_key is None else api_key
+        super().__init__(
+            api_base=settings.asr_api_base if api_base is None else api_base,
+            api_key=settings.asr_api_key if api_key is None else api_key,
+            transport=transport,
+        )
         self.model = settings.asr_model if model is None else model
-        self._client = httpx.Client(base_url=self.api_base, transport=transport)
 
     def transcribe(self, content: bytes, file_name: str) -> str:
         self._ensure_configured()
         extension = Path(file_name).suffix.lower().lstrip(".")
-        mime_type = _MIME_TYPES.get(extension, "application/octet-stream")
-        last_error: AppError | None = None
-        for attempt in range(_MAX_ATTEMPTS):
-            if attempt:
-                time.sleep(_BACKOFF_SECONDS[attempt - 1])
-            try:
-                response = self._client.post(
-                    "/audio/transcriptions",
-                    data={"model": self.model},
-                    files={"file": (file_name, content, mime_type)},
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=120,
-                )
-            except httpx.TimeoutException:
-                last_error = AppError(
-                    "MODEL_TIMEOUT", "音频转写超时", http_status=504, retryable=True
-                )
-            except httpx.HTTPError:
-                last_error = AppError(
-                    "INTERNAL_ERROR", "音频转写网络异常", http_status=500, retryable=True
-                )
-            else:
-                if response.status_code == httpx.codes.OK:
-                    return self._parse_text(response)
-                last_error = self._http_error(response)
-            if not last_error.retryable:
-                raise last_error
-        raise last_error or AppError(
-            "INTERNAL_ERROR", "音频转写失败", http_status=500, retryable=True
+        if extension in _TRANSCODE_EXTENSIONS:
+            content, file_name, mime_type = transcode_to_wav(content, file_name)
+        else:
+            mime_type = _MIME_TYPES.get(extension, "application/octet-stream")
+        response = self._request_with_retry(
+            lambda: self._client.post(
+                "/audio/transcriptions",
+                data={"model": self.model},
+                files={"file": (file_name, content, mime_type)},
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=120,
+            ),
+            model=self.model,
         )
+        return self._parse_text(response)
 
     def _ensure_configured(self) -> None:
         if not self.api_base or not self.api_key or not self.model:
@@ -103,33 +124,3 @@ class TranscriptionClient:
                 http_status=502,
             )
         return text.strip()
-
-    def _http_error(self, response: httpx.Response) -> AppError:
-        if response.status_code == httpx.codes.PAYMENT_REQUIRED or _is_quota_error(response):
-            return AppError(
-                "MODEL_QUOTA_EXCEEDED",
-                "音频转写额度不足",
-                http_status=402,
-                retryable=False,
-            )
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            return AppError(
-                "RATE_LIMITED", "音频转写服务限流", http_status=429, retryable=True
-            )
-        if response.status_code in {httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN}:
-            return AppError(
-                "MODEL_CONFIG_INVALID",
-                "音频转写密钥无效",
-                http_status=400,
-                retryable=False,
-            )
-        if 400 <= response.status_code < 500:
-            return AppError(
-                "MODEL_CONFIG_INVALID",
-                "音频转写请求无效",
-                http_status=400,
-                retryable=False,
-            )
-        return AppError(
-            "INTERNAL_ERROR", "音频转写服务异常", http_status=500, retryable=True
-        )

@@ -32,6 +32,10 @@
 | personal_tasks | `tsk_` | `task_id` |
 | open_issues | `iss_` | `issue_id` |
 | document_chunks | `chk_` | `chunk_id` |
+| knowledge_documents | `kdoc_` | `document_id` |
+| knowledge_chunks | `kchk_` | `chunk_id` |
+| meeting_audio | `aud_` | `audio_id` |
+| meeting_templates | `tpl_` | `template_id` |
 
 - 形如 `mtg_` + 32 位十六进制（如 `mtg_8f3a1c...`）。
 - 外键字段必须与被引用主键类型一致（均 `VARCHAR(40)`）。
@@ -134,7 +138,7 @@
 | `content` | TEXT | NN | 纪要正文 |
 | `status` | VARCHAR(20) | NN, default `draft` | 见 §五 |
 | `version` | INTEGER | NN, default 1 | |
-| `template` | VARCHAR(20) | NN, default `standard` | `standard` / `concise` / `task_list` |
+| `template` | VARCHAR(20) | NN, default `standard` | `standard` / `concise` / `task_list` / `custom`（套用会议模板清单时的标记） |
 | `source_record_ids` | JSONB | NN, default `[]` | 生成依据的记录 ID 快照 |
 | `source_material_ids` | JSONB | NN, default `[]` | 生成依据的材料 ID 快照 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
@@ -261,7 +265,7 @@
 | `role` | VARCHAR(100) | ? | 职业/角色 |
 | `work_scenarios` | TEXT | ? | 工作场景 |
 | `communication_style` | TEXT | ? | 表达偏好 |
-| `preferred_minutes_template` | VARCHAR(20) | ? | `standard` / `concise` / `task_list` |
+| `preferred_minutes_template` | VARCHAR(64) | ? | 内置枚举值（`standard` / `concise` / `task_list`）或自定义模板 ID |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -303,13 +307,14 @@
 | `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户（仅本人可见） |
 | `name` | VARCHAR(100) | NN | 模板名称 |
 | `description` | VARCHAR(255) | ? | 模板描述 |
-| `file_name` | VARCHAR(255) | NN | 原始文件名 |
-| `storage_key` | TEXT | NN | 本地存储相对路径（`templates/` 目录） |
+| `category` | VARCHAR(20) | ? | 模板分类（`会前` / `会后` / `通用`；服务层缺省填 `通用`） |
+| `file_name` | VARCHAR(255) | ? | 原始文件名（按文本创建时为空） |
+| `storage_key` | TEXT | ? | 本地存储相对路径（`templates/` 目录；按文本创建时为空） |
 | `content_text` | TEXT | NN | 解析出的模板结构文本（注入生成提示词，≤20000 字符） |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
-- 支持格式：DOCX / TXT / MD；大小沿用全局上传限制。
+- 支持格式：DOCX / TXT / MD；大小沿用全局上传限制；也可不传文件、直接按文本创建（此时 `file_name` / `storage_key` 为空）。
 - 仅本人可读/可删；删除时同步删除文件。
 - 生成联动：`prepare` 与 `minutes/generate` 的 `template_id` 引用本表或内置模板 ID。
 

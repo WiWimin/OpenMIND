@@ -6,8 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.ai.parsers import parse_bytes
+from app.ai.prompts import build_template_draft
+from app.ai.structured import run_structured
 from app.core.config import get_settings
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.meeting_template import MeetingTemplate
 from app.repositories import meeting_template_repository
 from app.services.model_config_service import (
@@ -17,6 +19,7 @@ from app.services.model_config_service import (
 )
 from app.utils import storage
 from app.utils.ids import new_id
+from app.utils.storage import ensure_upload_size
 
 _ALLOWED_EXTENSIONS = ("docx", "txt", "md")
 _MAX_CONTENT_CHARS = 20000
@@ -125,7 +128,7 @@ def _builtin_read(item: dict[str, str]) -> dict[str, object]:
     }
 
 
-def _custom_read(row: MeetingTemplate) -> dict[str, object]:
+def custom_read(row: MeetingTemplate) -> dict[str, object]:
     return {
         "template_id": row.template_id,
         "name": row.name,
@@ -143,14 +146,10 @@ def preview_text(text: str) -> str:
     return _preview(text or "")
 
 
-def _not_found() -> AppError:
-    return AppError("RESOURCE_NOT_FOUND", "模板不存在或不可访问", http_status=404)
-
-
 def list_templates(db: Session, user_id: str) -> list[dict[str, object]]:
     items: list[dict[str, object]] = [_builtin_read(item) for item in BUILTIN_TEMPLATES]
     for row in meeting_template_repository.list_by_user(db, user_id):
-        items.append(_custom_read(row))
+        items.append(custom_read(row))
     return items
 
 
@@ -161,7 +160,7 @@ def resolve_template_content(db: Session, user_id: str, template_id: str) -> str
         return builtin["content_text"]
     row = meeting_template_repository.get_owned(db, template_id, user_id)
     if row is None:
-        raise _not_found()
+        raise resource_not_found("模板")
     return row.content_text
 
 
@@ -185,13 +184,7 @@ def upload_template(
         )
 
     settings = get_settings()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            "FILE_TOO_LARGE",
-            f"文件超过大小限制（{settings.max_upload_mb}MB）",
-            http_status=413,
-        )
+    ensure_upload_size(content, max_mb=settings.max_upload_mb)
 
     content_text = _extract_text(content, extension)
     cleaned_name = (name or Path(file_name).stem).strip()
@@ -207,9 +200,11 @@ def upload_template(
 
     template_id = new_id("tpl")
     storage_key = f"templates/{template_id}.{extension}"
-    storage.save_bytes(settings.storage_dir, relative_key=storage_key, data=content)
-    try:
-        return meeting_template_repository.create(
+    return storage.save_then_create(
+        settings.storage_dir,
+        storage_key,
+        content,
+        lambda: meeting_template_repository.create(
             db,
             template_id=template_id,
             user_id=user_id,
@@ -219,10 +214,8 @@ def upload_template(
             file_name=file_name,
             storage_key=storage_key,
             content_text=content_text,
-        )
-    except Exception:
-        storage.delete_object(settings.storage_dir, storage_key)
-        raise
+        ),
+    )
 
 
 def create_template_text(
@@ -275,6 +268,13 @@ class _GeneratedTemplate(BaseModel):
     content_text: str
 
 
+def _validate_template_draft(value: _GeneratedTemplate) -> list[str]:
+    """业务字段校验：正文非空（名称为空时由「未命名模板」兜底，不在校验层拦截）。"""
+    if not value.content_text.strip():
+        return ["content_text 不能为空"]
+    return []
+
+
 def generate_template_draft(db: Session, user_id: str, description: str) -> dict[str, str]:
     """按需求描述让 LLM 生成模板草稿，返回候选结果，不入库（用户确认后另行保存）。"""
     text = (description or "").strip()
@@ -285,20 +285,17 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
 
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.minutes)
     client = build_llm_client(config)
-    prompt = (
-        "你是会议模板设计助手。请根据用户需求设计一个会议文档模板。要求：\n"
-        "1. name：简短的模板名称（不超过 20 字）；\n"
-        "2. description：一句话说明模板适用场景；\n"
-        "3. category：从「会前」「会后」「通用」中选择一个；\n"
-        "4. content_text：模板正文，用编号列表给出文档应包含的结构要点，"
-        "每条说明该部分要写什么、有什么要求，语言与用户需求一致。\n"
-        f"用户需求：{text}"
-    )
+    prompt = build_template_draft(text)
+    messages = [{"role": "user", "content": prompt}]
     try:
-        draft = client.chat_json(
-            [{"role": "user", "content": prompt}],
-            schema=_GeneratedTemplate,
-            temperature=0.4,
+        draft = run_structured(
+            lambda msgs: client.chat_json(
+                msgs, schema=_GeneratedTemplate, temperature=0.4
+            ),
+            messages,
+            _GeneratedTemplate,
+            scene="template_draft",
+            validator=_validate_template_draft,
         )
     except AppError as exc:
         raise AppError(
@@ -306,6 +303,7 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
             f"AI 生成模板失败：{exc.message}",
             http_status=exc.http_status,
             retryable=exc.retryable,
+            details=exc.details,
         ) from None
 
     name = draft.name.strip()[:_MAX_NAME_CHARS] or "未命名模板"
@@ -333,7 +331,7 @@ def _clean_category(category: str | None) -> str | None:
 def get_owned_template(db: Session, template_id: str, user_id: str) -> MeetingTemplate:
     template = meeting_template_repository.get_owned(db, template_id, user_id)
     if template is None:
-        raise _not_found()
+        raise resource_not_found("模板")
     return template
 
 

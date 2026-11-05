@@ -205,7 +205,6 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
     toast.success('资料已上传')
     void mirrorMeetingFile({
       meetingId: props.meetingId,
-      kind: 'materials',
       fileName: payload.file.name,
       content: payload.file,
     })

@@ -33,13 +33,6 @@ export async function listPreparations(
   return unwrapData(data)
 }
 
-export async function getPreparation(preparationId: string): Promise<Preparation> {
-  const { data } = await http.get<ApiSuccess<Preparation> | Preparation>(
-    `/preparations/${preparationId}`,
-  )
-  return unwrapData(data)
-}
-
 export async function updatePreparation(
   preparationId: string,
   payload: UpdatePreparationPayload,

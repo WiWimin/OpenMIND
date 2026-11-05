@@ -60,11 +60,13 @@ const workspaceChildren: RouteRecordRaw[] = [
     component: () => import('@/views/meetings/TemplateManageView.vue'),
     meta: { label: '会议模板管理', module: 'meetings' },
   },
+  // 旧会议详情页已删除：/meetings/:meetingId 统一转到会议管理的该会议文件列表
   {
-    path: ROUTE_PATHS.meetingDetail.slice(1),
-    name: ROUTE_NAMES.meetingDetail,
-    component: () => import('@/views/meetings/MeetingDetailView.vue'),
-    meta: { label: '会议详情', module: 'meetings' },
+    path: 'meetings/:meetingId',
+    redirect: (to) => ({
+      name: ROUTE_NAMES.meetings,
+      query: { meeting: String(to.params.meetingId ?? '') },
+    }),
   },
   {
     path: ROUTE_PATHS.tasks.slice(1),
