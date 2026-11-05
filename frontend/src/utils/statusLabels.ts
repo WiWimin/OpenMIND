@@ -1,6 +1,5 @@
 import type { ActionItemStatus } from '@/types/actionItem'
 import type { AudioStatus } from '@/types/audio'
-import type { IssueStatus } from '@/types/issue'
 import type { KnowledgeStatus } from '@/types/knowledge'
 import type { MaterialProcessingStatus } from '@/types/material'
 import type { MeetingStatus } from '@/types/meeting'
@@ -84,12 +83,6 @@ export const taskStatusMeta: Record<TaskStatus, StatusMeta> = {
   todo: { label: '待办', tone: 'neutral' },
   in_progress: { label: '进行中', tone: 'info' },
   completed: { label: '已完成', tone: 'success' },
-  cancelled: { label: '已取消', tone: 'neutral' },
-}
-
-export const issueStatusMeta: Record<IssueStatus, StatusMeta> = {
-  open: { label: '待处理', tone: 'warning' },
-  resolved: { label: '已解决', tone: 'success' },
   cancelled: { label: '已取消', tone: 'neutral' },
 }
 

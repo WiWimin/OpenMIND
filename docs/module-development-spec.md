@@ -130,12 +130,12 @@
 | M01 认证 | `api/v1/auth.py` `[已实现]`、`services/auth_service.py` `[已实现]` | `views/auth/` `[已实现]`、`api/auth.ts` `[已实现]`、`stores/auth.ts` `[已实现]` |
 | M02 会议 | `api/v1/meetings.py` `[已实现]`、`services/meeting_service.py` `[已实现]` | `DashboardView.vue`、`views/meetings/` `[已实现]`、`api/meetings.ts` `[已实现]` |
 | M03 资料 | `api/v1/materials.py` `[已实现]`、`services/material_service.py` `[已实现]`、`ai/parsers/` `[已实现]` | `components/MaterialSection.vue`、`api/materials.ts` `[已实现]` |
-| M04 AI/RAG | `ai/llm/`、`ai/embeddings/`、`ai/rag/`、`ai/chat/`、`ai/prompts/` `[已实现]`；BYOK 设置与生效来源 | `views/settings/ModelSettingsView.vue`、`api/settings.ts` `[已实现]` |
-| M05 会前准备 | `api/v1/preparations.py` `[已实现]`、`ai/preparation/` `[已实现]` | `components/PreparationSection.vue`、`api/preparations.ts` `[已实现]` |
-| M06 记录+问答 | `api/v1/records.py`、`api/v1/ai_chat.py`、`ai/chat/` `[已实现]` | `components/{RecordSection,ChatPanel,AiAssistantDrawer}.vue`、`api/records.ts` `[已实现]` |
+| M04 AI/RAG | `ai/llm/`、`ai/embeddings/`、`ai/rag/`、`ai/chat/`、`ai/prompts/` `[已实现]`；BYOK 设置与生效来源 | `components/settings/ModelConfigDialog.vue`、`api/settings.ts` `[已实现]` |
+| M05 会前准备 | `api/v1/preparations.py` `[已实现]`、`ai/preparation/` `[已实现]` | `views/newMeeting/PreprocessView.vue`、`api/preparations.ts` `[已实现]` |
+| M06 记录+问答 | `api/v1/records.py`、`api/v1/ai_chat.py`、`ai/chat/` `[已实现]` | `views/newMeeting/AsrView.vue`、`components/AgentChat.vue`、`api/records.ts` `[已实现]` |
 | M07 纪要+行动项 | `api/v1/minutes.py`、`api/v1/action_items.py`、`ai/minutes/`、`ai/extraction/` `[已实现]` | `components/{MinutesSection,ActionItemSection}.vue`、`api/minutes.ts` `[已实现]` |
 | M08 任务 | `api/v1/tasks.py` `[已实现]`、`services/task_service.py` `[已实现]` | `views/TasksView.vue`、`components/TaskSection.vue`、`api/tasks.ts` `[已实现]` |
-| M09 问题 | `api/v1/issues.py` `[已实现]`、`services/issue_service.py` `[已实现]`、`ai/extraction/` `[已实现]` | `components/IssuesSection.vue`、`api/issues.ts` `[已实现]` |
+| M09 问题 | `api/v1/issues.py` `[已实现]`、`services/issue_service.py` `[已实现]`、`ai/extraction/` `[已实现]` | 前端 UI 已按产品决策移除（`api/issues.ts` 已删除）；后端 API 保留（`api.md 5.16`） |
 
 - `[已实现]`：`api/v1/*`、`core/*`、`db/*`、`alembic/`、`models/`、`schemas/`、`repositories/`、`services/`、`ai/*`；前端 `api/client.ts`、`router/index.ts`、`stores/`、`components/`、`views/`、`types/`。
 - 前端 axios 实例与错误规范化见 `frontend/src/api/client.ts`（`[已实现]`）。
@@ -401,7 +401,7 @@ M01 认证 ──提供 current_user──▶ M02 会议管理
 - 越权：用户 A 请求用户 B 的会议详情/编辑/删除均返回 `404 RESOURCE_NOT_FOUND`（`api.md 一.6`）。
 - 空态/错误态：空列表、非法参数、后端错误均有友好前端提示。
 
-##### 6.3 会议列表页（`MeetingListView.vue`）
+##### 6.3 会议列表页（`MeetingManageView.vue`）
 
 - **组件**：`MeetingList`、`MeetingCard`、`Pagination`、`CreateMeetingButton`（筛选组件：MVP 支持 `status`，`design-baseline.md` D-17）。
 - **交互**：进入即加载；翻页重新请求；点击进入该会议的文件列表（`?meeting=<id>` 深链）；「新建」打开创建会议弹窗。

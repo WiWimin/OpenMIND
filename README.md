@@ -252,13 +252,13 @@ main（阶段验收通过后）
 **前端基础工程**
 - Vue 3 + TypeScript + Vite 骨架，Pinia 与 Vue Router 已接入。
 - 登录态路由守卫、统一 axios 错误归一化（`ApiError`）与页面外壳（`WorkspaceLayout`）。
-- Vitest 测试 466 个用例（89 个文件），Playwright 浏览器 E2E 覆盖核心闭环（需模型配置的用例在无凭据时跳过），`typecheck`、`lint`、`build` 均通过。
+- Vitest 测试 381 个用例（78 个文件），Playwright 浏览器 E2E 覆盖核心闭环（需模型配置的用例在无凭据时跳过），`typecheck`、`lint`、`build` 均通过。
 
 **后端基础工程**
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
 - 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 373 个用例、`ruff check` 均通过。
+- pytest 421 个用例、`ruff check` 均通过。
 
 **数据与基础设施**
 - PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline` 至 `0022_audio_segments`（共 22 个）已在容器内执行并通过校验。
