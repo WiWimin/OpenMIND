@@ -54,7 +54,7 @@
 | `FILE_TOO_LARGE` | 413 | 文件超过大小限制 | 否 |
 | `FILE_PARSE_FAILED` | 422 | 文件无法解析（原因见 `details.reason`，见下） | 通常否 |
 | `MODEL_TIMEOUT` | 504 | 模型调用超时 | 是 |
-| `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析 | 视情况 |
+| `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析或未通过校验（经 1 次修复重试后仍失败时 `retryable=true`） | 视情况 |
 | `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/额度不足等） | 否 |
 | `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
 | `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
@@ -110,7 +110,7 @@
 
 - 库内统一 `TIMESTAMPTZ`，以 **UTC** 存储；接口返回带时区 ISO 8601（如 `2026-10-01T09:30:00+08:00`）；仅日期字段用 `YYYY-MM-DD`。
 
-### 1.8 健康检查（豁免信封）
+### 1.8 健康检查与运维探针（豁免信封）
 
 以下探针端点不套用 `{ "status": "success", "data": ... }` 信封，直接返回探针结果：
 
@@ -118,6 +118,27 @@
 | --- | --- | --- |
 | GET | `/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | `{ "status": "ok", "database": "up" }`（数据库不可用返回 503 统一错误体） |
+| GET | `/api/v1/metrics` | RAG 可观测性指标快照（见下） |
+
+`GET /api/v1/metrics`（运维端点，**无鉴权，建议仅内网暴露**；进程内累计，重启清零）：
+
+```json
+{
+  "generated_at": 1767000000.0,
+  "counters": { "rag_judge_total/true": 9, "rag_judge_total/false": 2, "rag_judge_total/fallback": 1 },
+  "rag_judge": { "triggered": 12, "true": 9, "false": 2, "fallback": 1,
+                  "ratios": { "true": 0.75, "false": 0.1667, "fallback": 0.0833 } },
+  "windows": {
+    "retrieval_total_ms": { "samples": 30, "p50": 120.5, "p95": 890.1, "max": 1200.0,
+                             "mean": 150.2, "median": 120.5, "insufficient": false }
+  },
+  "alerts": { "last_fired_monotonic": {} }
+}
+```
+
+- `rag_judge.triggered` = Judge 实际调用 LLM 的次数（true+false+fallback）；高分带直通与 Judge 禁用不计入；
+- `windows.*` 来自滑动窗口（约最近 1000 次），样本 < 20 时 `p50/p95` 为 `null` 且 `insufficient=true`；
+- 不含任何查询原文、提示词或用户内容（与日志红线一致）。
 
 ## 二、用户认证（M01，A）
 
@@ -595,7 +616,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 可选字段：
 - `model`（string）：覆盖本次生成使用的模型名，来自模型配置弹窗中服务商预设的常用模型清单；模型名是否有效由服务商 API 判定（无效时返回调用错误）；
-- `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a 会议模板），模板结构文本将注入生成提示词；不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
+- `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a 会议模板），模板结构文本作为独立段注入生成提示词的 user 消息（不进 system，见 `ai-design.md 七`）；不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
 
 响应 `200`：准备稿对象（`status = draft`）。同步完成；超时返回统一错误。`include_history=true` 时在用户授权范围内加入有限历史材料；`false` 时只使用当前会议材料。
 每次生成**新增一条**准备稿记录；对某条记录的编辑原地更新并 `version` 递增（`ai-design.md 八.1`）。
@@ -683,7 +704,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 }
 ```
 
-- `summary` / `polish` 任务：服务端容错解析 LLM 的 JSON 输出并写入 `structured`（`summary` 为四段结构对象，`polish` 为修改建议数组）；解析失败时 `structured = null`，`organized_content` 返回原始文本供前端降级展示，解析成功时 `organized_content` 为空字符串。
+- `summary` / `polish` 任务：服务端经结构化管线（解析预处理 → schema + 业务字段校验 → 1 次修复重试，`ai-design.md 3.3`）写入 `structured`（`summary` 为四段结构对象，`polish` 为修改建议数组）；修复重试后仍失败时 `structured = null`，`organized_content` 返回首次尝试的原始文本供前端降级展示（接口保持 200），校验通过时 `organized_content` 为空字符串。
 - `organize` / `brief` 任务：`structured` 恒为 `null`，正文在 `organized_content`。
 - `polish` 的 `structured` 为建议清单，由用户逐条确认后由前端写回转写文本（`PATCH /audio/{id}`），后端不直接改写。
 
@@ -721,7 +742,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 }
 ```
 
-可选字段 `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a），优先于 `template`；模板结构文本注入生成提示词，生成结果的 `template` 字段记为 `custom`。模板不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
+可选字段 `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a），优先于 `template`；模板结构文本作为独立段注入生成提示词的 user 消息（不进 system，见 `ai-design.md 七`），生成结果的 `template` 字段记为 `custom`。模板不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
 
 - `include_materials` 默认 `true`；为 `true` 时融合当前会议资料（最多 10 份、合计约 12000 字符）和记录标记。
 - `template` 省略时优先使用记忆中心的 `preferred_minutes_template`，未设置则 `standard`：
@@ -833,7 +854,7 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 - 上传约束：仅支持 `DOCX` / `TXT` / `MD`；大小沿用全局上传限制（20MB）；内容解析失败返回 `422 FILE_PARSE_FAILED`，类型不支持返回 `415 FILE_TYPE_NOT_SUPPORTED`，超限返回 `413 FILE_TOO_LARGE`。
 - AI 生成：按用途模型路由（`minutes` 用途）调用 LLM，返回 `{name, description, category, content_text}` 草稿候选，**不入库**；用户确认后通过 `text` 端点保存。未配置模型返回 `400 MODEL_CONFIG_REQUIRED`，模型异常沿用统一错误码。
 - 权限：内置模板人人可读、不可删除；自定义模板仅本人可见/可删，越权统一 `404 RESOURCE_NOT_FOUND`。
-- 生成联动：`prepare`（5.2）与 `minutes/generate`（5.10）接受可选 `template_id`，模板正文注入提示词；自定义模板不可用或已删除时按原逻辑返回 `404`。
+- 生成联动：`prepare`（5.2）与 `minutes/generate`（5.10）接受可选 `template_id`，模板正文注入提示词 user 消息段（不进 system）；自定义模板不可用或已删除时按原逻辑返回 `404`。
 - 默认模板：记忆中心 `preferred_minutes_template`（5.15）支持内置枚举值或模板清单中的模板 id；非枚举值时生成自动注入该模板正文并记 `template=custom`。
 
 

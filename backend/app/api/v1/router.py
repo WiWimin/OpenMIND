@@ -12,6 +12,7 @@ from app.api.v1 import (
     meeting_templates,
     meetings,
     memory,
+    metrics,
     minutes,
     preparations,
     records,
@@ -36,3 +37,4 @@ api_router.include_router(issues.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(memory.router)
 api_router.include_router(settings.router)
+api_router.include_router(metrics.router)

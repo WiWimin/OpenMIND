@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # 判定“答不了”则整体拒答（拦截分数够但无关的负样本）；Judge 不可用时回退分数判定
     rag_judge_enabled: bool = True
     rag_judge_min_score: float = 0.6
+    # RAG 检索性能告警（阈值告警日志，logger.error 行由日志收集侧捕获）：
+    # 窗口 P95 超阈值时告警一次，冷却期内不重复；<=0 表示关闭该告警
+    rag_alert_total_ms_p95: float = 3000.0
+    rag_alert_candidate_rows_p95: float = 5000.0
+    rag_alert_cooldown_s: float = 60.0
     # 联网检索（答案层后置补救）：资料无证据时先告知再联网作答；
     # 只影响答案层，不改变检索层阈值/Judge 口径；评测固定关闭
     web_search_enabled: bool = True

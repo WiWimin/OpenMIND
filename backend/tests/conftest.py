@@ -32,6 +32,18 @@ def _fake_indexing_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _clean_metrics() -> Iterator[None]:
+    """检索/Judge 埋点写入进程内指标，用例间必须清零避免串扰。"""
+    from app.core import metrics
+
+    metrics.reset()
+    try:
+        yield
+    finally:
+        metrics.reset()
+
+
 @pytest.fixture()
 def db_engine() -> Iterator[Engine]:
     """每个用例一个独立的 SQLite 内存库，CI 无需 PostgreSQL。"""
