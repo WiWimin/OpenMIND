@@ -88,13 +88,8 @@
       </template>
     </div>
 
-    <MeetingFormDialog
-      :open="showCreate"
-      :loading="creating"
-      :error="createError"
-      @submit="createMeeting"
-      @cancel="showCreate = false"
-    />
+    <!-- 新建会议窗口 -->
+    <CreateMeetingDialog ref="createDialog" />
   </section>
 </template>
 
@@ -104,13 +99,13 @@ import { useRoute, useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
 import AppButton from '@/components/AppButton.vue'
+import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import MeetingFormDialog from '@/components/MeetingFormDialog.vue'
-import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
-import type { CreateMeetingPayload, Meeting, MeetingStatus } from '@/types/meeting'
+import type { Meeting, MeetingStatus } from '@/types/meeting'
+import { meetingStatusMeta } from '@/utils/statusLabels'
 
 type StageKey = 'preprocess' | 'asr' | 'minutes'
 
@@ -122,7 +117,6 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
-const toast = useToast()
 
 const meetings = ref<Meeting[]>([])
 const meetingsLoading = ref(false)
@@ -130,10 +124,7 @@ const meetingId = ref(String(route.query.meetingId ?? ''))
 const meeting = ref<Meeting | null>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
-
-const showCreate = ref(false)
-const creating = ref(false)
-const createError = ref<unknown>(null)
+const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
 
 const steps = computed(() => {
   const query = meetingId.value ? { meetingId: meetingId.value } : {}
@@ -155,7 +146,7 @@ const steps = computed(() => {
 const activeIndex = computed(() => steps.value.findIndex((step) => step.key === props.stage))
 
 function statusLabel(status: MeetingStatus): string {
-  return status === 'archived' ? '已归档' : '已安排'
+  return meetingStatusMeta[status]?.label ?? status
 }
 
 function syncQuery(): void {
@@ -219,24 +210,8 @@ function onSelect(event: Event): void {
 }
 
 function openCreate(): void {
-  createError.value = null
-  showCreate.value = true
-}
-
-async function createMeeting(payload: CreateMeetingPayload): Promise<void> {
-  creating.value = true
-  createError.value = null
-  try {
-    const created = await meetingsApi.createMeeting(payload)
-    showCreate.value = false
-    toast.success('会议已创建')
-    await loadMeetings()
-    select(created.meeting_id)
-  } catch (caught) {
-    createError.value = caught
-  } finally {
-    creating.value = false
-  }
+  // 新建统一走创建会议窗口（弹窗），创建完成后进入会议流程页
+  createDialog.value?.open()
 }
 
 watch(

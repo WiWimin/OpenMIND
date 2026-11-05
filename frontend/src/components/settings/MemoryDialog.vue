@@ -1,13 +1,19 @@
 <template>
-  <AppModal :open="open" title="记忆中心" @close="emit('close')">
+  <AppModal :open="open" title="记忆中心" overflow-visible @close="emit('close')">
+    <template #top>
+      <img
+        :src="memoryParrotUrl"
+        class="memory-dialog__mascot"
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+      />
+    </template>
     <div class="memory-dialog">
       <LoadingSpinner v-if="loading" class="memory-dialog__state" />
       <ErrorMessage v-else-if="loadError" :error="loadError" retryable @retry="load" />
 
       <form v-else class="memory-form" @submit.prevent="save">
-        <p class="memory-form__note">
-          记忆只用于调整表达与重点，不覆盖事实、来源或业务规则。
-        </p>
         <FormField id="memory-role" v-model="role" label="职业 / 角色" placeholder="例如：产品经理" />
         <FormTextarea
           id="memory-scenarios"
@@ -22,12 +28,6 @@
           label="表达偏好"
           :rows="3"
           placeholder="例如：结论先行、简洁、少用术语"
-        />
-        <FormSelect
-          id="memory-minutes-template"
-          v-model="preferredTemplate"
-          label="默认纪要模板"
-          :options="templateOptions"
         />
 
         <ErrorMessage v-if="formError" :error="formError" />
@@ -65,23 +65,15 @@ import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormField from '@/components/FormField.vue'
-import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import memoryParrotUrl from '@/assets/ip/memory-parrot.png'
 import { useToast } from '@/composables/useToast'
-import type { MinutesTemplate } from '@/types/minutes'
 import type { UserMemory } from '@/types/memory'
 import { formatDateTime } from '@/utils/datetime'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
-
-const templateOptions = [
-  { value: '', label: '使用标准模板' },
-  { value: 'standard', label: '标准纪要' },
-  { value: 'concise', label: '简洁记录' },
-  { value: 'task_list', label: '任务清单' },
-]
 
 const toast = useToast()
 const loading = ref(false)
@@ -93,14 +85,12 @@ const confirmClearOpen = ref(false)
 const role = ref('')
 const workScenarios = ref('')
 const communicationStyle = ref('')
-const preferredTemplate = ref('')
 const updatedAt = ref('')
 
 function applyMemory(memory: UserMemory): void {
   role.value = memory.role
   workScenarios.value = memory.work_scenarios
   communicationStyle.value = memory.communication_style
-  preferredTemplate.value = memory.preferred_minutes_template ?? ''
   updatedAt.value = memory.updated_at ? formatDateTime(memory.updated_at) : ''
 }
 
@@ -124,7 +114,7 @@ async function save(): Promise<void> {
       role: role.value.trim(),
       work_scenarios: workScenarios.value.trim(),
       communication_style: communicationStyle.value.trim(),
-      preferred_minutes_template: (preferredTemplate.value || null) as MinutesTemplate | null,
+      preferred_minutes_template: null,
     })
     applyMemory(memory)
     toast.success('记忆已保存')
@@ -168,6 +158,18 @@ watch(
 </script>
 
 <style scoped>
+/* 鹦鹉 IP：趴在记忆中心窗口上边框中央 */
+.memory-dialog__mascot {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 6rem;
+  width: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
 .memory-dialog {
   max-height: 60vh;
   overflow-y: auto;
@@ -184,13 +186,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.memory-form__note {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  line-height: 1.6;
 }
 
 .memory-form__actions {

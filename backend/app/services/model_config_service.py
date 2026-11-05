@@ -15,9 +15,12 @@ from app.core.exceptions import AppError
 from app.core.url_validation import validate_api_base
 from app.models.model_config import UserModelConfig
 from app.repositories import model_config_repository
-from app.schemas.model_config import ModelConfigRead, ModelConfigWrite, ModelPurpose
-
-EMBEDDING_DIM = 1024
+from app.schemas.model_config import (
+    ModelConfigRead,
+    ModelConfigWrite,
+    ModelPurpose,
+    ProviderModelsRead,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,40 +75,25 @@ def resolve_model_config(
     llm_api_base = row.llm_api_base if row and row.llm_api_base else ""
     llm_api_key = _decrypt_or_empty(row.llm_api_key_enc if row else None)
     llm_model = row.llm_model if row and row.llm_model else ""
-    embedding_api_base = row.embedding_api_base if row and row.embedding_api_base else ""
-    embedding_api_key = _decrypt_or_empty(row.embedding_api_key_enc if row else None)
-    embedding_model = row.embedding_model if row and row.embedding_model else ""
-    embedding_dim = (
-        (row.embedding_dim if row and row.embedding_dim else None) or settings.embedding_dim
-    )
+    # 向量模型收归服务端统一配置（docker/.env），用户侧不提供自备入口。
+    embedding_api_base = settings.embedding_api_base
+    embedding_api_key = settings.embedding_api_key
+    embedding_model = settings.embedding_model
+    embedding_dim = settings.embedding_dim
 
+    # 回退开关仅作用于 LLM；Embedding 始终以服务端全局配置为准。
     if settings.allow_global_fallback:
         llm_api_base = llm_api_base or settings.llm_api_base
         llm_api_key = llm_api_key or settings.llm_api_key
         llm_model = llm_model or settings.llm_model
-        embedding_api_base = embedding_api_base or settings.embedding_api_base
-        embedding_api_key = embedding_api_key or settings.embedding_api_key
-        embedding_model = embedding_model or settings.embedding_model
-
-    # 请求级模型覆盖的候选集：基础模型 + 用户登记的各用途模型（在用途覆盖前收集）
-    allowed_models = {llm_model}
-    if row is not None:
-        allowed_models.update((row.llm_purpose_models or {}).values())
 
     if purpose is not None and row is not None:
         override = (row.llm_purpose_models or {}).get(purpose.value)
         if override:
             llm_model = override
 
-    # 请求级模型覆盖：仅允许选择已登记的模型
+    # 请求级模型覆盖：模型名由前端从服务商预设清单中选择，是否有效交由服务商 API 判定
     if model_override:
-        allowed = {name for name in allowed_models if name}
-        if model_override not in allowed:
-            raise AppError(
-                "MODEL_NOT_ALLOWED",
-                "所选模型不在已配置的模型列表中，请先在模型配置中登记",
-                http_status=422,
-            )
         llm_model = model_override
 
     return ModelConfig(
@@ -161,12 +149,6 @@ def _provider_source(
 def _probe_message(exc: AppError) -> str:
     if exc.error_code == "MODEL_TIMEOUT":
         return "服务超时"
-    if exc.error_code == "RATE_LIMITED":
-        return "服务限流"
-    if "维度" in exc.message:
-        return f"向量维度必须为 {EMBEDDING_DIM}"
-    if "未配置" in exc.message:
-        return "缺少必要配置"
     return exc.message
 
 
@@ -182,33 +164,23 @@ def _probe_error(prefix: str, exc: AppError) -> AppError:
     return AppError("MODEL_CONFIG_INVALID", message, http_status=400, retryable=False)
 
 
-def _probe_embedding_dim(api_base: str, api_key: str, model: str) -> None:
-    client = EmbeddingClient(api_base=api_base, api_key=api_key, model=model, dim=EMBEDDING_DIM)
-    try:
-        vectors = client.embed(["OpenMIND 连通性测试"])
-    except AppError as exc:
-        logger.warning(
-            "Embedding 校验失败 host=%s model=%s error_code=%s retryable=%s",
-            _safe_host(api_base),
-            model,
-            exc.error_code,
-            exc.retryable,
-        )
-        raise _probe_error("Embedding", exc) from None
-    if not vectors:
-        raise AppError("MODEL_CONFIG_INVALID", "Embedding 未返回向量", http_status=400)
+def _probe_llm(api_base: str, api_key: str, model: str) -> bool:
+    """保存前真实调用一次 LLM 做连通性校验。
 
-
-def _probe_llm(api_base: str, api_key: str, model: str) -> None:
+    返回是否完成调用验证；遇到 429 限流时视为密钥认证已通过，
+    放行保存并返回 False（响应带 `llm_probe_verified=false`）。
+    """
     client = LLMClient(api_base=api_base, api_key=api_key, model=model)
     try:
-        client.chat(
-            [{"role": "user", "content": "请只回复：正常"}],
-            max_tokens=32,
-            temperature=0,
-            timeout_s=30,
-        )
+        client.probe()
     except AppError as exc:
+        if exc.error_code == "RATE_LIMITED":
+            logger.warning(
+                "LLM 校验遇到限流，视为密钥有效放行保存 host=%s model=%s",
+                _safe_host(api_base),
+                model,
+            )
+            return False
         logger.warning(
             "LLM 校验失败 host=%s model=%s error_code=%s retryable=%s",
             _safe_host(api_base),
@@ -217,30 +189,21 @@ def _probe_llm(api_base: str, api_key: str, model: str) -> None:
             exc.retryable,
         )
         raise _probe_error("LLM", exc) from None
+    return True
 
 
-def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> UserModelConfig:
+def save_model_config(
+    db: Session, user_id: str, payload: ModelConfigWrite
+) -> tuple[UserModelConfig, bool]:
+    """保存 LLM BYOK 配置，返回（配置行, 是否完成调用验证）。
+
+    向量模型不支持用户自备：仅接受 LLM 三字段，Embedding 由服务端
+    `docker/.env` 统一配置，本函数不触碰任何 Embedding 存储。
+    """
     settings = get_settings()
     llm_api_base = payload.llm_api_base
-    embedding_api_base = payload.embedding_api_base
+    llm_verified = True
 
-    if payload.embedding_api_base or payload.embedding_api_key or payload.embedding_model:
-        if not (
-            payload.embedding_api_base and payload.embedding_api_key and payload.embedding_model
-        ):
-            raise AppError(
-                "MODEL_CONFIG_INVALID",
-                "Embedding 需同时提供 api_base、api_key、model",
-                http_status=400,
-            )
-        embedding_api_base = validate_api_base(
-            payload.embedding_api_base,
-            field="Embedding API Base",
-            allow_private=settings.allow_private_model_endpoints,
-        )
-        _probe_embedding_dim(
-            embedding_api_base, payload.embedding_api_key, payload.embedding_model
-        )
     if payload.llm_api_base or payload.llm_api_key or payload.llm_model:
         if not (payload.llm_api_base and payload.llm_api_key and payload.llm_model):
             raise AppError(
@@ -253,23 +216,26 @@ def save_model_config(db: Session, user_id: str, payload: ModelConfigWrite) -> U
             field="LLM API Base",
             allow_private=settings.allow_private_model_endpoints,
         )
-        _probe_llm(llm_api_base, payload.llm_api_key, payload.llm_model)
+        llm_verified = _probe_llm(llm_api_base, payload.llm_api_key, payload.llm_model)
 
-    return model_config_repository.upsert(
+    row = model_config_repository.upsert(
         db,
         user_id=user_id,
         llm_api_base=llm_api_base,
         llm_api_key_enc=encrypt(payload.llm_api_key) if payload.llm_api_key else None,
         llm_model=payload.llm_model,
-        embedding_api_base=embedding_api_base,
-        embedding_api_key_enc=(
-            encrypt(payload.embedding_api_key) if payload.embedding_api_key else None
-        ),
-        embedding_model=payload.embedding_model,
-        embedding_dim=(
-            EMBEDDING_DIM if (payload.embedding_api_base or payload.embedding_model) else None
-        ),
     )
+    return row, llm_verified
+
+
+def list_provider_models(db: Session, user_id: str) -> ProviderModelsRead:
+    """拉取用户当前 LLM 服务商的可用模型清单，供会话内模型选择器展示。"""
+    config = resolve_model_config(db, user_id)
+    if not (config.llm_api_base and config.llm_api_key and config.llm_model):
+        raise AppError("MODEL_CONFIG_REQUIRED", "未配置大模型（LLM）", http_status=400)
+    client = build_llm_client(config)
+    models = client.list_models(timeout_s=10)
+    return ProviderModelsRead(llm_model=config.llm_model, models=models)
 
 
 def save_purpose_models(
@@ -314,7 +280,7 @@ def get_model_config_read(db: Session, user_id: str) -> ModelConfigRead:
         config.llm_model,
     )
     embedding_source = _provider_source(
-        row.embedding_api_base if row else None,
+        None,
         config.embedding_api_base,
         config.embedding_api_key,
         config.embedding_model,

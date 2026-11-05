@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
 from app.schemas.chat import (
+    ChatFile,
     ChatRequest,
     ChatResponse,
     ChatSource,
@@ -31,6 +32,7 @@ def chat(
         context_scope=payload.context_scope.value,
         include_sources=payload.include_sources,
         model=payload.model,
+        mode=payload.mode,
     )
     sources = (
         [
@@ -39,6 +41,11 @@ def chat(
                 material_id=source.material_id,
                 record_id=source.record_id,
                 excerpt=source.excerpt,
+                document_id=source.document_id,
+                document_name=source.document_name,
+                origin=source.origin,
+                url=source.url,
+                title=source.title,
             )
             for source in answer.sources
         ]
@@ -50,6 +57,11 @@ def chat(
             answer=answer.answer,
             sources=sources,
             insufficient_evidence=answer.insufficient_evidence,
+            file=(
+                ChatFile(filename=answer.file.filename, content=answer.file.content_md)
+                if answer.file
+                else None
+            ),
         )
     )
 
@@ -61,16 +73,23 @@ def organize(
     db: DbSession,
     current_user: CurrentUser,
 ) -> Envelope[OrganizeResponse]:
-    organized_content, source_record_ids = ai_chat_service.organize(
+    outcome = ai_chat_service.organize(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
         record_ids=payload.record_ids,
         style=payload.style,
+        task=payload.task,
+        text=payload.text,
+        instruction=payload.instruction,
+        audio_id=payload.audio_id,
+        model=payload.model,
     )
     return Envelope(
         data=OrganizeResponse(
-            organized_content=organized_content,
-            source_record_ids=source_record_ids,
+            task=outcome.task,
+            organized_content=outcome.content,
+            structured=outcome.structured,
+            source_record_ids=outcome.source_record_ids,
         )
     )

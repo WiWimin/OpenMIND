@@ -23,7 +23,8 @@ export async function register(page: Page, name: string): Promise<void> {
   await page.locator('#register-confirm').fill(E2E_PASSWORD)
   await page.getByRole('button', { name: '注册', exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard$/)
-  await expect(page.getByRole('heading', { name: '会议工作台', exact: true })).toBeVisible()
+  // Dashboard 首屏为问候语一级标题（如「晚上好，<用户名>」）
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible()
 }
 
 async function authToken(page: Page): Promise<string> {
@@ -32,6 +33,20 @@ async function authToken(page: Page): Promise<string> {
     throw new Error('未找到登录令牌，无法调用后端接口')
   }
   return token
+}
+
+export { authToken }
+
+/**
+ * 打开左下角「设置」菜单（details 折叠面板）。
+ * 导航重构后知识库/模型配置/记忆中心都是菜单内的 menuitem，不再是独立链接。
+ */
+export async function openSettingsMenu(page: Page): Promise<void> {
+  const details = page.locator('details.workspace__settings')
+  if ((await details.getAttribute('open')) === null) {
+    await page.locator('summary[aria-label="设置菜单"]').click()
+  }
+  await expect(page.getByRole('menu', { name: '设置菜单' })).toBeVisible()
 }
 
 interface ModelConfigResponse {
@@ -97,19 +112,19 @@ export async function prepareModelAccess(
   if (!needsLlm && !needsEmbedding) {
     return { ready: true }
   }
+  // Embedding 不支持 BYOK（后端仅接受 LLM 三字段，向量模型由服务端 docker/.env 统一配置）
+  if (needsEmbedding) {
+    return {
+      ready: false,
+      reason: 'BLOCKED: Embedding 不支持自备，需服务端 docker/.env 配置 EMBEDDING_*',
+    }
+  }
 
   const llm = providerSettings('E2E_LLM')
-  const embedding = providerSettings('E2E_EMBEDDING')
   if (needsLlm && !isComplete(llm)) {
     return {
       ready: false,
       reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_LLM_* 自备配置',
-    }
-  }
-  if (needsEmbedding && !isComplete(embedding)) {
-    return {
-      ready: false,
-      reason: 'BLOCKED: 需要后端启用 ALLOW_GLOBAL_FALLBACK，或提供 E2E_EMBEDDING_* 自备配置',
     }
   }
 
@@ -118,11 +133,6 @@ export async function prepareModelAccess(
     payload.llm_api_base = llm.api_base
     payload.llm_api_key = llm.api_key
     payload.llm_model = llm.model
-  }
-  if (needsEmbedding) {
-    payload.embedding_api_base = embedding.api_base
-    payload.embedding_api_key = embedding.api_key
-    payload.embedding_model = embedding.model
   }
 
   let lastStatus = 0
@@ -156,30 +166,64 @@ export async function createMeeting(
   title: string,
   topic = 'Playwright 端到端验收',
 ): Promise<void> {
+  // 新建统一走创建会议窗口（弹窗）：顶部导航/主页的「新建会议」都弹出该窗口
+  await page.goto('/dashboard')
   await page.getByRole('button', { name: '新建会议', exact: true }).first().click()
-  const dialog = page.getByRole('dialog', { name: '新建会议', exact: true })
-  await expect(dialog).toBeVisible()
-  await dialog.locator('#meeting-title').fill(title)
-  await dialog.locator('#meeting-topic').fill(topic)
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  await expect(
-    page.getByRole('button', { name: new RegExp(escapeRegExp(title)) }).first(),
-  ).toBeVisible()
+  await page.locator('#meeting-title').fill(title)
+  await page.locator('#meeting-topic').fill(topic)
+  await page.getByRole('button', { name: '创建', exact: true }).click()
+  // 创建成功 → 进入会议流程页（三个功能卡片）
+  await expect(page).toHaveURL(/\/new-meeting\?meetingId=mtg_[0-9a-f]+/)
 }
 
 export async function openMeeting(page: Page, title: string): Promise<string> {
-  await page
-    .getByRole('button', { name: new RegExp(escapeRegExp(title)) })
-    .first()
-    .click()
-  await expect(page).toHaveURL(/\/meetings\/[^/]+$/)
+  const current = new URL(page.url())
+  const flowMeetingId =
+    current.pathname === '/new-meeting' ? current.searchParams.get('meetingId') : null
+
+  if (flowMeetingId) {
+    // 会议详情页已删除：创建后统一进会议管理的该会议文件列表
+    await page.goto(`/meetings?meeting=${flowMeetingId}`)
+  } else {
+    await page.goto('/meetings')
+    // 会议默认按会议名建文件夹：先进同名文件夹，再点会议行
+    await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(title)}`) }).first().click()
+    await page.getByRole('button', { name: title, exact: true }).first().click()
+  }
+
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   return page.url()
 }
 
-export async function openTab(page: Page, label: string): Promise<void> {
-  await page.getByRole('tab', { name: label, exact: true }).click()
+/** 从会议管理深链（?meeting=）或流程页（?meetingId=）URL 中取 meetingId */
+export function meetingIdOf(url: string): string {
+  const parsed = new URL(url)
+  return parsed.searchParams.get('meeting') ?? parsed.searchParams.get('meetingId') ?? ''
+}
+
+export type StageName = 'preprocess' | 'asr' | 'minutes'
+
+const STAGE_PATHS: Record<StageName, string> = {
+  preprocess: '/new-meeting/preprocess',
+  asr: '/new-meeting/asr',
+  minutes: '/new-meeting/minutes',
+}
+
+/** 打开会议流程页（资料预处理 / 录音转写 / 会后智能处理） */
+export async function openStage(page: Page, stage: StageName, meetingId: string): Promise<void> {
+  await page.goto(`${STAGE_PATHS[stage]}?meetingId=${meetingId}`)
+}
+
+/**
+ * 打开会议管理中该会议的「导入资料」弹窗（内含本地会议工作区面板）。
+ * 原会议详情页已删除，本地工作区面板只在该弹窗内可用。
+ */
+export async function openImportPanel(page: Page, title: string): Promise<void> {
+  await page.goto('/meetings')
+  await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(title)}`) }).first().click()
+  const row = page.locator('.meeting-row').filter({ hasText: title })
+  await row.getByRole('button', { name: '导入', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: `导入资料 · ${title}` })).toBeVisible()
 }
 
 export async function uploadTextMaterial(
@@ -200,9 +244,11 @@ export async function uploadTextMaterial(
 }
 
 export async function addRecord(page: Page, content: string): Promise<void> {
-  await page.locator('#record-content').fill(content)
+  // 录音转写页 → 转写内容流 → 手动补充记录
+  await page.getByRole('button', { name: '补充记录', exact: true }).click()
+  await page.locator('#asr-composer').fill(content)
   await page.getByRole('button', { name: '保存记录', exact: true }).click()
-  await expect(page.getByText(content, { exact: true })).toBeVisible()
+  await expect(page.locator('.stream__text').filter({ hasText: content })).toBeVisible()
 }
 
 export async function login(page: Page, name: string): Promise<void> {

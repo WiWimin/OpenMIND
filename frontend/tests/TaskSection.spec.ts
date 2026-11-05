@@ -13,7 +13,6 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push: pushMock }) }))
 
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
-  getTask: vi.fn(),
   updateTask: vi.fn(),
   cancelTask: vi.fn(),
 }))
@@ -111,8 +110,8 @@ describe('TaskSection', () => {
     await jump?.trigger('click')
 
     expect(pushMock).toHaveBeenCalledWith({
-      name: 'meeting-detail',
-      params: { meetingId: 'mtg_1' },
+      name: 'meetings',
+      query: { meeting: 'mtg_1' },
     })
   })
 

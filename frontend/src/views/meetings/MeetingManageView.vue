@@ -2,37 +2,10 @@
   <section class="meeting-manage">
     <PageHeader title="会议管理">
       <template #actions>
-        <AppButton variant="ghost" @click="onWorkspaceButton">本地文件夹配置</AppButton>
+        <AppButton variant="ghost" @click="onWorkspaceButton">{{ workspaceButtonLabel }}</AppButton>
         <AppButton variant="ghost" @click="goTemplates">模板管理</AppButton>
       </template>
     </PageHeader>
-
-    <!-- 本地工作区状态条 -->
-    <div
-      v-if="ws.status.value === 'connected' || ws.status.value === 'needs-permission'"
-      class="workspace-bar"
-      :class="{ 'workspace-bar--warn': ws.status.value === 'needs-permission' }"
-      role="status"
-    >
-      <span class="workspace-bar__icon" aria-hidden="true"><NavIcon name="folder" :size="15" /></span>
-      <template v-if="ws.status.value === 'connected'">
-        <span class="workspace-bar__text">
-          本地文件夹已连接：<strong>{{ ws.directoryName.value }}</strong
-          >，上传的资料与生成的纪要将自动保存到对应会议文件夹。
-        </span>
-        <button type="button" class="workspace-bar__action" @click="ws.disconnect()">断开</button>
-      </template>
-      <template v-else>
-        <span class="workspace-bar__text">
-          本地文件夹「<strong>{{ ws.directoryName.value }}</strong
-          >」需要恢复访问权限后才能自动保存。
-        </span>
-        <button type="button" class="workspace-bar__action workspace-bar__action--primary" @click="onRestore">
-          恢复访问
-        </button>
-        <button type="button" class="workspace-bar__action" @click="ws.disconnect()">断开</button>
-      </template>
-    </div>
 
     <section class="meeting-panel">
       <header class="meeting-panel__head">
@@ -141,6 +114,7 @@
             :key="meeting.meeting_id"
             :meeting="meeting"
             @open="enterMeeting"
+            @import="openImport"
             @delete="askDeleteMeeting"
           />
           <p v-if="activeFolderMeetings.length === 0" class="folder-empty-hint">
@@ -153,32 +127,58 @@
           <div class="meeting-files-view__head">
             <h2 class="meeting-files-view__title">{{ activeMeeting?.title }}</h2>
             <StatusBadge
-              :label="activeMeeting?.status === 'archived' ? '已归档' : '已安排'"
-              :tone="activeMeeting?.status === 'archived' ? 'neutral' : 'info'"
+              :label="meetingBadgeMeta(activeMeeting?.status).label"
+              :tone="meetingBadgeMeta(activeMeeting?.status).tone"
             />
-            <AppButton
-              variant="ghost"
-              size="sm"
-              class="meeting-files-view__open"
-              @click="openWorkspace"
-            >
-              打开会议工作台
-            </AppButton>
+            <div v-if="activeMeeting" class="meeting-files-view__actions">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="activeMeeting.status === 'archived' || busy"
+                @click="openEdit"
+              >
+                编辑
+              </AppButton>
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="activeMeeting.status === 'archived' || busy"
+                @click="askArchive"
+              >
+                归档
+              </AppButton>
+              <AppButton variant="danger" size="sm" :disabled="busy" @click="askDelete">
+                删除
+              </AppButton>
+            </div>
           </div>
           <MeetingFilesPanel v-if="activeMeeting" :meeting-id="activeMeeting.meeting_id" />
         </div>
       </template>
     </section>
 
-    <!-- 新建会议 -->
-    <MeetingFormDialog
-      :open="showCreate"
-      :loading="creating"
-      :error="createError"
-      :categories="categories"
-      @submit="createMeeting"
-      @cancel="showCreate = false"
-    />
+    <!-- 从本地文件夹导入资料到指定会议 -->
+    <AppModal
+      :open="importTarget !== null"
+      :label="`导入资料 · ${importTarget?.title ?? ''}`"
+      @close="importTarget = null"
+    >
+      <div v-if="importTarget" class="meeting-import">
+        <p class="meeting-import__hint">
+          从已授权的本地文件夹选择资料导入该会议；未连接时可先在此授权（与会议详情页同一份授权）。
+        </p>
+        <LocalWorkspacePanel
+          :meeting-id="importTarget.meeting_id"
+          :meeting-title="importTarget.title"
+          :readonly="importTarget.status === 'archived'"
+          :show-export="false"
+          @imported="onImported"
+        />
+        <div class="meeting-import__actions">
+          <AppButton variant="ghost" @click="importTarget = null">完成</AppButton>
+        </div>
+      </div>
+    </AppModal>
 
     <!-- 删除会议确认 -->
     <ConfirmDialog
@@ -202,31 +202,60 @@
       @confirm="confirmDeleteCategory"
       @cancel="showDeleteCategory = false"
     />
+
+    <!-- 编辑会议（自会议文件列表进入） -->
+    <MeetingFormDialog
+      :open="showEdit"
+      :meeting="editTarget"
+      :loading="savingEdit"
+      :error="editError"
+      :categories="categories"
+      @submit="submitEdit"
+      @cancel="showEdit = false"
+    />
+
+    <!-- 归档会议确认 -->
+    <ConfirmDialog
+      :open="showArchive"
+      title="归档会议"
+      :message="`归档后「${activeMeeting?.title ?? ''}」将变为只读，确定归档吗？`"
+      confirm-text="归档"
+      :loading="archiving"
+      @confirm="confirmArchive"
+      @cancel="showArchive = false"
+    />
+
+    <!-- 新建会议窗口 -->
+    <CreateMeetingDialog ref="createDialog" />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
 import AppBreadcrumb from '@/components/AppBreadcrumb.vue'
 import AppButton from '@/components/AppButton.vue'
+import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
 import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
 import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
+import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import type { Meeting, MeetingStatus } from '@/types/meeting'
-import type { Pagination } from '@/types/pagination'
 import { formatDateTime } from '@/utils/datetime'
+import { meetingStatusMeta, type StatusMeta } from '@/utils/statusLabels'
 import {
   assignCategory,
   categoryOf,
@@ -236,13 +265,13 @@ import {
   type MeetingCategory,
 } from '@/utils/meetingCategories'
 
-/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 打开/删除 */
+/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 打开/导入/删除 */
 const MeetingRow = defineComponent({
   name: 'MeetingRow',
   props: {
     meeting: { type: Object as () => Meeting, required: true },
   },
-  emits: ['open', 'delete'],
+  emits: ['open', 'import', 'delete'],
   setup(rowProps, { emit }) {
     return () =>
       h('div', { class: 'meeting-row' }, [
@@ -265,8 +294,8 @@ const MeetingRow = defineComponent({
           ]),
         ]),
         h(StatusBadge, {
-          label: rowProps.meeting.status === 'archived' ? '已归档' : '已安排',
-          tone: rowProps.meeting.status === 'archived' ? 'neutral' : 'info',
+          label: meetingBadgeMeta(rowProps.meeting.status).label,
+          tone: meetingBadgeMeta(rowProps.meeting.status).tone,
         }),
         h('div', { class: 'meeting-row__actions' }, [
           h(
@@ -277,6 +306,15 @@ const MeetingRow = defineComponent({
               onClick: () => emit('open', rowProps.meeting),
             },
             '查看',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'meeting-row__action',
+              onClick: () => emit('import', rowProps.meeting),
+            },
+            '导入',
           ),
           h(
             'button',
@@ -297,13 +335,26 @@ type ExplorerView = 'root' | 'category' | 'meeting'
 
 const toast = useToast()
 const router = useRouter()
+const route = useRoute()
 const ws = useLocalWorkspace()
 
-const items = ref<Meeting[]>([])
-const pagination = ref<Pagination>({ page: 1, page_size: 100, total: 0, total_pages: 1 })
-const loading = ref(false)
-const error = ref<unknown>(null)
 const status = ref<StatusFilter>('')
+
+const {
+  items,
+  pagination,
+  loading,
+  error,
+  load: loadMeetings,
+} = useAsyncList<Meeting>({
+  fetcher: ({ page, page_size }) =>
+    meetingsApi.listMeetings({
+      page,
+      page_size,
+      status: status.value || undefined,
+    }),
+  pageSize: 100,
+})
 
 const categories = ref<MeetingCategory[]>([])
 
@@ -313,10 +364,6 @@ const activeMeeting = ref<Meeting | null>(null)
 
 const searchQuery = ref('')
 
-const showCreate = ref(false)
-const creating = ref(false)
-const createError = ref<unknown>(null)
-
 const showDeleteMeeting = ref(false)
 const deleteMeetingTarget = ref<Meeting | null>(null)
 const deletingMeeting = ref(false)
@@ -324,13 +371,28 @@ const deletingMeeting = ref(false)
 const showDeleteCategory = ref(false)
 const deleteCategoryTarget = ref<MeetingCategory | null>(null)
 
+/* 编辑 / 归档：会议文件列表页内的会议操作（原会议详情页能力） */
+const showEdit = ref(false)
+const editTarget = ref<Meeting | null>(null)
+const savingEdit = ref(false)
+const editError = ref<unknown>(null)
+const showArchive = ref(false)
+const archiving = ref(false)
+
+const busy = computed(() => savingEdit.value || archiving.value || deletingMeeting.value)
+
 const creatingCategory = ref(false)
 const newCategoryName = ref('')
 
+function meetingBadgeMeta(status: MeetingStatus | undefined): StatusMeta {
+  return meetingStatusMeta[status ?? 'scheduled']
+}
+
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: '', label: '全部' },
-  { value: 'scheduled', label: '已安排' },
-  { value: 'archived', label: '已归档' },
+  ...(Object.entries(meetingStatusMeta) as [MeetingStatus, StatusMeta][]).map(
+    ([value, meta]) => ({ value, label: meta.label }),
+  ),
 ]
 
 const searchActive = computed(() => searchQuery.value.trim().length > 0)
@@ -412,32 +474,98 @@ function goCategory(): void {
   view.value = 'category'
 }
 
-function openWorkspace(): void {
+/* ===== 会议操作（原会议详情页的编辑/归档/删除） ===== */
+function openEdit(): void {
   if (!activeMeeting.value) {
     return
   }
-  void router.push({
-    name: ROUTE_NAMES.meetingDetail,
-    params: { meetingId: activeMeeting.value.meeting_id },
-  })
+  editTarget.value = activeMeeting.value
+  editError.value = null
+  showEdit.value = true
+}
+
+async function submitEdit(payload: MeetingFormPayload): Promise<void> {
+  const target = editTarget.value
+  if (!target) {
+    return
+  }
+  savingEdit.value = true
+  editError.value = null
+  try {
+    const updated = await meetingsApi.updateMeeting(target.meeting_id, {
+      title: payload.title,
+      topic: payload.topic,
+      meeting_time: payload.meeting_time,
+    })
+    if (payload.categoryId !== undefined) {
+      assignCategory(updated.meeting_id, payload.categoryId || null)
+    }
+    showEdit.value = false
+    editTarget.value = null
+    activeMeeting.value = updated
+    toast.success('会议信息已更新')
+    await load()
+    refreshCategories()
+  } catch (caught) {
+    editError.value = caught
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+function askArchive(): void {
+  if (activeMeeting.value) {
+    showArchive.value = true
+  }
+}
+
+async function confirmArchive(): Promise<void> {
+  if (!activeMeeting.value) {
+    return
+  }
+  archiving.value = true
+  try {
+    activeMeeting.value = await meetingsApi.archiveMeeting(activeMeeting.value.meeting_id)
+    showArchive.value = false
+    toast.success('会议已归档')
+    await load()
+  } catch (caught) {
+    toast.error(caught instanceof Error ? caught.message : '归档失败，请稍后重试')
+  } finally {
+    archiving.value = false
+  }
+}
+
+function askDelete(): void {
+  if (activeMeeting.value) {
+    askDeleteMeeting(activeMeeting.value)
+  }
+}
+
+/**
+ * 深链：/meetings?meeting=<id> 直接打开该会议的文件列表（主页「我的会议」、任务跳转用）。
+ * 进入后补全所属分类，保证面包屑为 会议管理 > 分类 > 会议。
+ */
+async function openFromQuery(): Promise<void> {
+  const meetingId = String(route.query.meeting ?? '')
+  if (!meetingId) {
+    return
+  }
+  try {
+    const meeting = await meetingsApi.getMeeting(meetingId)
+    const categoryId = categoryOf(meeting.meeting_id)
+    activeCategory.value = categoryId
+      ? (categories.value.find((item) => item.id === categoryId) ?? null)
+      : null
+    enterMeeting(meeting)
+  } catch {
+    toast.error('会议不存在或无权访问')
+    goRoot()
+  }
 }
 
 async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    const result = await meetingsApi.listMeetings({
-      page: 1,
-      page_size: 100,
-      status: status.value || undefined,
-    })
-    items.value = result.items
-    pagination.value = result.pagination
-  } catch (caught) {
-    error.value = caught
-  } finally {
-    loading.value = false
-  }
+  await loadMeetings(1)
 }
 
 function refreshCategories(): void {
@@ -452,37 +580,29 @@ function setStatus(next: StatusFilter): void {
   void load()
 }
 
-function openCreate(): void {
-  createError.value = null
-  showCreate.value = true
-}
+const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
 
-async function createMeeting(payload: MeetingFormPayload): Promise<void> {
-  creating.value = true
-  createError.value = null
-  try {
-    const created = await meetingsApi.createMeeting({
-      title: payload.title,
-      topic: payload.topic,
-      meeting_time: payload.meeting_time,
-    })
-    if (payload.categoryId) {
-      assignCategory(created.meeting_id, payload.categoryId)
-    }
-    showCreate.value = false
-    toast.success('会议已创建')
-    refreshCategories()
-    await load()
-  } catch (caught) {
-    createError.value = caught
-  } finally {
-    creating.value = false
-  }
+function openCreate(): void {
+  // 新建统一走创建会议窗口（弹窗），创建完成后进入会议流程页
+  createDialog.value?.open()
 }
 
 function askDeleteMeeting(meeting: Meeting): void {
   deleteMeetingTarget.value = meeting
   showDeleteMeeting.value = true
+}
+
+/** 从会议管理页直接把本地文件夹资料导入指定会议 */
+const importTarget = ref<Meeting | null>(null)
+
+function openImport(meeting: Meeting): void {
+  importTarget.value = meeting
+}
+
+function onImported(): void {
+  if (importTarget.value) {
+    toast.success(`已导入资料到「${importTarget.value.title}」`)
+  }
 }
 
 async function confirmDeleteMeeting(): Promise<void> {
@@ -559,11 +679,17 @@ function onWorkspaceButton(): void {
   void onConnect()
 }
 
+// 未配置（或浏览器不支持）时展示「本地文件夹配置」，已配置后展示「修改文件夹配置」
+const workspaceButtonLabel = computed(() =>
+  ws.status.value === 'connected' || ws.status.value === 'needs-permission'
+    ? '修改文件夹配置'
+    : '本地文件夹配置',
+)
+
 async function onConnect(): Promise<void> {
   const connected = await ws.connect()
-  if (connected) {
-    toast.success(`本地文件夹已连接：${ws.directoryName.value}`)
-  } else if (ws.status.value === 'unconfigured') {
+  // 连接成功不弹提示，页面顶部的工作区状态条已展示连接状态
+  if (!connected && ws.status.value === 'unconfigured') {
     toast.error('未选择文件夹')
   }
 }
@@ -583,8 +709,18 @@ function goTemplates(): void {
 
 onMounted(() => {
   refreshCategories()
-  void load()
+  void load().then(() => openFromQuery())
 })
+
+// 深链：从主页「我的会议」/任务跳转过来时直接进入该会议的文件列表
+watch(
+  () => route.query.meeting,
+  (value) => {
+    if (value) {
+      void openFromQuery()
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -592,58 +728,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-/* 本地工作区状态条 */
-.workspace-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  color: var(--color-accent-strong);
-  font-size: 0.75rem;
-  background: var(--color-accent-soft);
-  border: 1px solid rgba(13, 148, 136, 0.22);
-  border-radius: var(--radius-lg);
-}
-
-.workspace-bar--warn {
-  color: var(--color-checking);
-  background: #fdf3e0;
-  border-color: rgba(180, 83, 9, 0.22);
-}
-
-.workspace-bar__icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-}
-
-.workspace-bar__text {
-  flex: 1;
-  min-width: 0;
-}
-
-.workspace-bar__text strong {
-  font-weight: 650;
-}
-
-.workspace-bar__action {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  color: inherit;
-  font: inherit;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid currentColor;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-}
-
-.workspace-bar__action--primary {
-  color: #ffffff;
-  background: var(--color-checking);
-  border-color: var(--color-checking);
 }
 
 /* 面板 */
@@ -1010,11 +1094,34 @@ onMounted(() => {
   font-weight: 650;
 }
 
-.meeting-files-view__open {
+.meeting-files-view__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
 .meeting-panel__breadcrumb {
   margin-bottom: 0;
+}
+
+/* 会议管理页 · 本地文件夹导入对话框 */
+.meeting-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  min-width: min(32rem, calc(100vw - 3rem));
+}
+
+.meeting-import__hint {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.85rem;
+}
+
+.meeting-import__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

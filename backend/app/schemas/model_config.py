@@ -30,12 +30,11 @@ class PurposeModelsWrite(BaseModel):
 
 
 class ModelConfigWrite(BaseModel):
+    """LLM BYOK 写入；向量模型不支持用户自备，由服务端统一配置。"""
+
     llm_api_base: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
-    embedding_api_base: str | None = None
-    embedding_api_key: str | None = None
-    embedding_model: str | None = None
 
 
 class ModelConfigRead(BaseModel):
@@ -49,7 +48,16 @@ class ModelConfigRead(BaseModel):
     embedding_api_key_masked: str
     embedding_source: str
     embedding_dim: int
+    # 保存响应专用：False 表示保存时 probe 遇 429 限流，密钥有效但未完成调用验证。
+    llm_probe_verified: bool = True
 
 
 class ModelConfigDeleteResult(BaseModel):
     deleted: bool = True
+
+
+class ProviderModelsRead(BaseModel):
+    """用户当前 LLM 服务商的可用模型清单（OpenAI 兼容 GET /models）。"""
+
+    llm_model: str
+    models: list[str] = Field(default_factory=list)

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <StageShell
     stage="asr"
     title="实时录音转写"
@@ -79,9 +79,15 @@
                   </svg>
                   开始实时录音
                 </AppButton>
-                <button v-else type="button" class="recording-pill" @click="stopRecording">
+                <button
+                  v-else
+                  type="button"
+                  class="recording-pill"
+                  :disabled="stoppingRecorder"
+                  @click="stopRecording"
+                >
                   <span class="recording-pill__dot" aria-hidden="true" />
-                  停止录音 · {{ recordingLabel }}
+                  {{ stoppingRecorder ? '正在结束转写…' : `停止录音 · ${recordingLabel}` }}
                 </button>
                 <AppButton
                   variant="ghost"
@@ -111,7 +117,7 @@
                 <AppButton
                   variant="ghost"
                   size="sm"
-                  :disabled="selectedIds.length === 0 || marking"
+                  :disabled="selectedKeys.length === 0 || marking"
                   @click="applyMarker('highlight')"
                 >
                   标记重点
@@ -119,7 +125,7 @@
                 <AppButton
                   variant="ghost"
                   size="sm"
-                  :disabled="selectedIds.length === 0 || marking"
+                  :disabled="selectedKeys.length === 0 || marking"
                   @click="applyMarker('decision')"
                 >
                   标记决议
@@ -127,7 +133,7 @@
                 <AppButton
                   variant="ghost"
                   size="sm"
-                  :disabled="selectedIds.length === 0 || marking"
+                  :disabled="selectedKeys.length === 0 || marking"
                   @click="applyMarker('question')"
                 >
                   标记疑问
@@ -140,7 +146,7 @@
               <ErrorMessage v-if="uploadError" :error="uploadError" />
               <ErrorMessage v-if="audioActionError" :error="audioActionError" />
               <p v-if="recording" class="record-note" role="status">
-                正在录音（{{ recordingLabel }}），停止后自动上传并转写。
+                正在录音（{{ recordingLabel }}），语音将分段转写并实时显示，停止后自动完成合并。
               </p>
 
               <LoadingSpinner
@@ -162,6 +168,7 @@
                     type="button"
                     class="audio-chip"
                     :class="{ 'audio-chip--active': selectedAudio?.audio_id === item.audio_id }"
+                    :disabled="recording"
                     @click="selectAudio(item)"
                   >
                     <span class="audio-chip__name">{{ item.file_name }}</span>
@@ -179,21 +186,38 @@
                       :tone="audioStatusMeta[selectedAudio.status].tone"
                     />
                     <span class="transcript__name">{{ selectedAudio.file_name }}</span>
+                    <button
+                      v-if="meeting.status !== 'archived' && canEditTranscript"
+                      type="button"
+                      class="transcript__edit-toggle"
+                      @click="toggleTranscriptEdit"
+                    >
+                      {{ editingTranscript ? '取消编辑' : '编辑文稿' }}
+                    </button>
                   </div>
                   <p v-if="selectedAudio.error" class="transcript__error">
                     {{ selectedAudio.error }}
                   </p>
-                  <FormTextarea
-                    id="asr-transcript"
-                    v-model="transcriptDraft"
-                    label="转写文稿"
-                    :rows="10"
-                    :readonly="meeting.status === 'archived' || selectedAudio.status === 'confirmed'"
-                  />
+                  <div v-if="editingTranscript" class="transcript__edit">
+                    <FormTextarea
+                      id="asr-transcript"
+                      v-model="transcriptDraft"
+                      label="转写文稿"
+                      :rows="10"
+                    />
+                    <div class="transcript__actions">
+                      <AppButton :loading="savingTranscript" @click="saveTranscript">
+                        保存修改
+                      </AppButton>
+                    </div>
+                  </div>
                   <p v-if="selectedAudio.record_id" class="transcript__saved">
-                    已保存为会议记录，可在下方时间轴中查看。
+                    已保存为会议记录，可在下方内容流中查看。
                   </p>
-                  <div v-if="meeting.status !== 'archived'" class="transcript__actions">
+                  <div
+                    v-if="meeting.status !== 'archived' && !recording"
+                    class="transcript__actions"
+                  >
                     <AppButton
                       v-if="selectedAudio.status === 'failed'"
                       variant="ghost"
@@ -223,13 +247,12 @@
                 <EmptyState
                   v-else-if="audioItems.length === 0"
                   title="还没有音频"
-                  description="开始实时录音或上传音频文件，转写确认后会保存为会议记录。"
                 />
               </template>
 
               <div class="timeline-head">
-                <h3 class="timeline-head__title">记录时间轴</h3>
-                <span class="timeline-head__count">{{ recordPagination.total }} 条</span>
+                <h3 class="timeline-head__title">转写内容流</h3>
+                <span class="timeline-head__count">{{ streamEntries.length }} 条</span>
                 <button
                   v-if="meeting.status !== 'archived'"
                   type="button"
@@ -241,6 +264,29 @@
               </div>
 
               <ErrorMessage v-if="recordActionError" :error="recordActionError" />
+
+              <div v-if="editingId" class="composer">
+                <FormTextarea
+                  id="asr-timeline-edit"
+                  v-model="editDraft"
+                  label="编辑记录"
+                  :rows="3"
+                  :error="editError"
+                />
+                <div class="composer__actions">
+                  <AppButton
+                    size="sm"
+                    variant="ghost"
+                    :disabled="savingEdit"
+                    @click="cancelEdit"
+                  >
+                    取消
+                  </AppButton>
+                  <AppButton size="sm" :loading="savingEdit" @click="saveEdit">
+                    保存
+                  </AppButton>
+                </div>
+              </div>
 
               <form
                 v-if="composerOpen && meeting.status !== 'archived'"
@@ -277,74 +323,37 @@
                 @retry="loadRecords()"
               />
               <EmptyState
-                v-else-if="recordItems.length === 0"
-                title="还没有记录"
-                description="确认转写或补充记录后，这里会按时间轴展示会议内容。"
+                v-else-if="streamEntries.length === 0"
+                title="还没有内容"
               />
               <template v-else>
-                <ul class="timeline">
-                  <li v-for="record in recordItems" :key="record.record_id" class="timeline__row">
-                    <input
-                      v-model="selectedIds"
-                      type="checkbox"
-                      class="timeline__check"
-                      :value="record.record_id"
-                      :aria-label="`选择记录 ${record.record_id}`"
-                    />
-                    <span class="timeline__time">{{ timeLabel(record.created_at) }}</span>
-                    <div class="timeline__body" :class="markerClass(record.marker_type)">
-                      <div v-if="editingId === record.record_id" class="timeline__edit">
-                        <FormTextarea
-                          id="asr-timeline-edit"
-                          v-model="editDraft"
-                          label="修改记录"
-                          :rows="3"
-                          :error="editError"
-                        />
-                        <div class="timeline__actions">
-                          <AppButton
-                            size="sm"
-                            variant="ghost"
-                            :disabled="savingEdit"
-                            @click="cancelEdit"
-                          >
-                            取消
-                          </AppButton>
-                          <AppButton size="sm" :loading="savingEdit" @click="saveEdit">
-                            保存
-                          </AppButton>
-                        </div>
-                      </div>
-                      <template v-else>
-                        <div class="timeline__meta">
-                          <AppTag :label="recordTypeLabel(record.record_type)" />
-                          <StatusBadge
-                            v-if="record.marker_type"
-                            :label="recordMarkerMeta[record.marker_type].label"
-                            :tone="recordMarkerMeta[record.marker_type].tone"
-                          />
-                        </div>
-                        <p class="timeline__content">{{ record.content }}</p>
-                        <div v-if="meeting.status !== 'archived'" class="timeline__actions">
-                          <button
-                            type="button"
-                            class="timeline__link"
-                            @click="startEdit(record)"
-                          >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            class="timeline__link timeline__link--danger"
-                            @click="askDeleteRecord(record.record_id)"
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </template>
-                    </div>
-                  </li>
-                </ul>
+                <TranscriptStream
+                  :entries="streamEntries"
+                  :selected-keys="selectedKeys"
+                  :selectable="meeting.status !== 'archived' && !recording"
+                  :can-retry-segment="recording"
+                  @toggle-select="toggleStreamSelection"
+                  @retry-segment="onRetrySegment"
+                >
+                  <template #record-actions="{ entry }">
+                    <template v-if="meeting.status !== 'archived'">
+                      <button
+                        type="button"
+                        class="timeline__link"
+                        @click="startEditRecord(entry.recordId ?? '')"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        class="timeline__link timeline__link--danger"
+                        @click="askDeleteRecord(entry.recordId ?? '')"
+                      >
+                        删除
+                      </button>
+                    </template>
+                  </template>
+                </TranscriptStream>
                 <AppPagination
                   v-if="recordPagination.total_pages > 1"
                   :page="recordPagination.page"
@@ -360,13 +369,9 @@
               <AppButton
                 variant="ghost"
                 :loading="savingTranscript"
-                :disabled="
-                  meeting.status === 'archived' ||
-                  !selectedAudio ||
-                  selectedAudio.status === 'confirmed' ||
-                  !transcriptDraft.trim()
-                "
-                @click="saveTranscript"
+                :disabled="meeting.status === 'archived' || saveTranscriptDisabled"
+                :title="editingTranscript ? '保存修改后的转写文本' : '打开编辑并保存转写文本'"
+                @click="onSaveTranscriptClick"
               >
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
                   <path
@@ -421,22 +426,45 @@
           </div>
         </main>
 
-        <!-- AI 会议助手：默认隐藏，按需打开的侧边抽屉 -->
+        <!-- AI 会议助手：默认隐藏，按需打开的侧边抽屉（固定 plan 模式，无模板） -->
         <div v-show="chatOpen" class="assistant-root">
           <div class="assistant-root__backdrop" @click="chatOpen = false" />
           <aside class="assistant-drawer" role="dialog" aria-modal="true" aria-label="AI 会议助手">
             <AgentChat
-              agent-name="AI会议助手"
-              welcome-title="会中随时问，回答有上下文"
-              :greeting="greeting"
+              agent-name="AI答疑助手"
+              welcome-title="AI答疑助手"
               :quick-actions="quickActions"
               :on-send="handleSend"
+              :on-task="handleTask"
               :context-text="selectedText"
               :disabled="!meeting.meeting_id"
               placeholder="针对当前讨论提问…"
               compact
               @clear-context="selectedText = ''"
             >
+              <template #composer-extra>
+                <ModelPickerPopover
+                  :disabled="!meeting.meeting_id"
+                  :selected="selectedModel"
+                  @select="onSelectModel"
+                  @manage="openPanel('model')"
+                />
+              </template>
+              <template #structured="{ message }">
+                <SummaryCard
+                  v-if="message.kind === 'summary' && isSummaryStructured(message.structured)"
+                  :data="message.structured"
+                />
+                <PolishDiffPanel
+                  v-else-if="message.kind === 'polish' && isPolishSuggestions(message.structured)"
+                  :suggestions="message.structured"
+                  :readonly="polishReadonly"
+                  :applying="applyingPolish"
+                  :source-text="polishSourceText"
+                  :readonly-hint="polishHint"
+                  @apply="applyPolish"
+                />
+              </template>
               <template #header-actions>
                 <button
                   type="button"
@@ -473,6 +501,16 @@
         @confirm="deleteRecordAction"
         @cancel="showDeleteRecord = false"
       />
+
+      <ConfirmDialog
+        :open="showFallbackConfirm"
+        title="使用最近的会议记录？"
+        message="未检测到选中文本或已转写音频，将基于最近的会议记录生成。是否继续？"
+        confirm-text="继续生成"
+        cancel-text="取消"
+        @confirm="resolveFallback(true)"
+        @cancel="resolveFallback(false)"
+      />
     </template>
   </StageShell>
 </template>
@@ -487,33 +525,45 @@ import * as recordsApi from '@/api/records'
 import AgentChat from '@/components/AgentChat.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppPagination from '@/components/AppPagination.vue'
-import AppTag from '@/components/AppTag.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import FormTextarea from '@/components/FormTextarea.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import ModelPickerPopover from '@/components/ModelPickerPopover.vue'
+import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
 import StageShell from '@/components/StageShell.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import SummaryCard from '@/components/SummaryCard.vue'
+import TranscriptStream from '@/components/TranscriptStream.vue'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAsyncList } from '@/composables/useAsyncList'
+import { useLiveRecording } from '@/composables/useLiveRecording'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
+import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
 import type { AgentQuickAction, AgentReply } from '@/types/agent'
-import type { MeetingAudio } from '@/types/audio'
-import type { ChatSource } from '@/types/chat'
+import type { MeetingAudio, TranscriptEntry } from '@/types/audio'
+import type {
+  ChatSource,
+  OrganizePayload,
+  OrganizeTask,
+  PolishSuggestion,
+  SummaryStructured,
+} from '@/types/chat'
 import type { Meeting } from '@/types/meeting'
 import type { MeetingRecord, RecordMarkerType, RecordType } from '@/types/record'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime, formatTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
-import { audioStatusMeta, recordMarkerMeta } from '@/utils/statusLabels'
+import { audioStatusMeta, recordMarkerMeta, recordTypeMeta } from '@/utils/statusLabels'
 import { validateAudioFile } from '@/utils/audioUpload'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { mirrorMeetingFile } = useLocalWorkspace()
+const { openPanel } = useSettingsPanels()
 
 const meetingId = computed(() => String(route.query.meetingId ?? ''))
 const selectedText = ref('')
@@ -560,6 +610,49 @@ const uploading = ref(false)
 function selectAudio(audio: MeetingAudio): void {
   selectedAudio.value = audio
   transcriptDraft.value = audio.transcript ?? ''
+  editingTranscript.value = false
+}
+
+/* ---------- 转写文稿编辑态 ---------- */
+
+const editingTranscript = ref(false)
+
+const canEditTranscript = computed(
+  () =>
+    !recording.value &&
+    !!selectedAudio.value &&
+    selectedAudio.value.status !== 'confirmed' &&
+    !!selectedAudio.value.transcript,
+)
+
+const saveTranscriptDisabled = computed(() => {
+  if (!selectedAudio.value) {
+    return true
+  }
+  if (selectedAudio.value.status === 'confirmed') {
+    return true
+  }
+  return editingTranscript.value
+    ? !transcriptDraft.value.trim()
+    : !selectedAudio.value.transcript
+})
+
+function toggleTranscriptEdit(): void {
+  if (!selectedAudio.value) {
+    return
+  }
+  editingTranscript.value = !editingTranscript.value
+  if (editingTranscript.value) {
+    transcriptDraft.value = selectedAudio.value.transcript ?? ''
+  }
+}
+
+function onSaveTranscriptClick(): void {
+  if (editingTranscript.value) {
+    void saveTranscript()
+  } else {
+    toggleTranscriptEdit()
+  }
 }
 
 async function saveTranscript(): Promise<void> {
@@ -660,110 +753,58 @@ async function deleteAudioAction(): Promise<void> {
   }
 }
 
-/* ============================== 上传与实时录音 ============================== */
+/* ============================== 上传与实时录音（分片边录边转） ============================== */
 
 const fileInputEl = ref<HTMLInputElement | null>(null)
-const recording = ref(false)
-const startingRecorder = ref(false)
-const recordingSeconds = ref(0)
-const recorderRef = ref<MediaRecorder | null>(null)
-const recorderStream = ref<MediaStream | null>(null)
-const recorderChunks = ref<Blob[]>([])
-let recorderTimer: ReturnType<typeof setInterval> | null = null
 
-const RECORDER_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-
-const recordingLabel = computed(() => {
-  const minutes = Math.floor(recordingSeconds.value / 60)
-  const seconds = recordingSeconds.value % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+const {
+  recording,
+  startingRecorder,
+  stoppingRecorder,
+  recordingLabel,
+  liveSegments,
+  liveAudioId,
+  startRecording: startLiveSession,
+  stopRecording: stopLiveSession,
+  retrySegment: retryLiveSegment,
+} = useLiveRecording({
+  meetingId: () => meetingId.value,
+  onSessionStarted: (audio) => {
+    uploadError.value = null
+    selectAudio(audio)
+  },
+  onSessionFinished: async (audio) => {
+    await loadAudio(1)
+    selectAudio(audio)
+    if (audio.status === 'failed') {
+      uploadError.value = {
+        status: 'error',
+        error_code: 'MODEL_TIMEOUT',
+        message: audio.error ?? '实时转写失败',
+        retryable: true,
+      }
+    } else {
+      toast.success('录音已分段转写完成，请检查文本')
+    }
+  },
+  onError: (message) => {
+    toast.error(message)
+  },
 })
-
-function extensionOfRecorder(mime: string): string {
-  if (mime.includes('webm')) {
-    return 'webm'
-  }
-  if (mime.includes('mp4')) {
-    return 'm4a'
-  }
-  if (mime.includes('mpeg') || mime.includes('mp3')) {
-    return 'mp3'
-  }
-  if (mime.includes('wav')) {
-    return 'wav'
-  }
-  return 'webm'
-}
 
 async function startRecording(): Promise<void> {
   if (!meetingId.value) {
     return
   }
-  if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices) {
-    toast.error('当前浏览器不支持录音，请上传音频文件')
-    return
-  }
-  startingRecorder.value = true
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const mimeType = RECORDER_MIME_CANDIDATES.find((type) => MediaRecorder.isTypeSupported(type))
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-    recorderChunks.value = []
-    recorder.addEventListener('dataavailable', (event) => {
-      if (event.data.size > 0) {
-        recorderChunks.value.push(event.data)
-      }
-    })
-    recorder.addEventListener('stop', () => {
-      void finishRecording()
-    })
-    recorder.start(1000)
-    recorderRef.value = recorder
-    recorderStream.value = stream
-    recordingSeconds.value = 0
-    recording.value = true
-    recorderTimer = setInterval(() => {
-      recordingSeconds.value += 1
-    }, 1000)
-  } catch {
-    toast.error('无法访问麦克风，请检查浏览器权限设置')
-  } finally {
-    startingRecorder.value = false
-  }
+  await startLiveSession()
 }
 
-function stopRecording(): void {
-  const recorder = recorderRef.value
-  if (recorder && recorder.state !== 'inactive') {
-    recorder.stop()
-  }
+async function stopRecording(): Promise<void> {
+  await stopLiveSession()
 }
 
-function teardownRecorder(): void {
-  if (recorderTimer) {
-    clearInterval(recorderTimer)
-    recorderTimer = null
-  }
-  recorderStream.value?.getTracks().forEach((track) => track.stop())
-  recorderStream.value = null
-  recorderRef.value = null
-  recording.value = false
-}
-
-async function finishRecording(): Promise<void> {
-  const mimeType = recorderRef.value?.mimeType ?? 'audio/webm'
-  const chunks = recorderChunks.value
-  teardownRecorder()
-  recorderChunks.value = []
-  if (chunks.length === 0) {
-    return
-  }
-  const blob = new Blob(chunks, { type: mimeType })
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const file = new File([blob], `meeting-recording-${stamp}.${extensionOfRecorder(mimeType)}`, {
-    type: mimeType,
-  })
-  await uploadAudioFile(file)
+async function onRetrySegment(seq: number): Promise<void> {
+  await retryLiveSegment(seq)
 }
 
 async function uploadAudioFile(file: File): Promise<void> {
@@ -792,7 +833,6 @@ async function uploadAudioFile(file: File): Promise<void> {
       toast.success('音频已转写，请检查文本')
       void mirrorMeetingFile({
         meetingId: meetingId.value,
-        kind: 'audio',
         fileName: file.name,
         content: file,
       })
@@ -826,7 +866,65 @@ const {
   fetcher: ({ page, page_size }) => recordsApi.listRecords(meetingId.value, { page, page_size }),
 })
 
-const selectedIds = ref<string[]>([])
+/* ---------- 转写内容流：分段 + 记录统一展示 ---------- */
+
+function segmentText(segment: { text: string; error?: string | null }): string {
+  if (segment.text) {
+    return segment.text
+  }
+  return segment.error ? '（本段转写失败）' : '（本段无语音内容）'
+}
+
+const streamEntries = computed<TranscriptEntry[]>(() => {
+  if (recording.value) {
+    return liveSegments.value.map((segment) => ({
+      key: `seg-${liveAudioId.value}-${segment.seq}`,
+      kind: 'segment' as const,
+      seq: segment.seq,
+      time: offsetLabel(segment.offset_seconds),
+      text: segmentText(segment),
+      marker: segment.marker_type ?? null,
+      error: segment.error ?? null,
+    }))
+  }
+  const audio = selectedAudio.value
+  const segmentEntries: TranscriptEntry[] = (audio?.segments ?? []).map((segment) => ({
+    key: `seg-${audio?.audio_id ?? 'x'}-${segment.seq}`,
+    kind: 'segment' as const,
+    seq: segment.seq,
+    time: offsetLabel(segment.offset_seconds),
+    text: segmentText(segment),
+    marker: segment.marker_type ?? null,
+    error: segment.error ?? null,
+  }))
+  const recordEntries: TranscriptEntry[] = recordItems.value.map((record) => ({
+    key: `rec-${record.record_id}`,
+    kind: 'record' as const,
+    seq: null,
+    time: formatTime(record.created_at),
+    text: record.content,
+    marker: record.marker_type,
+    tag: recordTypeLabel(record.record_type),
+    recordId: record.record_id,
+  }))
+  return [...segmentEntries, ...recordEntries]
+})
+
+const entryByKey = computed(() => {
+  const map = new Map<string, TranscriptEntry>()
+  for (const entry of streamEntries.value) {
+    map.set(entry.key, entry)
+  }
+  return map
+})
+
+function toggleStreamSelection(key: string): void {
+  selectedKeys.value = selectedKeys.value.includes(key)
+    ? selectedKeys.value.filter((item) => item !== key)
+    : [...selectedKeys.value, key]
+}
+
+const selectedKeys = ref<string[]>([])
 const marking = ref(false)
 const composerOpen = ref(false)
 const composerContent = ref('')
@@ -847,35 +945,15 @@ const composerTypeOptions: { label: string; value: string }[] = [
   { label: '导入文本', value: 'imported' },
 ]
 
-const RECORD_TYPE_LABELS: Record<RecordType, string> = {
-  manual: '手动记录',
-  transcript: '转写',
-  imported: '导入',
-}
-
 function recordTypeLabel(type: RecordType): string {
-  return RECORD_TYPE_LABELS[type]
+  return recordTypeMeta[type]?.label ?? type
 }
 
-function timeLabel(value: string): string {
-  return new Date(value).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
-
-function markerClass(marker: RecordMarkerType | null): string {
-  if (marker === 'highlight') {
-    return 'timeline__body--highlight'
-  }
-  if (marker === 'decision') {
-    return 'timeline__body--decision'
-  }
-  if (marker === 'question') {
-    return 'timeline__body--question'
-  }
-  return ''
+function offsetLabel(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds))
+  const minutes = Math.floor(safe / 60)
+  const secs = safe % 60
+  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
 function toggleComposer(): void {
@@ -910,34 +988,63 @@ async function addRecord(): Promise<void> {
 }
 
 async function applyMarker(marker: RecordMarkerType): Promise<void> {
-  if (selectedIds.value.length === 0 || marking.value) {
+  if (selectedKeys.value.length === 0 || marking.value) {
     return
   }
   marking.value = true
   recordActionError.value = null
-  const targets = recordItems.value.filter((record) =>
-    selectedIds.value.includes(record.record_id),
-  )
+  const keys = [...selectedKeys.value]
   const results = await Promise.allSettled(
-    targets.map((record) =>
-      recordsApi.updateRecord(record.record_id, {
-        marker_type: record.marker_type === marker ? null : marker,
-      }),
-    ),
+    keys.map((key) => {
+      const entry = entryByKey.value.get(key)
+      if (!entry) {
+        return Promise.reject(new Error('条目不存在'))
+      }
+      const next = entry.marker === marker ? null : marker
+      if (entry.kind === 'segment' && entry.seq !== null && selectedAudio.value) {
+        const audioId = selectedAudio.value.audio_id
+        return audioApi
+          .updateSegmentMarker(audioId, entry.seq, next)
+          .then((updated) => {
+            const fresh = (updated.segments ?? []).find((item) => item.seq === entry.seq)
+            if (!fresh) {
+              return
+            }
+            if (recording.value) {
+              const rest = liveSegments.value.filter((item) => item.seq !== entry.seq)
+              liveSegments.value = [...rest, fresh].sort((a, b) => a.seq - b.seq)
+            } else if (selectedAudio.value) {
+              selectedAudio.value = { ...selectedAudio.value, segments: updated.segments }
+            }
+          })
+      }
+      if (entry.kind === 'record' && entry.recordId) {
+        return recordsApi
+          .updateRecord(entry.recordId, { marker_type: next })
+          .then(() => {})
+      }
+      return Promise.reject(new Error('条目不支持标记'))
+    }),
   )
   const failed = results.filter((result) => result.status === 'rejected').length
   if (failed > 0) {
-    toast.error(`${failed} 条记录标记失败，请重试`)
+    toast.error(`${failed} 条内容标记失败，请重试`)
   } else {
-    toast.success(targets.length > 1 ? `已更新 ${targets.length} 条记录标记` : '标记已更新')
+    toast.success(keys.length > 1 ? `已更新 ${keys.length} 条内容标记` : '标记已更新')
   }
-  selectedIds.value = []
-  await loadRecords()
+  selectedKeys.value = []
+  if (!recording.value) {
+    await loadRecords()
+  }
   marking.value = false
 }
 
-function startEdit(record: MeetingRecord): void {
-  editingId.value = record.record_id
+function startEditRecord(recordId: string): void {
+  const record = recordItems.value.find((item) => item.record_id === recordId)
+  if (!record) {
+    return
+  }
+  editingId.value = recordId
   editDraft.value = record.content
   editError.value = ''
 }
@@ -989,7 +1096,7 @@ async function deleteRecordAction(): Promise<void> {
     await recordsApi.deleteRecord(recordId)
     showDeleteRecord.value = false
     pendingDeleteId.value = null
-    selectedIds.value = selectedIds.value.filter((id) => id !== recordId)
+    selectedKeys.value = selectedKeys.value.filter((key) => key !== `rec-${recordId}`)
     await loadRecords()
     toast.success('记录已删除')
   } catch (caught) {
@@ -1023,7 +1130,7 @@ function exportTxt(meeting: Meeting): void {
       const marker = record.marker_type
         ? `［${recordMarkerMeta[record.marker_type].label}］`
         : ''
-      lines.push(`[${timeLabel(record.created_at)}]${marker} ${record.content}`)
+      lines.push(`[${formatTime(record.created_at)}]${marker} ${record.content}`)
     }
   }
   const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' })
@@ -1047,17 +1154,184 @@ function goMinutes(): void {
 
 /* ============================== AI 助手与选中提问 ============================== */
 
-const greeting =
-  '在左侧选中一段讨论内容，再向我提问，我会带着这段上下文回答。也可以直接选择下面的常用任务。'
+// 会中助手固定 plan 模式、无模板，仅提供对话模型选择
+const selectedModel = ref('')
 
+function onSelectModel(model: string): void {
+  selectedModel.value = model
+}
+
+// 快捷任务走后端 organize 链的专用 prompt（summary/polish/brief），不再前端拼提示词
 const quickActions: AgentQuickAction[] = [
-  { label: '提炼要点', prompt: '请提炼当前会议讨论的核心要点、已达成的结论和仍需确认的事项。' },
+  {
+    label: '提炼要点',
+    task: 'summary',
+    prompt: '基于当前会议内容提炼要点，按结论与决议、关键讨论、待办与责任、待确认问题分节输出。',
+  },
   {
     label: '修正口误',
-    prompt: '请结合上下文指出转写文稿中可能的口误、错别字或语义不通顺之处，并给出修正建议。',
+    task: 'polish',
+    prompt: '检查转写文本中的口误、识别错误与不通顺之处，逐条给出修改建议。',
   },
-  { label: '简短摘要', prompt: '请用简短的分点摘要概括目前的会议进展。' },
+  {
+    label: '简短摘要',
+    task: 'brief',
+    prompt: '用 3-5 句话概括当前会议进展。',
+  },
 ]
+
+/* ---------- 快捷任务：organize 链（后端专用 prompt + 结构化输出） ---------- */
+
+const showFallbackConfirm = ref(false)
+let fallbackResolve: ((confirmed: boolean) => void) | null = null
+
+function confirmRecordFallback(): Promise<boolean> {
+  showFallbackConfirm.value = true
+  return new Promise((resolve) => {
+    fallbackResolve = resolve
+  })
+}
+
+function resolveFallback(confirmed: boolean): void {
+  showFallbackConfirm.value = false
+  fallbackResolve?.(confirmed)
+  fallbackResolve = null
+}
+
+const polishAudioId = ref<string | null>(null)
+const applyingPolish = ref(false)
+
+// 组织化回复的类型守卫：kind 与 structured 独立存储，需要显式收窄
+function isSummaryStructured(data: unknown): data is SummaryStructured {
+  return data !== undefined && data !== null && !Array.isArray(data)
+}
+
+function isPolishSuggestions(data: unknown): data is PolishSuggestion[] {
+  return Array.isArray(data)
+}
+
+const polishTargetAudio = computed<MeetingAudio | null>(() => {
+  if (!polishAudioId.value) {
+    return null
+  }
+  return audioItems.value.find((item) => item.audio_id === polishAudioId.value) ?? null
+})
+
+const polishSourceText = computed(() => polishTargetAudio.value?.transcript ?? '')
+
+const polishReadonly = computed(() => {
+  if (recording.value) {
+    return true
+  }
+  const audio = polishTargetAudio.value
+  // 仅「已转写」的音频可写回；未关联/进行中/已确认/失败均只读
+  return !audio || audio.status !== 'transcribed'
+})
+
+const polishHint = computed(() => {
+  if (recording.value) {
+    return '录音进行中，暂不能采纳修改；可先复制修订稿。'
+  }
+  const audio = polishTargetAudio.value
+  if (!audio) {
+    return '本次修改基于选中文本，未关联转写音频；可复制修订稿手动更新。'
+  }
+  if (audio.status === 'confirmed') {
+    return '该音频已确认生成记录，不能直接修改；可复制修订稿手动更新记录。'
+  }
+  if (audio.status === 'processing') {
+    return '转写进行中，暂不能采纳修改。'
+  }
+  return ''
+})
+
+async function handleTask(task: string, prompt: string, signal: AbortSignal): Promise<AgentReply> {
+  if (!meetingId.value) {
+    throw new Error('请先选择一场会议。')
+  }
+  const payload: OrganizePayload = {
+    task: task as OrganizeTask,
+    model: selectedModel.value || undefined,
+  }
+  // prompt 为用户在任务标记下补充的要求（可为空）
+  if (prompt.trim()) {
+    payload.instruction = prompt.trim().slice(0, 2000)
+  }
+  if (selectedText.value.trim()) {
+    payload.text = selectedText.value
+  } else if (selectedAudio.value?.transcript?.trim()) {
+    payload.audio_id = selectedAudio.value.audio_id
+  } else {
+    const confirmed = await confirmRecordFallback()
+    if (!confirmed || signal.aborted) {
+      throw new Error('已取消本次任务。')
+    }
+  }
+
+  try {
+    const result = await chatApi.organizeRecords(meetingId.value, payload, signal)
+    if (result.task === 'summary' && result.structured && !Array.isArray(result.structured)) {
+      return {
+        content: '',
+        kind: 'summary',
+        structured: result.structured,
+        note: '要点基于当前会议内容生成；待办如需保存为草稿，请使用「待办任务」功能。',
+      }
+    }
+    if (result.task === 'polish' && Array.isArray(result.structured)) {
+      polishAudioId.value = payload.audio_id ?? null
+      return {
+        content: '',
+        kind: 'polish',
+        structured: result.structured,
+        note: recording.value
+          ? '录音进行中：建议先复制修订稿，停止录音后可采纳修改。'
+          : '请勾选并采纳修改，确认后会写回转写文本（不覆盖原始录音）。',
+      }
+    }
+    return { content: result.organized_content }
+  } catch (caught) {
+    if (signal.aborted) {
+      throw new Error('已取消本次请求。')
+    }
+    throw new Error(resolveErrorMessage(caught, '任务处理失败，请稍后重试。'))
+  }
+}
+
+async function applyPolish(selected: PolishSuggestion[]): Promise<void> {
+  const audio = polishTargetAudio.value
+  if (!audio || !audio.transcript || recording.value || applyingPolish.value) {
+    return
+  }
+  if (audio.status !== 'transcribed') {
+    toast.error('当前音频状态不允许修改转写')
+    return
+  }
+  let text = audio.transcript
+  let applied = 0
+  for (const item of selected) {
+    if (item.original && item.suggested && text.includes(item.original)) {
+      text = text.replace(item.original, item.suggested)
+      applied += 1
+    }
+  }
+  if (applied === 0) {
+    toast.error('未能在转写文本中定位建议的原文，请手动修改')
+    return
+  }
+  applyingPolish.value = true
+  try {
+    const updated = await audioApi.updateTranscript(audio.audio_id, text)
+    polishAudioId.value = null
+    selectAudio(updated)
+    await loadAudio()
+    toast.success(`已采纳 ${applied} 处修改`)
+  } catch (caught) {
+    toast.error(resolveErrorMessage(caught, '修改保存失败，请稍后重试'))
+  } finally {
+    applyingPolish.value = false
+  }
+}
 
 function sourceLabel(source: ChatSource): string {
   if (source.document_name) {
@@ -1099,6 +1373,7 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
         question: text,
         context_scope: 'current_meeting',
         include_sources: true,
+        model: selectedModel.value || undefined,
       },
       signal,
     )
@@ -1123,7 +1398,8 @@ async function refreshAll(): Promise<void> {
   }
   selectedAudio.value = null
   transcriptDraft.value = ''
-  selectedIds.value = []
+  editingTranscript.value = false
+  selectedKeys.value = []
   editingId.value = null
   composerOpen.value = false
   await Promise.all([loadAudio(1), loadRecords(1)])
@@ -1142,9 +1418,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDrawerKeydown)
-  if (recording.value) {
-    stopRecording()
-  }
+  // 录音器的停止与清理由 useLiveRecording 的卸载钩子负责
 })
 </script>
 
@@ -1385,6 +1659,24 @@ onBeforeUnmount(() => {
   font-size: 0.8125rem;
 }
 
+.transcript__edit-toggle {
+  margin-left: auto;
+  padding: 0.2rem 0.7rem;
+  color: var(--color-primary-strong);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-primary-soft);
+  border: 1px solid rgba(21, 94, 239, 0.22);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.transcript__edit-toggle:hover {
+  background: rgba(21, 94, 239, 0.14);
+}
+
 .transcript__error {
   margin: 0;
   color: var(--color-down);
@@ -1451,85 +1743,6 @@ onBeforeUnmount(() => {
 
 .composer__actions {
   display: flex;
-  gap: var(--space-2);
-}
-
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.timeline__row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: start;
-  gap: var(--space-2) var(--space-3);
-}
-
-.timeline__check {
-  flex: 0 0 auto;
-  width: 1rem;
-  height: 1rem;
-  margin-top: 0.35rem;
-  accent-color: var(--color-primary);
-  cursor: pointer;
-}
-
-.timeline__time {
-  padding-top: 0.35rem;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.timeline__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface-strong);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.timeline__body--highlight {
-  background: rgba(250, 204, 21, 0.16);
-  border-color: rgba(202, 138, 4, 0.3);
-}
-
-.timeline__body--decision {
-  background: rgba(21, 94, 239, 0.07);
-  border-color: rgba(21, 94, 239, 0.28);
-}
-
-.timeline__body--question {
-  background: rgba(139, 92, 246, 0.08);
-  border-color: rgba(139, 92, 246, 0.28);
-}
-
-.timeline__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.timeline__content {
-  margin: 0;
-  color: var(--color-foreground);
-  font-size: 0.875rem;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.timeline__actions {
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
 }
 

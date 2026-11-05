@@ -15,6 +15,13 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      // Docker Desktop 的 Windows/macOS bind mount 不透传 inotify 事件，
+      // 容器内需用轮询感知文件变化（由 compose 注入 CHOKIDAR_USEPOLLING=true）；
+      // 本地直跑 `npm run dev` 时保持默认的事件监听，无额外开销。
+      usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
+      interval: 300,
+    },
     proxy: {
       '/api': {
         target: apiProxyTarget,

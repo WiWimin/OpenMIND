@@ -64,9 +64,67 @@ export async function deleteAudio(audioId: string): Promise<DeletedResult<'audio
   return unwrapData(data)
 }
 
-export async function getAudio(audioId: string): Promise<MeetingAudio> {
-  const { data } = await http.get<ApiSuccess<MeetingAudio> | MeetingAudio>(
-    `/audio/${audioId}`,
+/* ============================ 实时录音：分片边录边转 ============================ */
+
+export async function startLiveAudio(
+  meetingId: string,
+  fileType: string,
+): Promise<MeetingAudio> {
+  const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
+    `/meetings/${meetingId}/audio/live/start`,
+    { file_type: fileType },
+  )
+  return unwrapData(data)
+}
+
+export async function uploadLiveChunk(
+  audioId: string,
+  seq: number,
+  offsetSeconds: number,
+  blob: Blob,
+  fileType: string,
+): Promise<MeetingAudio> {
+  const form = new FormData()
+  form.append('file', blob, `chunk-${String(seq).padStart(4, '0')}.${fileType}`)
+  form.append('seq', String(seq))
+  form.append('offset_seconds', String(offsetSeconds))
+  const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
+    `/audio/${audioId}/live/chunk`,
+    form,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: LONG_REQUEST_TIMEOUT_MS,
+    },
+  )
+  return unwrapData(data)
+}
+
+export async function finishLiveAudio(audioId: string): Promise<MeetingAudio> {
+  const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
+    `/audio/${audioId}/live/finish`,
+    undefined,
+    { timeout: LONG_REQUEST_TIMEOUT_MS },
+  )
+  return unwrapData(data)
+}
+
+export async function retrySegment(audioId: string, seq: number): Promise<MeetingAudio> {
+  const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
+    `/audio/${audioId}/segments/${seq}/retry`,
+    undefined,
+    { timeout: LONG_REQUEST_TIMEOUT_MS },
+  )
+  return unwrapData(data)
+}
+
+export async function updateSegmentMarker(
+  audioId: string,
+  seq: number,
+  markerType: string | null,
+): Promise<MeetingAudio> {
+  const { data } = await http.patch<ApiSuccess<MeetingAudio> | MeetingAudio>(
+    `/audio/${audioId}/segments/marker`,
+    { seq, marker_type: markerType },
   )
   return unwrapData(data)
 }

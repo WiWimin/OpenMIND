@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData
 from app.schemas.preparation import (
     PreparationGenerateRequest,
@@ -12,7 +11,6 @@ from app.schemas.preparation import (
     PreparationUpdate,
 )
 from app.services import preparation_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(tags=["preparations"])
 
@@ -47,21 +45,18 @@ def list_preparations(
     meeting_id: str,
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
 ) -> Envelope[ListData[PreparationRead]]:
     items, total = preparation_service.list_preparations(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
-        page=page,
-        page_size=page_size,
+        page=params.page,
+        page_size=params.page_size,
     )
-    data = ListData[PreparationRead](
-        items=[PreparationRead.model_validate(item) for item in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items, PreparationRead, page=params.page, page_size=params.page_size, total=total
     )
-    return Envelope(data=data)
 
 
 @router.get("/preparations/{preparation_id}", response_model=Envelope[PreparationRead])

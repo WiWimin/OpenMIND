@@ -37,6 +37,7 @@ export const NAV_MODULES: NavModule[] = [
   {
     key: 'new-meeting',
     label: '新建会议',
+    // 该入口不走路由：顶部导航渲染为按钮，点击弹出创建会议窗口
     routeName: ROUTE_NAMES.newMeeting,
     match: [
       ROUTE_NAMES.newMeeting,
@@ -80,13 +81,13 @@ export const NAV_MODULES: NavModule[] = [
     key: 'meetings',
     label: '会议管理',
     routeName: ROUTE_NAMES.meetings,
-    match: [ROUTE_NAMES.meetings, ROUTE_NAMES.meetingDetail],
+    match: [ROUTE_NAMES.meetings],
     icon: 'video',
     items: [
       {
         label: '会议列表',
         routeName: ROUTE_NAMES.meetings,
-        match: [ROUTE_NAMES.meetings, ROUTE_NAMES.meetingDetail],
+        match: [ROUTE_NAMES.meetings],
         icon: 'list',
         hint: '全部会议与材料',
       },
@@ -117,23 +118,9 @@ export const NAV_MODULES: NavModule[] = [
   },
 ]
 
-export function findModuleByKey(key: string | undefined): NavModule | undefined {
-  return NAV_MODULES.find((module) => module.key === key)
-}
-
 export function findModuleByRouteName(name: string | undefined): NavModule | undefined {
   if (!name) {
     return undefined
   }
   return NAV_MODULES.find((module) => module.match.includes(name))
-}
-
-export function findNavItem(
-  module: NavModule | undefined,
-  name: string | undefined,
-): NavItem | undefined {
-  if (!module || !name) {
-    return undefined
-  }
-  return module.items.find((item) => item.match.includes(name))
 }

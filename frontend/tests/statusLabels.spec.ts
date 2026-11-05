@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   actionItemStatusMeta,
   audioStatusMeta,
-  issueStatusMeta,
   knowledgeStatusMeta,
   materialStatusMeta,
   meetingStatusMeta,
@@ -57,10 +56,9 @@ describe('status labels', () => {
     expect(meetingStatusMeta.archived.label).toBe('已归档')
   })
 
-  it('maps action item and issue statuses', () => {
+  it('maps action item statuses', () => {
     expect(actionItemStatusMeta.pending_confirmation.tone).toBe('warning')
     expect(actionItemStatusMeta.converted.label).toBe('已转任务')
-    expect(issueStatusMeta.open.tone).toBe('warning')
   })
 
   it('falls back to the raw status when unknown at runtime', () => {

@@ -32,6 +32,10 @@
 | personal_tasks | `tsk_` | `task_id` |
 | open_issues | `iss_` | `issue_id` |
 | document_chunks | `chk_` | `chunk_id` |
+| knowledge_documents | `kdoc_` | `document_id` |
+| knowledge_chunks | `kchk_` | `chunk_id` |
+| meeting_audio | `aud_` | `audio_id` |
+| meeting_templates | `tpl_` | `template_id` |
 
 - 形如 `mtg_` + 32 位十六进制（如 `mtg_8f3a1c...`）。
 - 外键字段必须与被引用主键类型一致（均 `VARCHAR(40)`）。
@@ -134,7 +138,7 @@
 | `content` | TEXT | NN | 纪要正文 |
 | `status` | VARCHAR(20) | NN, default `draft` | 见 §五 |
 | `version` | INTEGER | NN, default 1 | |
-| `template` | VARCHAR(20) | NN, default `standard` | `standard` / `concise` / `task_list` |
+| `template` | VARCHAR(20) | NN, default `standard` | `standard` / `concise` / `task_list` / `custom`（套用会议模板清单时的标记） |
 | `source_record_ids` | JSONB | NN, default `[]` | 生成依据的记录 ID 快照 |
 | `source_material_ids` | JSONB | NN, default `[]` | 生成依据的材料 ID 快照 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
@@ -214,13 +218,10 @@
 | `llm_api_key_enc` | TEXT | ? | LLM 密钥 Fernet 密文 |
 | `llm_model` | VARCHAR(100) | ? | 默认 LLM 模型 |
 | `llm_purpose_models` | JSONB | NN, default `{}` | 用途→模型名覆盖 |
-| `embedding_api_base` | VARCHAR(255) | ? | Embedding API 地址 |
-| `embedding_api_key_enc` | TEXT | ? | Embedding 密钥 Fernet 密文 |
-| `embedding_model` | VARCHAR(100) | ? | Embedding 模型 |
-| `embedding_dim` | INTEGER | ? | 固定 1024 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
+- 仅保存用户自备的 **LLM** 配置；向量模型（Embedding）收归服务端 `docker/.env` 统一配置，用户侧无对应字段（迁移 `0020_drop_user_embedding` 已删除原 embedding 四字段）。
 - `llm_purpose_models` 仅保存允许用途：`preparation` / `chat` / `minutes` / `extraction`。
 - 未覆盖的用途回退到 `llm_model`；API 地址与密钥统一使用 LLM 配置。
 - 用途模型名最长 100 字符，空值不得保存。
@@ -264,7 +265,7 @@
 | `role` | VARCHAR(100) | ? | 职业/角色 |
 | `work_scenarios` | TEXT | ? | 工作场景 |
 | `communication_style` | TEXT | ? | 表达偏好 |
-| `preferred_minutes_template` | VARCHAR(20) | ? | `standard` / `concise` / `task_list` |
+| `preferred_minutes_template` | VARCHAR(64) | ? | 内置枚举值（`standard` / `concise` / `task_list`）或自定义模板 ID |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -282,17 +283,19 @@
 | `file_name` | VARCHAR(255) | NN | 原始文件名 |
 | `type` | VARCHAR(20) | NN | `mp3` / `wav` / `m4a` / `webm` |
 | `storage_key` | TEXT | NN | 本地存储相对路径 |
-| `transcript` | TEXT | ? | 可编辑转写文本 |
+| `transcript` | TEXT | ? | 可编辑转写文本（实时分段按 `\n` 拼接） |
+| `segments` | JSONB | ? | 转写分段：`[{seq, offset_seconds, text, marker_type, error}]`，`seq` 从 1 连续递增 |
 | `status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
 | `error` | TEXT | ? | 转写失败原因 |
 | `record_id` | VARCHAR(40) | FK→meeting_records, ? | 确认后生成的记录 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
-- 状态：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`。
+- 状态：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`；实时录音会话期间保持 `processing`，`live/finish` 后落定。
+- `segments` 由后端维护：分片转写追加、全文修订后按行重拆（沿用原相对时间与标记）；`marker_type` 取值与记录标记一致（`highlight` / `decision` / `question`）。
 - 确认后创建 `record_type=transcript` 的会议记录，并写入 `record_id`。
 - 已确认音频不能重新转写或删除。
-- 删除未确认音频时同步删除文件。
+- 删除未确认音频时同步删除文件（含实时会话的分片文件）。
 
 ### 3.16 `meeting_templates` 会议模板
 
@@ -304,13 +307,14 @@
 | `user_id` | VARCHAR(40) | FK→users, NN, IDX | 所属用户（仅本人可见） |
 | `name` | VARCHAR(100) | NN | 模板名称 |
 | `description` | VARCHAR(255) | ? | 模板描述 |
-| `file_name` | VARCHAR(255) | NN | 原始文件名 |
-| `storage_key` | TEXT | NN | 本地存储相对路径（`templates/` 目录） |
+| `category` | VARCHAR(20) | ? | 模板分类（`会前` / `会后` / `通用`；服务层缺省填 `通用`） |
+| `file_name` | VARCHAR(255) | ? | 原始文件名（按文本创建时为空） |
+| `storage_key` | TEXT | ? | 本地存储相对路径（`templates/` 目录；按文本创建时为空） |
 | `content_text` | TEXT | NN | 解析出的模板结构文本（注入生成提示词，≤20000 字符） |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
-- 支持格式：DOCX / TXT / MD；大小沿用全局上传限制。
+- 支持格式：DOCX / TXT / MD；大小沿用全局上传限制；也可不传文件、直接按文本创建（此时 `file_name` / `storage_key` 为空）。
 - 仅本人可读/可删；删除时同步删除文件。
 - 生成联动：`prepare` 与 `minutes/generate` 的 `template_id` 引用本表或内置模板 ID。
 

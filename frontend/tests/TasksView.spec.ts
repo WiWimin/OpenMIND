@@ -13,7 +13,6 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
-  getTask: vi.fn(),
   updateTask: vi.fn(),
   cancelTask: vi.fn(),
 }))

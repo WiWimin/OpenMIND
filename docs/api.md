@@ -2,7 +2,7 @@
 
 本文件是前端、后端与 AI 模块的共同接口基线，也是接口的唯一事实来源。运行期以 FastAPI 自动生成的 OpenAPI 文档为准；设计与实现冲突时先更新本文件。
 
-> 状态：MVP 设计基线。`[提案]` 表示本次新增、需团队确认后实现的接口；`[扩展]` 表示非 MVP、先定义结构但不实现。
+> 状态：MVP 全部实现。`[扩展]` 表示非 MVP、先定义结构但不实现。
 
 ## 一、统一约定
 
@@ -54,10 +54,9 @@
 | `FILE_TOO_LARGE` | 413 | 文件超过大小限制 | 否 |
 | `FILE_PARSE_FAILED` | 422 | 文件无法解析（原因见 `details.reason`，见下） | 通常否 |
 | `MODEL_TIMEOUT` | 504 | 模型调用超时 | 是 |
-| `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析 | 视情况 |
-| `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/维度不符/额度不足等） | 否 |
+| `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析或未通过校验（经 1 次修复重试后仍失败时 `retryable=true`） | 视情况 |
+| `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/额度不足等） | 否 |
 | `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
-| `MODEL_NOT_ALLOWED` | 422 | 请求指定的 `model` 不在已配置的模型列表中 | 否 |
 | `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
 | `RATE_LIMITED` | 429 | 请求频率超过限制 | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
@@ -111,7 +110,7 @@
 
 - 库内统一 `TIMESTAMPTZ`，以 **UTC** 存储；接口返回带时区 ISO 8601（如 `2026-10-01T09:30:00+08:00`）；仅日期字段用 `YYYY-MM-DD`。
 
-### 1.8 健康检查（豁免信封）
+### 1.8 健康检查与运维探针（豁免信封）
 
 以下探针端点不套用 `{ "status": "success", "data": ... }` 信封，直接返回探针结果：
 
@@ -119,6 +118,27 @@
 | --- | --- | --- |
 | GET | `/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | `{ "status": "ok", "database": "up" }`（数据库不可用返回 503 统一错误体） |
+| GET | `/api/v1/metrics` | RAG 可观测性指标快照（见下） |
+
+`GET /api/v1/metrics`（运维端点，**无鉴权，建议仅内网暴露**；进程内累计，重启清零）：
+
+```json
+{
+  "generated_at": 1767000000.0,
+  "counters": { "rag_judge_total/true": 9, "rag_judge_total/false": 2, "rag_judge_total/fallback": 1 },
+  "rag_judge": { "triggered": 12, "true": 9, "false": 2, "fallback": 1,
+                  "ratios": { "true": 0.75, "false": 0.1667, "fallback": 0.0833 } },
+  "windows": {
+    "retrieval_total_ms": { "samples": 30, "p50": 120.5, "p95": 890.1, "max": 1200.0,
+                             "mean": 150.2, "median": 120.5, "insufficient": false }
+  },
+  "alerts": { "last_fired_monotonic": {} }
+}
+```
+
+- `rag_judge.triggered` = Judge 实际调用 LLM 的次数（true+false+fallback）；高分带直通与 Judge 禁用不计入；
+- `windows.*` 来自滑动窗口（约最近 1000 次），样本 < 20 时 `p50/p95` 为 `null` 且 `insufficient=true`；
+- 不含任何查询原文、提示词或用户内容（与日志红线一致）。
 
 ## 二、用户认证（M01，A）
 
@@ -182,25 +202,25 @@
 
 响应 `200`：`data` 为用户对象。
 
-### 2.5 模型配置（用户自带 BYOK，M04，B）
+### 2.5 模型配置（LLM 用户自带 BYOK，M04，B）
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/api/v1/me/settings/model` | 读取当前生效的模型配置（密钥脱敏） |
-| PUT | `/api/v1/me/settings/model` | 保存/替换模型配置（probe 校验后加密存库） |
+| PUT | `/api/v1/me/settings/model` | 保存/替换 LLM 自备配置（probe 校验后加密存库） |
+| GET | `/api/v1/me/settings/model/provider-models` | 拉取当前服务商可用模型清单（会话内模型选择器用） |
 | PUT | `/api/v1/me/settings/model/purposes` | 保存按用途覆盖的模型名 |
 | DELETE | `/api/v1/me/settings/model` | 清空自备配置，回退服务端全局 |
 
-PUT 请求（字段可按提供方整体省略，省略即清空该提供方）：
+向量模型（Embedding）不支持用户自备，始终使用服务端 `docker/.env` 的 `EMBEDDING_*` 全局配置；本接口仅接受 LLM 三字段。
+
+PUT 请求（LLM 字段可整体省略，省略即清空 LLM 自备配置）：
 
 ```json
 {
   "llm_api_base": "https://api.example.com/v1",
   "llm_api_key": "sk-...",
-  "llm_model": "model-name",
-  "embedding_api_base": "https://api.example.com/v1",
-  "embedding_api_key": "sk-...",
-  "embedding_model": "text-embedding-1024"
+  "llm_model": "model-name"
 }
 ```
 
@@ -237,9 +257,10 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
     },
     "embedding_api_base": "https://api.example.com/v1",
     "embedding_model": "text-embedding-1024",
-    "embedding_api_key_masked": "sk-...abcd",
-    "embedding_source": "user",
-    "embedding_dim": 1024
+    "embedding_api_key_masked": "",
+    "embedding_source": "global",
+    "embedding_dim": 1024,
+    "llm_probe_verified": true
   }
 }
 ```
@@ -247,15 +268,19 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 规则：
 - 密钥 `Fernet` 加密存库，永不明文返回；`_masked` 仅展示前后缀。
 - `_masked` 仅在来源为 `user` 时返回值；`global` / `none` 返回空字符串，避免向普通用户泄露服务端全局密钥片段。
-- 保存时 probe 实测：Embedding 必须返回 **1024** 维向量、LLM 需能生成。密钥无效、维度不匹配或输出格式错误返回 `400 MODEL_CONFIG_INVALID`；网络异常、超时、限流、服务端 5xx 和额度不足保留原错误码（`INTERNAL_ERROR` / `MODEL_TIMEOUT` / `RATE_LIMITED` / `MODEL_QUOTA_EXCEEDED`）及 `retryable` 语义，避免把外部瞬断误报为配置无效。
+- 保存时 probe 实测：真实调用一次 LLM（单次、不重试、15s 超时），HTTP 200 且返回 `choices` 即通过，不要求正文非空（兼容思考型模型）。密钥无效返回 `400 MODEL_CONFIG_INVALID`；超时、服务端 5xx 和额度不足保留原错误码（`MODEL_TIMEOUT` / `INTERNAL_ERROR` / `MODEL_QUOTA_EXCEEDED`）及 `retryable` 语义。
+- probe 遇到 `429 RATE_LIMITED` 时视为密钥认证已通过，**放行保存**，响应带 `llm_probe_verified: false` 提示“未完成调用验证”；其余情况该字段为 `true`（GET 响应恒为 `true`）。
 - 保存前校验 `api_base`：默认只允许 HTTPS 公网地址，拒绝本机/私有/保留地址、URL 内嵌凭证和 query/fragment；自建本地模型需显式开启 `ALLOW_PRIVATE_MODEL_ENDPOINTS=true`。
-- 默认 `ALLOW_GLOBAL_FALLBACK=false`：未配置 BYOK 的用户不会自动使用服务端全局 Key；AI 接口返回 `400 MODEL_CONFIG_REQUIRED`。
-- 仅当 `ALLOW_GLOBAL_FALLBACK=true` 时按“用户配置 > 服务端全局（`docker/.env`）”回退。
-- `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
+- 向量模型（Embedding）为服务端统一配置：`embedding_source` 只会是 `global`（`docker/.env` 已配置）或 `none`（未配置）；未配置时 RAG/知识库/材料索引返回 `400 MODEL_CONFIG_REQUIRED`，用户侧无法自行修复，需管理员填写 `EMBEDDING_*`。
+- 默认 `ALLOW_GLOBAL_FALLBACK=false`：未配置 BYOK LLM 的用户不会自动使用服务端全局 Key；AI 接口返回 `400 MODEL_CONFIG_REQUIRED`。
+- 仅当 `ALLOW_GLOBAL_FALLBACK=true` 时 LLM 按“用户配置 > 服务端全局（`docker/.env`）”回退；该开关不影响 Embedding（始终为服务端配置）。
+- `llm_source` / `embedding_source` 表示该提供方生效来源：`user`（仅 LLM，用户自备）、`global`（服务端全局）、`none`（未配置）；两者独立判定。
 - `llm_purpose_models` 返回已保存的用途模型覆盖；未知用途或空模型名在写入时返回 `422`，未配置大模型时写入返回 `400 MODEL_CONFIG_INVALID`。
 - 轮换 `SECRET_KEY` 时设置 `SECRET_KEY_PREVIOUS` 为旧值以解密既有密文；新写入使用当前 `SECRET_KEY`。确认全部配置已重新保存后可移除旧值。
 - 无法解密既有密文时返回 `400 MODEL_CONFIG_INVALID`；可调用 `DELETE /me/settings/model` 清除后重新配置。
 - 模型额度不足返回 `402 MODEL_QUOTA_EXCEEDED`；密钥无效/配置错误返回 `400 MODEL_CONFIG_INVALID`。
+
+`GET /me/settings/model/provider-models`：用当前生效的 LLM 配置真实调用服务商 `GET /models`（OpenAI 兼容），返回 `data.llm_model`（已保存默认模型）与 `data.models`（排序后的模型 id 清单）。未配置 LLM 返回 `400 MODEL_CONFIG_REQUIRED`；服务商失败沿用统一错误体（超时/网络/密钥无效等），前端据此回退为仅展示项目预设清单。
 
 ### 2.6 个人知识库
 
@@ -349,7 +374,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 规则：
 - 记忆由用户显式维护；当前不自动从会议内容提取偏好。
-- `preferred_minutes_template` 可空；生成纪要未显式传 `template` 时使用该偏好，否则回退 `standard`。
+- `preferred_minutes_template` 可空；取值可以是内置枚举值（`standard`/`concise`/`task_list`）或模板清单中的模板 id（5.16a）；生成纪要未显式传 `template`/`template_id` 时使用该偏好，否则回退 `standard`。
 - 记忆只用于调整准备重点、纪要表达和问答表达；不得覆盖材料事实、来源、权限或业务规则。
 - 按用途筛选：会前准备使用角色/场景/表达偏好；纪要使用表达偏好与模板偏好；问答使用表达偏好；行动项/问题提取不使用记忆。
 - 所有读取和写入严格限定当前用户。
@@ -365,6 +390,11 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 | POST | `/api/v1/audio/{audio_id}/retry` | 重新转写 |
 | POST | `/api/v1/audio/{audio_id}/confirm` | 确认转写并创建会议记录 |
 | DELETE | `/api/v1/audio/{audio_id}` | 删除未确认音频 |
+| POST | `/api/v1/meetings/{meeting_id}/audio/live/start` | 开始实时录音会话（创建 `processing` 音频） |
+| POST | `/api/v1/audio/{audio_id}/live/chunk` | 上传实时录音分片并转写追加 |
+| POST | `/api/v1/audio/{audio_id}/live/finish` | 结束实时会话：合并分片、落定状态（幂等） |
+| POST | `/api/v1/audio/{audio_id}/segments/{seq}/retry` | 重试某个转写失败的分片（仅实时会话中） |
+| PATCH | `/api/v1/audio/{audio_id}/segments/marker` | 设置/清除分段标记（重点/决议/疑问） |
 
 音频对象：
 
@@ -376,6 +406,9 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "type": "mp3",
   "status": "transcribed",
   "transcript": "转写文本……",
+  "segments": [
+    { "seq": 1, "offset_seconds": 0, "text": "第一段……", "marker_type": null, "error": null }
+  ],
   "error": null,
   "record_id": null,
   "created_at": "2026-10-01T09:00:00+08:00",
@@ -391,7 +424,16 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 转写成功后用户可修订文本；只有 `transcribed` 且文本非空才能确认。
 - 确认创建一条 `record_type=transcript` 的会议记录，确认幂等；已确认音频不能重新转写或删除。
 - 失败可重试；失败原因返回 `error`，不覆盖已有成功文本。
-- 所有音频、转写和记录严格限定当前用户；实时流式转写不在当前范围。
+- 所有音频、转写和记录严格限定当前用户。
+
+实时录音（分片边录边转）规则：
+- `live/start` 请求体 `{ "file_type": "webm" }`，创建 `processing` 状态音频并返回；录音内每段分片通过 `live/chunk` 追加。
+- `live/chunk` 使用 `multipart/form-data`：`file`（完整可解码分片）+ `seq`（从 1 连续递增）+ `offset_seconds`（录音内相对秒数）；`seq` 不连续返回 `422 VALIDATION_ERROR`。
+- 分片逐片转写：单片失败只在该分段写入 `error`，不中断会话；`transcript` 始终为各分段成功文本按 `\n` 拼接。
+- `live/finish` 将分片按 `seq` 合并为单一音频文件（`storage_key` 指向合并文件），删除分片文件；有文本置 `transcribed`，否则 `failed`；重复调用幂等。
+- 实时会话中可通过 `segments/{seq}/retry` 对失败分片重试（依赖分片文件仍在）；会话结束后分片已删除，仅可整体重新转写或修订文本。
+- `PATCH segments/marker` 请求体 `{ "seq": 1, "marker_type": "highlight" | "decision" | "question" | null }`；未知分段返回 `404`。
+- 修订全文（`PATCH /audio/{id}`）后按行重拆 `segments`，沿用原分段的相对时间与标记。
 
 ## 三、会议管理（M02，A）
 
@@ -481,13 +523,15 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ### 4.2 上传材料 `POST /api/v1/meetings/{meeting_id}/materials`
 
-请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选）、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
+请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选，来源标识，前端已知取值：手动上传、`本地工作区`（会议详情/管理页手动导入）、`本地文件夹自动导入`（新建会议选文件夹后自动导入）、`AI 生成`（Build 模式文件三处保存之会议资料副本））、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
 
 响应 `201`：材料对象。当前为同步解析/索引，成功时 `processing_status = processed`；解析或索引失败时返回 `failed` 并写入 `parse_error`，文件类型不支持 `415`，过大 `413`。
 
+> 同名文件不去重（后端无唯一约束）：同名跳过由前端在自动/手动导入前以 `file_name` 集合判定；`POST` 侧不做内容比对或覆盖。
+
 > 上传路径的解析失败以 `processing_status=failed` + `parse_error` 表达，不返回 `422 FILE_PARSE_FAILED`；后者用于解析层错误语义说明，不是上传接口的响应。
 
-### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials` [提案]
+### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials`
 
 查询参数：`page`、`page_size`。响应 `200`：分页结构，`items` 为材料对象数组，按 `created_at` 倒序。
 
@@ -538,7 +582,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 可更新字段：`content`、`marker_type`。传 `marker_type: null` 清除标记；归档会议不可修改。响应 `200` 为更新后记录对象。
 
-### 4.11 删除记录 `DELETE /api/v1/records/{record_id}` [提案]
+### 4.11 删除记录 `DELETE /api/v1/records/{record_id}`
 
 响应 `200`：`{ "status": "success", "data": { "deleted": true, "record_id": "rec_xxx" } }`。
 若该记录被行动项或问题引用，返回 `409 BUSINESS_RULE_VIOLATION`，以保留来源可追溯性。
@@ -571,8 +615,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```
 
 可选字段：
-- `model`（string）：覆盖本次生成使用的模型名，必须已在模型配置中登记（全局模型或任一用途模型），否则 `422 MODEL_NOT_ALLOWED`；
-- `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a 会议模板），模板结构文本将注入生成提示词；不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
+- `model`（string）：覆盖本次生成使用的模型名，来自模型配置弹窗中服务商预设的常用模型清单；模型名是否有效由服务商 API 判定（无效时返回调用错误）；
+- `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a 会议模板），模板结构文本作为独立段注入生成提示词的 user 消息（不进 system，见 `ai-design.md 七`）；不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
 
 响应 `200`：准备稿对象（`status = draft`）。同步完成；超时返回统一错误。`include_history=true` 时在用户授权范围内加入有限历史材料；`false` 时只使用当前会议材料。
 每次生成**新增一条**准备稿记录；对某条记录的编辑原地更新并 `version` 递增（`ai-design.md 八.1`）。
@@ -602,7 +646,9 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 { "question": "上次会议决定了什么？", "context_scope": "current_meeting", "include_sources": true }
 ```
 
-可选字段 `model`（string）：覆盖本次对话使用的模型名，必须已在模型配置中登记，否则 `422 MODEL_NOT_ALLOWED`。
+可选字段 `model`（string）：覆盖本次对话使用的模型名，来自服务商预设的常用模型清单；模型名是否有效由服务商 API 判定。
+
+可选字段 `mode`（string，默认 `plan`）：`plan` 先讨论/规划；`build` 基于资料直接产出可交付文件（结构化 Markdown，随响应 `file` 字段返回，由前端转 DOCX 下载并可保存为会议资料/写入本地文件夹）。
 
 `context_scope`：`current_meeting`（默认）/ `current_and_history` / `knowledge_base`。它只控制检索范围，不授予权限：
 - `current_meeting`：当前会议材料；
@@ -617,31 +663,52 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "data": {
     "answer": "根据已有会议材料，上次会议决定……",
     "sources": [
-      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "document_id": null, "document_name": null, "excerpt": "相关原文片段" },
-      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "document_id": null, "document_name": null, "excerpt": "当前会议记录片段" },
-      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": "kdoc_xxx", "document_name": "项目手册.pdf", "excerpt": "知识库原文片段" }
+      { "meeting_id": "mtg_old", "material_id": "mat_old", "record_id": null, "document_id": null, "document_name": null, "excerpt": "相关原文片段", "origin": "material", "url": null, "title": null },
+      { "meeting_id": "mtg_xxx", "material_id": null, "record_id": "rec_xxx", "document_id": null, "document_name": null, "excerpt": "当前会议记录片段", "origin": "record", "url": null, "title": null },
+      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": "kdoc_xxx", "document_name": "项目手册.pdf", "excerpt": "知识库原文片段", "origin": "material", "url": null, "title": null },
+      { "meeting_id": null, "material_id": null, "record_id": null, "document_id": null, "document_name": null, "excerpt": "联网检索片段……", "origin": "web", "url": "https://example.com/a", "title": "页面标题" }
     ],
-    "insufficient_evidence": false
+    "insufficient_evidence": false,
+    "file": null
   }
 }
 ```
 
-- `sources` 可为空数组，不得伪造引用；来源可以是会议材料分块（`material_id` 有值）、当前会议记录（`record_id` 有值，`material_id` 为 `null`）或个人知识库分块（`document_id` 有值，`meeting_id`/`material_id` 为 `null`）。
-- 证据不足时 `insufficient_evidence = true`。
+- `sources` 可为空数组，不得伪造引用；`origin` 标识来源类别：`material`（会议材料/知识库，`material_id` 或 `document_id` 有值）、`record`（当前会议记录，`record_id` 有值）、`web`（联网检索，`url`/`title` 有值）。
+- 证据不足时 `insufficient_evidence = true`，并进入**两段式联网补救**：先在回答开头告知「你的会议资料中未找到相关证据」，再基于联网检索片段作答（`origin=web` 来源）；联网关闭、无结果或失败时回退为原拒答文案，绝不裸报错。联网仅发生在答案层，不改变检索层阈值/Judge 口径；问题文本会发送至所配置的搜索服务（默认 cn.bing.com）。
+- `mode=build` 且证据充分时 `file` 返回 `{ "filename": "xxx.md", "content": "Markdown 正文" }`；`plan` 模式或证据不足时为 `null`。
 
 ### 5.8 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
 
 ```json
-{ "record_ids": ["rec_xxx"], "style": "structured" }
+{ "record_ids": ["rec_xxx"], "task": "organize", "style": "分点输出" }
 ```
 
-建议 MVP 要求显式传 `record_ids`。响应 `200`：
+- `task`（可选，默认 `organize`）：`organize` 整理记录 / `summary` 提炼要点 / `brief` 简短摘要 / `polish` 修正口误建议。
+- 输入源三级回退：`text`（直接传文本，≤20000 字）> `audio_id`（使用该音频的转写文本）> `record_ids`（为空数组时回退到最近 20 条 ≤8000 字记录）；三者均无内容返回 `422 VALIDATION_ERROR`。
+- `instruction`（可选，≤2000 字）：用户附加要求，注入设计好的任务提示词（user 消息追加「用户补充要求：…」节）；为空时不追加，system 提示词不受影响。
+- `model`（可选）：覆盖本次任务使用的模型，须已在模型配置中登记。
+- `style`（可选）：风格要求，对 `organize` / `brief` 生效。
+
+响应 `200`：
 
 ```json
-{ "status": "success", "data": { "organized_content": "整理后的内容……", "source_record_ids": ["rec_xxx"] } }
+{
+  "status": "success",
+  "data": {
+    "task": "organize",
+    "organized_content": "整理后的内容……",
+    "structured": null,
+    "source_record_ids": ["rec_xxx"]
+  }
+}
 ```
 
-> 该结果为临时整理，不落库（无对应表）。
+- `summary` / `polish` 任务：服务端经结构化管线（解析预处理 → schema + 业务字段校验 → 1 次修复重试，`ai-design.md 3.3`）写入 `structured`（`summary` 为四段结构对象，`polish` 为修改建议数组）；修复重试后仍失败时 `structured = null`，`organized_content` 返回首次尝试的原始文本供前端降级展示（接口保持 200），校验通过时 `organized_content` 为空字符串。
+- `organize` / `brief` 任务：`structured` 恒为 `null`，正文在 `organized_content`。
+- `polish` 的 `structured` 为建议清单，由用户逐条确认后由前端写回转写文本（`PATCH /audio/{id}`），后端不直接改写。
+
+> 该结果为临时整理，不落库（无对应表）；不覆盖原始记录与转写文本。
 
 ### 5.9 纪要对象
 
@@ -675,7 +742,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 }
 ```
 
-可选字段 `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a），优先于 `template`；模板结构文本注入生成提示词，生成结果的 `template` 字段记为 `custom`。模板不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
+可选字段 `template_id`（string）：套用输出模板（内置或本人自定义，见 5.16a），优先于 `template`；模板结构文本作为独立段注入生成提示词的 user 消息（不进 system，见 `ai-design.md 七`），生成结果的 `template` 字段记为 `custom`。模板不存在或越权返回 `404 RESOURCE_NOT_FOUND`。
 
 - `include_materials` 默认 `true`；为 `true` 时融合当前会议资料（最多 10 份、合计约 12000 字符）和记录标记。
 - `template` 省略时优先使用记忆中心的 `preferred_minutes_template`，未设置则 `standard`：
@@ -686,19 +753,19 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 响应 `201`：纪要对象（`status = draft`）。
 - 每次生成**新增一条**纪要记录，不覆盖已确认纪要；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
 
-### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes` [提案]
+### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes`
 
 响应 `200`：分页结构，按 `created_at` 倒序。
 
-### 5.12 纪要详情 `GET /api/v1/minutes/{minutes_id}` [提案]
+### 5.12 纪要详情 `GET /api/v1/minutes/{minutes_id}`
 
 响应 `200`：纪要对象。
 
-### 5.13 编辑纪要 `PATCH /api/v1/minutes/{minutes_id}` [提案]
+### 5.13 编辑纪要 `PATCH /api/v1/minutes/{minutes_id}`
 
 可更新字段：`content`。响应 `200` 为更新后对象，`version` 递增。
 
-### 5.14 确认纪要 `POST /api/v1/minutes/{minutes_id}/confirm` [提案]
+### 5.14 确认纪要 `POST /api/v1/minutes/{minutes_id}/confirm`
 
 响应 `200`：返回 `status = confirmed` 的纪要对象。
 
@@ -753,7 +820,7 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 
 ### 5.16a 会议模板（M02 扩展，B）
 
-用于会前准备稿与纪要生成的输出模板。内置模板由项目代码提供（不入库），自定义模板按用户隔离存储。
+用于会前准备稿与纪要生成的输出模板。内置模板由项目代码提供（不入库，覆盖会前摘要/议程/发言稿与会后纪要/记录及通用简报，含 `category` 分类），自定义模板按用户隔离存储，支持文件上传与纯文本创建。
 
 模板对象：
 
@@ -762,25 +829,34 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
   "template_id": "tpl_xxx",
   "name": "产品评审模板",
   "description": "用于产品评审会",
+  "category": "会后",
   "source": "custom",
   "file_name": "review.md",
-  "created_at": "2026-10-29T10:00:00+08:00"
+  "created_at": "2026-10-29T10:00:00+08:00",
+  "content_preview": "1. 评审结论；2. 问题清单"
 }
 ```
 
-- `source`：`builtin`（内置，`created_at`/`file_name` 为 `null`）/ `custom`（本人上传）。
-- 列表响应不包含模板正文；正文通过详情接口获取。
+- `source`：`builtin`（内置，`created_at`/`file_name` 为 `null`）/ `custom`（本人创建或上传）。
+- `category`：`会前` / `会后` / `通用`，可空。
+- `content_preview`：模板正文前 60 字符（压平空白），供卡片缩略图展示；列表响应不包含模板正文，正文通过详情接口获取。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/api/v1/meeting-templates` | 模板列表（内置 + 本人自定义，内置在前） |
-| POST | `/api/v1/meeting-templates` | 上传模板（multipart：`file` 必填，`name`/`description` 可选） |
+| POST | `/api/v1/meeting-templates` | 上传模板（multipart：`file` 必填，`name`/`description`/`category` 可选） |
+| POST | `/api/v1/meeting-templates/text` | 按文本创建模板（JSON：`name`/`content_text` 必填，`description`/`category` 可选） |
+| POST | `/api/v1/meeting-templates/generate` | AI 生成模板草稿（JSON：`description` 必填；返回候选结果不入库） |
 | GET | `/api/v1/meeting-templates/{template_id}` | 模板详情（含 `content_text` 正文） |
 | DELETE | `/api/v1/meeting-templates/{template_id}` | 删除本人自定义模板 |
 
-上传约束：仅支持 `DOCX` / `TXT` / `MD`；大小沿用全局上传限制（20MB）；内容解析失败返回 `422 FILE_PARSE_FAILED`，类型不支持返回 `415 FILE_TYPE_NOT_SUPPORTED`，超限返回 `413 FILE_TOO_LARGE`。
-权限：内置模板人人可读、不可删除；自定义模板仅本人可见/可删，越权统一 `404 RESOURCE_NOT_FOUND`。
-生成联动：`prepare`（5.2）与 `minutes/generate`（5.10）接受可选 `template_id`，模板正文注入提示词；自定义模板不可用或已删除时按原逻辑返回 `404`。
+- 文本创建与上传共用约束：名称 ≤100 字符、描述 ≤255 字符、内容 ≤20000 字符、分类仅限 `会前`/`会后`/`通用`；违规返回 `422 VALIDATION_ERROR`。
+- 上传约束：仅支持 `DOCX` / `TXT` / `MD`；大小沿用全局上传限制（20MB）；内容解析失败返回 `422 FILE_PARSE_FAILED`，类型不支持返回 `415 FILE_TYPE_NOT_SUPPORTED`，超限返回 `413 FILE_TOO_LARGE`。
+- AI 生成：按用途模型路由（`minutes` 用途）调用 LLM，返回 `{name, description, category, content_text}` 草稿候选，**不入库**；用户确认后通过 `text` 端点保存。未配置模型返回 `400 MODEL_CONFIG_REQUIRED`，模型异常沿用统一错误码。
+- 权限：内置模板人人可读、不可删除；自定义模板仅本人可见/可删，越权统一 `404 RESOURCE_NOT_FOUND`。
+- 生成联动：`prepare`（5.2）与 `minutes/generate`（5.10）接受可选 `template_id`，模板正文注入提示词 user 消息段（不进 system）；自定义模板不可用或已删除时按原逻辑返回 `404`。
+- 默认模板：记忆中心 `preferred_minutes_template`（5.15）支持内置枚举值或模板清单中的模板 id；非枚举值时生成自动注入该模板正文并记 `template=custom`。
+
 
 ## 六、行动项与个人任务（M07、M08，A）
 
@@ -805,9 +881,9 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/api/v1/meetings/{meeting_id}/action-items` | 行动项列表 |
-| GET | `/api/v1/action-items/{action_id}` | 行动项详情 [提案] |
+| GET | `/api/v1/action-items/{action_id}` | 行动项详情 |
 | PATCH | `/api/v1/action-items/{action_id}` | 编辑行动项 |
-| DELETE | `/api/v1/action-items/{action_id}` | 删除行动项（未转任务时）[提案] |
+| DELETE | `/api/v1/action-items/{action_id}` | 删除行动项（未转任务时）|
 | POST | `/api/v1/action-items/{action_id}/confirm` | 确认行动项 |
 | POST | `/api/v1/action-items/{action_id}/convert-to-task` | 转为任务 |
 
@@ -914,4 +990,4 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 
 - 接口字段、状态值、错误码或路径变更必须先更新本文件，再更新实现。
 - 每个 PR 应说明：新增/修改的接口、请求响应变化、是否影响其他成员、是否需要数据库迁移。
-- `[提案]` 接口需团队确认后从提案转为正式；`[扩展]` 接口不在 MVP 范围。
+- `[扩展]` 接口不在 MVP 范围。

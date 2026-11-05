@@ -200,3 +200,138 @@ def test_chat_unconfigured_raises_model_config_required() -> None:
         client.chat([{"role": "user", "content": "x"}])
 
     assert exc_info.value.error_code == "MODEL_CONFIG_REQUIRED"
+
+
+def test_probe_passes_when_content_is_empty() -> None:
+    """思考型模型在小 max_tokens 下可能只返回思考内容，probe 应视为通过。"""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        body = {
+            "model": "test-model",
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "", "reasoning_content": "思考"},
+                    "finish_reason": "length",
+                }
+            ],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 32},
+        }
+        return httpx.Response(200, json=body, request=request)
+
+    _client(handler).probe()
+
+    assert len(calls) == 1
+    payload = json.loads(calls[0].content)
+    assert payload["max_tokens"] == 32
+    assert payload["temperature"] == 0
+
+
+def test_probe_empty_choices_raises_model_output_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": []}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).probe()
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"
+    assert exc_info.value.retryable is False
+
+
+def test_probe_single_attempt_on_429() -> None:
+    """probe 不重试：保存校验遇到限流时由上层决定放行。"""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(429, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).probe()
+
+    assert exc_info.value.error_code == "RATE_LIMITED"
+    assert len(calls) == 1
+
+
+def test_probe_401_fails_without_retry() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(401, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).probe()
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+    assert len(calls) == 1
+
+
+def test_probe_5xx_raises_internal_error_without_retry() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(500, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).probe()
+
+    assert exc_info.value.error_code == "INTERNAL_ERROR"
+    assert len(calls) == 1
+
+
+def test_probe_unconfigured_raises_model_config_required() -> None:
+    client = LLMClient(api_base="", api_key="", model="m")
+    with pytest.raises(AppError) as exc_info:
+        client.probe()
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_REQUIRED"
+
+
+def test_list_models_returns_sorted_ids() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        body = {
+            "object": "list",
+            "data": [{"id": "model-b"}, {"id": "model-a"}, {"id": ""}, "not-a-dict"],
+        }
+        return httpx.Response(200, json=body, request=request)
+
+    models = _client(handler).list_models()
+
+    assert models == ["model-a", "model-b"]
+    assert calls[0].url.path == "/models"
+
+
+def test_list_models_401_raises_model_config_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={}, request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).list_models()
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+
+
+def test_list_models_timeout_raises_model_timeout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).list_models(timeout_s=0.01)
+
+    assert exc_info.value.error_code == "MODEL_TIMEOUT"
+
+
+def test_list_models_invalid_json_raises_model_output_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not json", request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).list_models()
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"

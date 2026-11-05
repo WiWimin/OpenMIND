@@ -10,7 +10,7 @@
       :disabled="disabled"
       @click="toggle"
     >
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
         <path
           d="m12 3 7.5 4.3v9.4L12 21l-7.5-4.3V7.3L12 3Z"
           stroke="currentColor"
@@ -24,66 +24,122 @@
           stroke-linejoin="round"
         />
       </svg>
-      <span v-if="selectedModel" class="model-picker__dot" aria-hidden="true" />
+      <span class="model-picker__label">{{ triggerLabel }}</span>
+      <svg
+        class="model-picker__chevron"
+        :class="{ 'model-picker__chevron--open': open }"
+        viewBox="0 0 24 24"
+        width="12"
+        height="12"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="m6 9 6 6 6-6"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
     </button>
 
-    <div v-if="open" class="model-picker__panel" role="menu" aria-label="选择对话模型">
-      <p class="model-picker__head">对话模型</p>
-
-      <p v-if="loading" class="model-picker__state">正在加载模型配置…</p>
-      <p v-else-if="error" class="model-picker__state model-picker__state--error">{{ error }}</p>
-
-      <template v-else>
-        <button
-          v-for="option in options"
-          :key="option.value || 'default'"
-          type="button"
-          class="model-picker__item"
-          :class="{ 'model-picker__item--selected': option.value === selectedModel }"
-          role="menuitemradio"
-          :aria-checked="option.value === selectedModel"
-          @click="choose(option.value)"
-        >
-          <span class="model-picker__item-main">
-            <strong>{{ option.label }}</strong>
-            <span v-if="option.hint" class="model-picker__item-hint">{{ option.hint }}</span>
-          </span>
-          <svg
-            v-if="option.value === selectedModel"
-            viewBox="0 0 24 24"
-            width="14"
-            height="14"
-            fill="none"
-            aria-hidden="true"
-          >
+    <div v-if="open" class="model-picker__panel" role="dialog" aria-label="选择对话模型">
+      <div class="model-picker__toolbar">
+        <div class="model-picker__search">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.6" />
             <path
-              d="M4.5 12.5 9.5 17.5 19.5 6.5"
+              d="m16 16 4.5 4.5"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.6"
               stroke-linecap="round"
-              stroke-linejoin="round"
+            />
+          </svg>
+          <input
+            ref="searchInputEl"
+            v-model="query"
+            type="text"
+            class="model-picker__search-input"
+            placeholder="搜索模型"
+            aria-label="搜索模型"
+          />
+        </div>
+        <button
+          type="button"
+          class="model-picker__add"
+          title="添加模型配置"
+          aria-label="添加模型配置"
+          @click="openConfig"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+            <path
+              d="M12 5v14M5 12h14"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
             />
           </svg>
         </button>
+      </div>
 
-        <p v-if="!hasConfiguredModel" class="model-picker__state">
-          尚未配置模型，选择将继续跟随服务端默认路由。
+      <div class="model-picker__list">
+        <p v-if="loading" class="model-picker__state">正在获取模型列表…</p>
+        <p v-else-if="error" class="model-picker__state model-picker__state--error">
+          {{ error }}
         </p>
-      </template>
+        <template v-else>
+          <p v-if="providerError" class="model-picker__state model-picker__state--error">
+            {{ providerError }}
+          </p>
 
-      <button type="button" class="model-picker__manage" @click="emit('manage')">
-        管理模型配置
-      </button>
+          <template v-if="providerItems.length">
+            <p class="model-picker__group">全部模型</p>
+            <button
+              v-for="option in providerItems"
+              :key="`provider-${option.value}`"
+              type="button"
+              class="model-picker__item"
+              :class="{ 'model-picker__item--selected': option.value === effectiveSelected }"
+              role="menuitemradio"
+              :aria-checked="option.value === effectiveSelected"
+              @click="choose(option.value)"
+            >
+              <span class="model-picker__item-main">
+                <strong>{{ option.label }}</strong>
+              </span>
+              <svg
+                v-if="option.value === effectiveSelected"
+                class="model-picker__check"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4.5 12.5 9.5 17.5 19.5 6.5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </template>
+
+          <p v-if="showEmpty" class="model-picker__state">未找到匹配的模型</p>
+        </template>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import { getModelConfig } from '@/api/settings'
-import { findPresetByApiBase } from '@/constants/modelProviders'
-import type { ModelConfig, ModelPurpose } from '@/types/modelConfig'
+import { getModelConfig, getProviderModels } from '@/api/settings'
+import type { ModelConfig } from '@/types/modelConfig'
 
 const props = withDefaults(defineProps<{ disabled?: boolean; selected?: string }>(), {
   disabled: false,
@@ -92,13 +148,6 @@ const props = withDefaults(defineProps<{ disabled?: boolean; selected?: string }
 
 const emit = defineEmits<{ select: [model: string]; manage: [] }>()
 
-const PURPOSE_LABELS: Record<ModelPurpose, string> = {
-  preparation: '会前准备用途',
-  chat: '会议问答用途',
-  minutes: '纪要生成用途',
-  extraction: '信息提取用途',
-}
-
 interface ModelOption {
   value: string
   label: string
@@ -106,57 +155,47 @@ interface ModelOption {
 }
 
 const rootEl = ref<HTMLElement | null>(null)
+const searchInputEl = ref<HTMLInputElement | null>(null)
 const open = ref(false)
 const loading = ref(false)
 const error = ref('')
+const query = ref('')
 const config = ref<ModelConfig | null>(null)
+const providerModels = ref<string[]>([])
+const providerLoading = ref(false)
+const providerLoaded = ref(false)
+const providerError = ref('')
 
 const selectedModel = computed(() => props.selected)
 
-const options = computed<ModelOption[]>(() => {
-  const list: ModelOption[] = [
-    { value: '', label: '默认（按用途路由）', hint: '跟随模型配置中的用途路由' },
-  ]
-  const seen = new Set<string>()
-  const current = config.value
-  if (current?.llm_api_base) {
-    // 按已保存的 API 地址匹配提供商预设，列出该提供商的常用模型
-    const preset = findPresetByApiBase(current.llm_api_base)
-    if (preset) {
-      for (const model of preset.models) {
-        if (seen.has(model)) {
-          continue
-        }
-        seen.add(model)
-        list.push({ value: model, label: model, hint: `${preset.name} 推荐` })
-      }
-    }
+// 无会话内选择时，默认选中「全部模型」的第一个模型
+const effectiveSelected = computed(() => selectedModel.value || providerModels.value[0] || '')
+
+// 触发器展示当前生效模型
+const triggerLabel = computed(() => {
+  if (effectiveSelected.value) {
+    return effectiveSelected.value
   }
-  if (current?.llm_model) {
-    if (!seen.has(current.llm_model)) {
-      list.push({ value: current.llm_model, label: current.llm_model, hint: '默认模型' })
-    }
-    seen.add(current.llm_model)
-  }
-  if (current) {
-    for (const [purpose, model] of Object.entries(current.llm_purpose_models) as [
-      ModelPurpose,
-      string,
-    ][]) {
-      if (!model || seen.has(model)) {
-        continue
-      }
-      seen.add(model)
-      list.push({ value: model, label: model, hint: PURPOSE_LABELS[purpose] })
-    }
-  }
-  return list
+  return config.value?.llm_model || '默认模型'
 })
 
-const hasConfiguredModel = computed(() => options.value.length > 1)
+const triggerTitle = computed(() => `对话模型：${triggerLabel.value}`)
 
-const triggerTitle = computed(() =>
-  selectedModel.value ? `对话模型：${selectedModel.value}` : '选择对话模型',
+function matchesQuery(label: string): boolean {
+  const q = query.value.trim().toLowerCase()
+  return !q || label.toLowerCase().includes(q)
+}
+
+const providerItems = computed<ModelOption[]>(() =>
+  providerModels.value.filter((model) => matchesQuery(model)).map((model) => ({
+    value: model,
+    label: model,
+    hint: '',
+  })),
+)
+
+const showEmpty = computed(
+  () => !loading.value && !providerItems.value.length,
 )
 
 async function loadConfig(): Promise<void> {
@@ -164,10 +203,36 @@ async function loadConfig(): Promise<void> {
   error.value = ''
   try {
     config.value = await getModelConfig()
+    void loadProviderModels()
   } catch {
     error.value = '模型配置加载失败，请稍后重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadProviderModels(): Promise<void> {
+  if (providerLoading.value || providerLoaded.value) {
+    return
+  }
+  const current = config.value
+  if (!current || current.llm_source === 'none' || !current.llm_api_base) {
+    return
+  }
+  providerLoading.value = true
+  providerError.value = ''
+  try {
+    const result = await getProviderModels()
+    providerModels.value = result.models
+    // 未手动选择过时，默认选中清单第一个模型，保证展示与实际请求一致
+    if (!props.selected && result.models.length) {
+      emit('select', result.models[0])
+    }
+  } catch {
+    providerError.value = '获取服务商模型列表失败，仅显示项目预设'
+  } finally {
+    providerLoading.value = false
+    providerLoaded.value = true
   }
 }
 
@@ -176,14 +241,22 @@ function toggle(): void {
     return
   }
   open.value = !open.value
-  if (open.value && !config.value && !loading.value) {
-    void loadConfig()
+  if (open.value) {
+    if (!config.value && !loading.value) {
+      void loadConfig()
+    }
+    void nextTick(() => searchInputEl.value?.focus())
   }
 }
 
 function choose(value: string): void {
   emit('select', value)
   open.value = false
+}
+
+function openConfig(): void {
+  open.value = false
+  emit('manage')
 }
 
 function onDocumentClick(event: MouseEvent): void {
@@ -201,6 +274,8 @@ function onDocumentKeydown(event: KeyboardEvent): void {
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKeydown)
+  // 挂载即加载配置，让选择框直接显示当前默认模型名
+  void loadConfig()
 })
 
 onBeforeUnmount(() => {
@@ -216,16 +291,18 @@ onBeforeUnmount(() => {
 }
 
 .model-picker__trigger {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 2rem;
+  gap: 6px;
+  max-width: 16rem;
   height: 2rem;
+  padding: 0 var(--space-2);
   color: var(--color-muted-foreground);
+  font: inherit;
+  font-size: 0.75rem;
   background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition:
     color var(--transition-fast),
@@ -245,26 +322,31 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.model-picker__dot {
-  position: absolute;
-  top: -1px;
-  right: -1px;
-  width: 0.5rem;
-  height: 0.5rem;
-  background: var(--color-primary);
-  border: 1.5px solid #ffffff;
-  border-radius: 50%;
+.model-picker__label {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.model-picker__chevron {
+  flex: 0 0 auto;
+  transition: transform var(--transition-fast);
+}
+
+.model-picker__chevron--open {
+  transform: rotate(180deg);
 }
 
 .model-picker__panel {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 0;
-  z-index: 40;
+  z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 17rem;
+  width: 22rem;
+  max-height: 23rem;
   padding: var(--space-2);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -284,9 +366,79 @@ onBeforeUnmount(() => {
   }
 }
 
-.model-picker__head {
-  margin: 0 0 var(--space-1);
-  padding: var(--space-1) var(--space-2) 0;
+.model-picker__toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.model-picker__search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-height: 2.1rem;
+  padding: 0 var(--space-2);
+  color: var(--color-muted-foreground);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.model-picker__search:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+}
+
+.model-picker__search-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  background: transparent;
+  border: 0;
+}
+
+.model-picker__search-input:focus {
+  outline: none;
+}
+
+.model-picker__add {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  color: var(--color-primary-strong);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.model-picker__add:hover {
+  background: var(--color-primary-soft);
+  border-color: rgba(21, 94, 239, 0.28);
+}
+
+.model-picker__list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin-top: var(--space-1);
+}
+
+.model-picker__group {
+  margin: var(--space-2) 0 2px;
+  padding: 0 var(--space-2);
   color: var(--color-muted-foreground);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -350,17 +502,7 @@ onBeforeUnmount(() => {
   font-size: 0.6875rem;
 }
 
-.model-picker__manage {
-  margin-top: var(--space-1);
-  padding: var(--space-2);
-  color: var(--color-primary-strong);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-decoration: none;
-  border-top: 1px solid var(--color-border);
-}
-
-.model-picker__manage:hover {
-  text-decoration: underline;
+.model-picker__check {
+  flex: 0 0 auto;
 }
 </style>

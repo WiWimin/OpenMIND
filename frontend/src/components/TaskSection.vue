@@ -23,11 +23,15 @@
       @retry="store.fetchList()"
     />
 
-    <EmptyState
-      v-else-if="store.items.length === 0"
-      title="还没有任务"
-      description="从已确认的行动项转成任务后，会出现在这里。"
-    />
+    <EmptyState v-else-if="store.items.length === 0" title="还没有任务">
+      <img
+        class="task-section__empty-img"
+        :src="taskEmptyUrl"
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+      />
+    </EmptyState>
 
     <template v-else>
       <div class="task-section__table">
@@ -176,6 +180,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import taskEmptyUrl from '@/assets/task-empty.jpeg'
 import AppButton from '@/components/AppButton.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -192,7 +197,7 @@ import type { PersonalTask, TaskStatus } from '@/types/task'
 import type { SelectOption } from '@/types/ui'
 import { formatDate, formatDateTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
-import { taskStatusMeta } from '@/utils/statusLabels'
+import { taskStatusMeta, type StatusMeta } from '@/utils/statusLabels'
 
 const store = useTasksStore()
 const router = useRouter()
@@ -215,20 +220,13 @@ store.filters.status = props.defaultStatus
 
 const toast = useToast()
 
-const filterOptions: SelectOption[] = [
-  { value: '', label: '全部' },
-  { value: 'todo', label: '待办' },
-  { value: 'in_progress', label: '进行中' },
-  { value: 'completed', label: '已完成' },
-  { value: 'cancelled', label: '已取消' },
-]
+const taskStatusOptions = (
+  Object.entries(taskStatusMeta) as [TaskStatus, StatusMeta][]
+).map(([value, meta]) => ({ value, label: meta.label }))
 
-const statusOptions: SelectOption[] = [
-  { value: 'todo', label: '待办' },
-  { value: 'in_progress', label: '进行中' },
-  { value: 'completed', label: '已完成' },
-  { value: 'cancelled', label: '已取消' },
-]
+const filterOptions: SelectOption[] = [{ value: '', label: '全部' }, ...taskStatusOptions]
+
+const statusOptions: SelectOption[] = taskStatusOptions
 
 const showCancel = ref(false)
 const cancelling = ref(false)
@@ -322,7 +320,8 @@ function goToMeeting(): void {
   if (!meetingId) {
     return
   }
-  void router.push({ name: ROUTE_NAMES.meetingDetail, params: { meetingId } })
+  // 跳到会议管理中该会议的文件列表（原会议详情页已删除）
+  void router.push({ name: ROUTE_NAMES.meetings, query: { meeting: meetingId } })
 }
 
 onMounted(() => {
@@ -417,6 +416,14 @@ async function confirmCancel(): Promise<void> {
   display: flex;
   justify-content: center;
   padding: var(--space-5);
+}
+
+/* 空态插画：放在「还没有任务」文字下方 */
+.task-section__empty-img {
+  display: block;
+  width: min(220px, 70%);
+  height: auto;
+  margin: 0 auto;
 }
 
 .task-section__table {

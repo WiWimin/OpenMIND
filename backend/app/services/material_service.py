@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.ai.parsers import SUPPORTED_EXTENSIONS, parse_bytes
 from app.core.config import get_settings
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, resource_not_found
 from app.models.material import MeetingMaterial
 from app.repositories import chunk_repository, material_repository, record_repository
 from app.services import indexing_service, meeting_service
 from app.utils import storage
 from app.utils.ids import new_id
+from app.utils.pagination import paginate_by
+from app.utils.storage import ensure_upload_size
 
 _ALLOWED_TYPES = {extension.lstrip(".") for extension in SUPPORTED_EXTENSIONS}
 
@@ -68,19 +70,15 @@ def upload_material(
     normalized_type = _infer_material_type(file_name, material_type)
 
     settings = get_settings()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise AppError(
-            "FILE_TOO_LARGE",
-            f"文件超过大小限制（{settings.max_upload_mb}MB）",
-            http_status=413,
-        )
+    ensure_upload_size(content, max_mb=settings.max_upload_mb)
 
     material_id = new_id("mat")
     storage_key = f"materials/{material_id}.{normalized_type}"
-    storage.save_bytes(settings.storage_dir, relative_key=storage_key, data=content)
-    try:
-        material = material_repository.create(
+    material = storage.save_then_create(
+        settings.storage_dir,
+        storage_key,
+        content,
+        lambda: material_repository.create(
             db,
             material_id=material_id,
             meeting_id=meeting_id,
@@ -89,10 +87,8 @@ def upload_material(
             material_type=normalized_type,
             source=source,
             storage_key=storage_key,
-        )
-    except Exception:
-        storage.delete_object(settings.storage_dir, storage_key)
-        raise
+        ),
+    )
     _process_material(db, material, content, file_name)
     return material
 
@@ -106,18 +102,20 @@ def list_materials(
     page_size: int,
 ) -> tuple[list[MeetingMaterial], int]:
     meeting_service.get_owned_meeting(db, meeting_id, user_id)
-    offset = (page - 1) * page_size
-    items = material_repository.list_by_meeting(
-        db, meeting_id, limit=page_size, offset=offset
+    return paginate_by(
+        material_repository.list_by_meeting,
+        material_repository.count_by_meeting,
+        db,
+        meeting_id,
+        page=page,
+        page_size=page_size,
     )
-    total = material_repository.count_by_meeting(db, meeting_id)
-    return items, total
 
 
 def get_owned_material(db: Session, material_id: str, user_id: str) -> MeetingMaterial:
     material = material_repository.get_owned(db, material_id, user_id)
     if material is None:
-        raise AppError("RESOURCE_NOT_FOUND", "材料不存在或不可访问", http_status=404)
+        raise resource_not_found("材料")
     return material
 
 

@@ -8,6 +8,7 @@ from app.schemas.model_config import (
     ModelConfigDeleteResult,
     ModelConfigRead,
     ModelConfigWrite,
+    ProviderModelsRead,
     PurposeModelsWrite,
 )
 from app.services import model_config_service
@@ -25,8 +26,21 @@ def get_model_config(db: DbSession, current_user: CurrentUser) -> Envelope[Model
 def put_model_config(
     payload: ModelConfigWrite, db: DbSession, current_user: CurrentUser
 ) -> Envelope[ModelConfigRead]:
-    model_config_service.save_model_config(db, current_user.user_id, payload)
+    _, llm_probe_verified = model_config_service.save_model_config(
+        db, current_user.user_id, payload
+    )
     data = model_config_service.get_model_config_read(db, current_user.user_id)
+    data.llm_probe_verified = llm_probe_verified
+    return Envelope(data=data)
+
+
+@router.get(
+    "/me/settings/model/provider-models", response_model=Envelope[ProviderModelsRead]
+)
+def get_provider_models(
+    db: DbSession, current_user: CurrentUser
+) -> Envelope[ProviderModelsRead]:
+    data = model_config_service.list_provider_models(db, current_user.user_id)
     return Envelope(data=data)
 
 

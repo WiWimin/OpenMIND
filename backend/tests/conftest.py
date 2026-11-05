@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-" + "a" * 32)
+# 单测/接口测试禁用 RAG 相关性 Judge：避免低分带查询触发真实 LLM 调用
+# （Judge 行为由 tests/unit/test_rag_judge.py 显式开关覆盖）
+os.environ.setdefault("RAG_JUDGE_ENABLED", "false")
+# 单测/接口测试禁用联网检索：拒答路径由测试显式开关覆盖，不发起真实搜索
+os.environ.setdefault("WEB_SEARCH_ENABLED", "false")
 
 import app.models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.db.base import Base
@@ -25,6 +30,18 @@ def _fake_indexing_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
         "embed_texts",
         lambda texts, client: [[0.0] * 1024 for _ in texts],
     )
+
+
+@pytest.fixture(autouse=True)
+def _clean_metrics() -> Iterator[None]:
+    """检索/Judge 埋点写入进程内指标，用例间必须清零避免串扰。"""
+    from app.core import metrics
+
+    metrics.reset()
+    try:
+        yield
+    finally:
+        metrics.reset()
 
 
 @pytest.fixture()

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData
 from app.schemas.knowledge import (
     KnowledgeDeleteResult,
@@ -14,7 +15,6 @@ from app.schemas.knowledge import (
     KnowledgeSearchResponse,
 )
 from app.services import knowledge_service
-from app.utils.pagination import build_pagination
 
 router = APIRouter(tags=["knowledge"])
 
@@ -46,17 +46,18 @@ async def upload_document(
 def list_documents(
     db: DbSession,
     current_user: CurrentUser,
-    page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    params: PageParams,
 ) -> Envelope[ListData[KnowledgeDocumentRead]]:
     items, total = knowledge_service.list_documents(
-        db, user_id=current_user.user_id, page=page, page_size=page_size
+        db, user_id=current_user.user_id, page=params.page, page_size=params.page_size
     )
-    data = ListData[KnowledgeDocumentRead](
-        items=[KnowledgeDocumentRead.model_validate(item) for item in items],
-        pagination=build_pagination(page, page_size, total),
+    return list_envelope(
+        items,
+        KnowledgeDocumentRead,
+        page=params.page,
+        page_size=params.page_size,
+        total=total,
     )
-    return Envelope(data=data)
 
 
 @router.get(
@@ -103,12 +104,12 @@ def search_documents(
         data=KnowledgeSearchResponse(
             items=[
                 KnowledgeSearchHit(
-                    document_id=chunk.document_id,
-                    file_name=file_name,
-                    excerpt=chunk.content,
-                    score=score,
+                    document_id=item.document_id,
+                    file_name=item.document_name,
+                    excerpt=item.excerpt,
+                    score=item.score,
                 )
-                for chunk, file_name, score in items
+                for item in items
             ]
         )
     )

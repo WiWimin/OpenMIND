@@ -41,6 +41,17 @@ function mountDialog() {
   return mount(ModelConfigDialog, { props: { open: true } })
 }
 
+async function fillPresetForm(wrapper: ReturnType<typeof mountDialog>, providerId: string) {
+  await wrapper.find('#model-provider').setValue(providerId)
+  await wrapper.find('#model-api-key').setValue('sk-test-key')
+}
+
+async function clickSave(wrapper: ReturnType<typeof mountDialog>) {
+  const saveButton = wrapper.findAll('button').find((node) => node.text() === '保存配置')
+  await saveButton?.trigger('click')
+  await flushPromises()
+}
+
 describe('ModelConfigDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -70,12 +81,8 @@ describe('ModelConfigDialog', () => {
     const wrapper = mountDialog()
     await flushPromises()
 
-    await wrapper.find('#model-provider').setValue('deepseek')
-    await wrapper.find('#model-api-key').setValue('sk-test-key')
-    await wrapper.find('form, .model-dialog').trigger('submit')
-    const saveButton = wrapper.findAll('button').find((node) => node.text() === '保存配置')
-    await saveButton?.trigger('click')
-    await flushPromises()
+    await fillPresetForm(wrapper, 'deepseek')
+    await clickSave(wrapper)
 
     expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
       llm_api_base: 'https://api.deepseek.com/v1',
@@ -84,26 +91,25 @@ describe('ModelConfigDialog', () => {
     })
   })
 
-  it('warns before clearing a user-configured embedding provider', async () => {
-    vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
-      ...userLlmConfig(),
-      embedding_api_base: 'https://api.example.com/v1',
-      embedding_model: 'text-embedding-model',
-      embedding_api_key_masked: 'ek-***xyz',
-      embedding_source: 'user',
-    })
-    vi.mocked(settingsApi.saveModelConfig).mockResolvedValue(userLlmConfig())
+  it('does not render a model dropdown for preset providers', async () => {
     const wrapper = mountDialog()
     await flushPromises()
 
-    await wrapper.find('#model-provider').setValue('deepseek')
-    await wrapper.find('#model-api-key').setValue('sk-test-key')
-    const saveButton = wrapper.findAll('button').find((node) => node.text() === '保存配置')
-    await saveButton?.trigger('click')
+    await fillPresetForm(wrapper, 'deepseek')
+    expect(wrapper.find('#model-preset-model').exists()).toBe(false)
+  })
+
+  it('does not render the LLM summary box', async () => {
+    vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+      ...baseConfig,
+      llm_api_base: 'https://api.deepseek.com/v1',
+      llm_model: 'deepseek-chat',
+      llm_source: 'user',
+    })
+    const wrapper = mountDialog()
     await flushPromises()
 
-    // 未直接保存，而是先弹出确认提醒
-    expect(settingsApi.saveModelConfig).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('回退服务端默认')
+    expect(wrapper.find('.model-dialog__current').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('大模型')
   })
 })

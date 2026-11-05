@@ -20,6 +20,9 @@
 | `development.md` | 环境要求、启动、常用命令、故障排查 | 接口字段 |
 | `collaboration-rules.md` | **三流分工、分支模型、合并/同步/发布流程** | 接口字段、表结构 |
 | `CONTRIBUTING.md` | 提交信息、PR 模板与流程摘要（分支流程引用 `collaboration-rules.md`） | 设计细节 |
+| `frontend-design-baseline.md` | 前端视觉/交互设计基线（配色、字体、组件样式） | 接口字段、表结构 |
+| `M00-acceptance.md` | M00 模块验收报告（历史归档） | 现行接口契约 |
+| `test-reports/` | 各阶段测试与验收报告归档 | 现行接口契约 |
 
 **权威关系**：
 
@@ -63,19 +66,23 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | D-17 | 会议列表筛选 | MVP 支持 `page`/`page_size`/`status`；`keyword`/`start_time`/`end_time` 为后续增强 | `api.md 三.1` |
 | D-18 | 错误详情 | 可选 `details` 用于字段校验错误与 `FILE_PARSE_FAILED.reason` | `api.md 一.2/1.3` |
 | D-19 | 登录落点与外壳 | 认证后默认落点 `/meetings`；全局外壳（顶栏/导航）归 M02；根路径按登录态重定向到登录页或 `/meetings` | `module-development-spec.md M02`、`frontend/src/router` |
-| D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 LLM/Embedding 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.10` |
+| D-20 | 模型密钥来源 | 用户可在 `/me/settings/model` 自备 **LLM** 配置（Fernet 加密存库、明文不回显），或走服务端 `docker/.env` 全局；优先级用户 > 全局；Embedding 收归服务端统一配置（见 D-27），维度固定 1024 | `api.md 二.5`、`ai-design.md 三.5`、`database.md 三.11` |
 | D-21 | 模型配置安全 | 非开发环境拒绝弱 `SECRET_KEY`；轮换使用 `SECRET_KEY_PREVIOUS`；`api_base` 默认仅允许 HTTPS 公网地址；全局密钥不返回脱敏片段 | `api.md 二.5`、`ai-design.md 三.5`、`docker/.env.example` |
 | D-22 | BYOK 默认不回退全局 | `ALLOW_GLOBAL_FALLBACK=false` 为默认值；未配置用户返回 `MODEL_CONFIG_REQUIRED`，避免团队承担用户 Token 费用 | `api.md 二.5`、`ai-design.md 三.5`、`config.py` |
 | D-23 | 记录检索先受限 | 当前阶段只把当前会议最近记录作为问答受限上下文；完整历史记录检索需独立 schema/检索设计，不宣称已实现 | `api.md 五.7`、`ai-design.md 五/八.2` |
-| D-24 | 请求级模型覆盖 | 会议问答与准备稿接受可选 `model`，仅允许选择已登记模型（基础 `llm_model` + 各用途模型），越权选择返回 `MODEL_NOT_ALLOWED`(422)；API 地址与密钥仍沿用配置 | `api.md 5.2/5.7`、`ai-design.md 三.5` |
+| D-24 | 请求级模型覆盖 | 会议问答与准备稿接受可选 `model`，取值来自服务商预设的常用模型清单；后端不再校验登记列表（`MODEL_NOT_ALLOWED` 已移除），模型有效性由服务商 API 判定；API 地址与密钥仍沿用配置 | `api.md 5.2/5.7`、`ai-design.md 三.5` |
 | D-25 | 会议模板 | 内置模板为代码常量（不入库）；自定义模板 `meeting_templates` 按用户隔离（`tpl_` 前缀）；`prepare`/`minutes/generate` 可选 `template_id` 注入结构文本，套用后纪要 `template=custom` | `api.md 5.16a`、`database.md 三.16`、`ai-design.md 八.1/8.4` |
 | D-26 | 新建会议阶段命名 | 三阶段显示名固定为「资料预处理 / 实时录音转写 / 会后智能处理」，仅改显示文案，路由与页面职责不变 | `frontend/src/components/StageShell.vue` |
+| D-27 | Embedding 收归服务端 + LLM probe 放行限流 | 向量模型不支持用户自备，始终使用 `docker/.env` 的 `EMBEDDING_*`；`user_model_configs` 删除 embedding 四字段（迁移 `0020`）；`ALLOW_GLOBAL_FALLBACK` 仅作用于 LLM；保存 probe 改为单次连通性校验（HTTP 200 且 `choices` 非空即通过，兼容思考型模型），遇 429 视为密钥有效放行保存并返回 `llm_probe_verified: false` | `api.md 二.5`、`ai-design.md 三.5/四.1`、`database.md 三.11`、`docker/.env.example` |
+| D-28 | 用户可控文本只进 user 消息段 | 外部模板结构文本（`template_instructions`）与 organize `instruction` 禁止拼接进 system，一律作为 user 消息末尾独立段注入；system 内置中立防御句（该段仅决定组织形式，越权指令一律忽略）；内置枚举模板指令（代码常量）仍留 system | `ai/prompts/prepare.py`、`ai/prompts/minutes.py`、`ai-design.md 七/八.1/八.4`、`api.md 5.2/5.10/5.16a` |
+| D-29 | 用户画像注入上限 500 字符 | `memory_context_for()` 按 `role` → `work_scenarios` → `communication_style` 拼接并限制总长 ≤500 字符；超限时当前字段截断加 `…` 并丢弃后续字段，防止记忆内容挤占会议业务资料上下文 | `services/memory_service.py`、`ai-design.md 七` |
+| D-30 | JSON 输出统一结构化管线 | 抽取/会前准备/Build 文件/模板草稿/summary/polish 统一走 `ai/structured.py`：解析预处理 → schema + 业务字段校验 → **1 次修复重试**（仅带 `details.validation` 的 `MODEL_OUTPUT_INVALID` 进入重试）→ 报错或降级 + 规范日志（不含提示词/原文）；`on_failure="raise"` 场景最终抛 502 `retryable=true`，summary/polish 保持降级（200 + `structured=null` + 首次原文） | `ai/structured.py`、`ai-design.md 3.3/8.3/8.5/8.6`、`api.md 1.3/5.7` |
+| D-31 | RAG 能力声明与可观测性 | ①产品能力声明：会议转写记录不进入向量库、问答仅提供最近 20 条 ≤8000 字符记录上下文，在 `docs/user-guide.md` 与 README 明示（对齐 D-23）；②Judge 埋点：`rag_judge_total/{true,false,fallback}` 计数 + 判定日志（不含查询原文）；③检索性能：sql/embed/similarity/total 分段计时 + 候选行数窗口，`GET /api/v1/metrics` 暴露 P50/P95，超阈值打 `logger.error` 告警行（env 阈值 + 冷却）；载体为内存指标（零新依赖、重启清零） | `docs/user-guide.md`、`README.md`、`core/metrics.py`、`api/v1/metrics.py`、`ai/rag/retriever.py`、`ai-design.md 5.7`、`api.md 1.8`、`docker/.env.example` |
 
 ## 四、待确认事项
 
 | 项 | 说明 |
 | --- | --- |
-| `[提案]` 接口采纳 | `api.md` 中材料列表、纪要读取/编辑/确认、记录删除、行动项详情/删除，需团队确认后转正式 |
 | MIME 嗅探 / 音频转写 | 均超出当前 MVP |
 | 向量索引类型（HNSW/IVFFlat） | 待数据量确定后选择（`database.md 六`） |
 | 并发编辑冲突 | MVP 仅保证 `version` 递增一致，不做乐观锁 |
@@ -108,3 +115,23 @@ design-baseline.md ──索引──► requirements / architecture / database 
 | 2026-10 | 资料预处理页改版 | 侧边栏全局可折叠（默认展开、本地记忆）；页头合并为单卡片（标题+会议选择+三步流程，D-26）；资料上传升级拖拽；对话输入框新增模型/模板选择图标与气泡快捷按钮、下方示例区 |
 | 2026-10 | 请求级模型覆盖 | 新增 D-24：`chat`/`prepare` 可选 `model`；新增 `MODEL_NOT_ALLOWED`(422) 错误码 |
 | 2026-10 | 会议模板管理 | 新增 D-25：`meeting_templates` 表（迁移 `0019`）+ `api.md 5.16a` 模板 CRUD + 会议管理「模板管理」页 + 预处理页模板选择器；纪要模板枚举新增 `custom` |
+| 2026-10 | 向量模型收归服务端 + 保存 probe 修复 | 新增 D-27：Embedding 不再支持用户自备（迁移 `0020` 删除用户表 embedding 字段）；LLM probe 改为单次连通性校验，429 限流放行保存（`llm_probe_verified=false`）；模型配置弹窗新增模型下拉框 |
+| 2026-11 | 提示词安全与输出质量加固 | 新增 D-28（外部模板/instruction 只进 user 段 + system 防御句）、D-29（用户画像注入 ≤500 字符截断）、D-30（`ai/structured.py` 结构化管线：预处理 → schema+业务校验 → 1 次修复重试 → 报错/降级 + 规范日志）；更新 `ai-design.md 3.3/七`、`api.md 1.3/5.2/5.7/5.10/5.16a` |
+| 2026-11 | RAG 能力声明与可观测性 | 新增 D-31：`docs/user-guide.md` + README 能力边界声明（转写记录不入向量库、最近 20 条 ≤8000 字符记录上下文）；Judge 判定埋点与检索分段计时（`core/metrics.py` 内存指标）；`GET /api/v1/metrics` 暴露 P50/P95 与 Judge 占比；`RAG_ALERT_*` 阈值告警日志；更新 `ai-design.md 5.7`、`api.md 1.8` |
+| 2026-10 | 模型选择简化 | 配置弹窗移除模型下拉框（自动采用预设第一个模型）；会话模型选择器从输入框内图标改为输入框下方选择框（显示当前模型、上拉选项，选项来自服务商预设清单）；修订 D-24：取消已登记模型校验，移除 `MODEL_NOT_ALLOWED`(422) |
+| 2026-10 | 模型选择窗口化 | 选择器移回输入框内与图标对齐；选项面板升级为窗口：顶部搜索框 + 「添加模型配置」图标（跳转模型配置弹窗），列表 = 项目预设 + 服务商 `GET /models` 实时清单（新增 `GET /me/settings/model/provider-models`，失败回退预设）；配置弹窗移除大模型状态框 |
+| 2026-10 | 模型清单收敛 + 对话模式选择 | 模型选择窗口仅保留服务商 `GET /models` 实时清单（移除「默认」项与「项目预设」组）；输入框新增 Plan/Build 对话模式选择框（`ModePicker`，会话级 UI 状态，位于模型选择框左侧） |
+| 2026-10 | 选择体验打磨 | 模型选择框默认选中「全部模型」第一个并同步请求参数；模式选项文案精简（去「模式」后缀与小字描述，后续新组件亦不加小字描述）；会议管理页本地文件夹按钮按状态切换文案、移除状态条与连接成功 toast；知识库窗口重构：工具栏（上传直达文件选择 + 关键词输入即查、去抖 400ms）+ 检索结果 + 常驻文件列表 |
+| 2026-10 | 模板管理页重构 | 页面改为卡片网格（缩略图/标签/预览/使用/另存为/设为默认）+ 搜索与全部/内置/我的筛选；内置模板重组为 6 个（会前摘要/会议议程/发言稿/会议纪要/会议记录/会议简报，含 `category`）；新增 `POST /meeting-templates/text`（文本创建，支撑新建与另存为）与 `POST /meeting-templates/generate`（AI 生成草稿，候选不入库）；迁移 `0021`：模板加 `category`、`file_name`/`storage_key` 放宽、记忆默认模板放宽为 64 字符支持模板 id；`preferred_minutes_template` 支持模板 id，纪要生成自动注入；「使用」跳预处理页 `?templateId=` 预选；模板选择器按分类分组 |
+| 2026-10 | 模板选择跳转化 | AI 输入框工具栏顺序调整为 模式→模型→模板；模板图标改为导航入口（点击跳模板管理页并携带 `returnTo`/`meetingId`），不再弹出模板列表；管理页「使用」按来源原路返回并经 `?templateId=` 预选；纪要生成页支持 query 预选；默认结构取消选项随列表移除，换模板通过点其他卡片「使用」 |
+| 2026-11 | 历史代码与文档清理 | 删除零引用组件/死导出/孤儿测试与无引用 schema；抽取公共基类与 helper（AI HTTP 客户端、上传校验+存盘补偿、`PageParams`/`list_envelope`/`paginate_by`、`extraction_support`、`resource_not_found`）；知识检索统一到 `VectorRetriever`、状态文案统一到 `statusLabels.ts`；`api/v1/templates.py` 重命名为 `meeting_templates.py`；docs/api.md、database.md、module-development-spec.md、design-baseline.md、ai-design.md、README 同步至实现现状 |
+| 2026-11 | 实时录音链路修复（G1） | `TranscriptionClient` 送 ASR 前经 ffmpeg 把 webm/ogg 转 16k 单声道 wav（FunASR 不解码 webm，容器镜像加装 ffmpeg）；修复停止录音末片与 finish 的竞态（末片 409 丢失）；恢复 `.env` 丢失的 ASR 配置块；e2e `live-recording.spec.ts` 主链路 + 3 异常用例连续通过（chromium-live 伪麦克风项目） |
+| 2026-11 | RAG 相关性 Judge（G3） | 新增 `ai/rag/relevance.py`：top1 低于 `RAG_JUDGE_MIN_SCORE(0.6)` 时对 top3 候选做 LLM 结构化复核，判无关整体拒答、不可用回退分数判定；评测负样本拦截率 50%→100%、会议 hit@5 0.812→0.938，双轮 Go（`docs/test-reports/rag-eval-report.md`）；评测脚本固定关闭联网以保口径 |
+| 2026-11 | 本地工作区人工验收（G2） | 预置夹具（sample.txt/docx/pdf + ignored.png，PDF 经 pypdf 文本自检）与预填清单执行10 步全部通过：目录授权、白名单过滤、导入、纪要导出、归档限制、降级提示与清理 |
+| 2026-11 | 新建会议页与存储位置（P1） | 新路由 `/new-meeting/create`（顶部导航与全部创建入口统一跳转，创建后进入流程卡片页）；`MeetingForm` 抽取共享；`FolderPathPicker` 级联选择会议存储根（路径即会议根，默认 `<会议名>/`，IndexedDB 持久化）；镜像/导出改写入会议根；会议管理页新增行操作「导入」（复用 `LocalWorkspacePanel`）；**面板统一到共享目录句柄**（修复会议管理与详情页两套文件夹的分裂），权限过期一键恢复；删除表单 subtitle 小字 |
+| 2026-11 | 两段式联网回答（P2） | 新增 `ai/websearch/`（bing 默认，DDG 被墙、智谱工具不执行经探针实测）；`insufficient_evidence` 后先告知资料无证据再联网作答，来源 `origin=web` 带可点链接；任何失败回退拒答；评测固定关联网且回归复跑 Go 指标不变；`WEB_SEARCH_*` 配置入 `.env.example` |
+| 2026-11 | Build 模式文件产出（P3） | `ChatRequest.mode(plan/build)` 落地（此前为纯 UI 状态）；build 走 `build_deliverable` 结构化输出 → `file{filename,content}`；`ChatFileCard` 三处保存：下载 DOCX（md→DOCX 复用纪要管线）+ 上传为会议资料（权威副本）+ 镜像到会议根，三项独立重试互不阻塞；`AgentChat` 增 `meetingId` |
+| 2026-11 | 新建会议自动导入文件夹资料（P4） | 创建页选文件夹后自动导入其中已有资料：`utils/autoImport.ts`（白名单/20MB 前置过滤、`file_name` 同名幂等跳过、串行上传+逐文件进度、失败逐项归因不阻塞）、`localFileSystem.readFilesAt`（单层 50 个上限+截断标记）；创建页新增授权入口（未连接/权限过期可直接授权，首次用户闭环）；结果汇总 toast（导入/跳过/超限/格式/失败/截断）；e2e 合成目录树用例（无模型凭据时按既有口径跳过） |
+| 2026-11 | E2E 过期选择器修复（真实链路首跑） | 注入 `E2E_LLM_*` 凭据首次真实执行长期 skip 的 3 例，暴露三批过期选择器并修复：① `#material-file`/`#knowledge-file`（组件重构丢 id，材料/知识库上传 helper 必挂）② 导航重构后「知识库/模型配置/记忆中心」是设置 details 菜单的 menuitem 而非独立链接（新增 `openSettingsMenu` helper）③ BYOK UI 重构为单 provider 表单（`#model-provider/#model-api-key/#model-custom-*`，旧六字段与来源徽标已删）；同时修正口径：**Embedding 不支持 BYOK**（后端仅收 LLM 三字段，`prepareModelAccess` 不再尝试 embedding PUT）；eslint 补忽略 `playwright-report/`、`test-results/` 生成物 |
+| 2026-11 | 创建会议回归弹窗 + 文件夹选择（回退 P1 整页方案） | 删除 `/new-meeting/create` 整页、`FolderPathPicker` 与 `utils/autoImport`（含 e2e 自动导入用例，P4 随选择器一并移除）；顶部导航「新建会议」改为按钮，主页/会议管理/阶段页入口统一弹出新增的 `CreateMeetingDialog`（复用 `MeetingFormDialog`，保留鹦鹉气泡装饰），创建成功后统一进入流程卡片页；`MeetingForm` 新增「存储文件夹」单下拉 + `optgroup` 嵌套选项，默认项「以会议名新建文件夹」，未选择时在会议管理按会议名建文件夹（同名复用）并归入；预处理/会后页文案改为「杂乱文档，先规整再入库」「纪要萃取，一羽搞定」，`AgentChat` 新增 `mascot-src`/`mascot-size`（两页鹦鹉 4.5rem→6rem，会后页换 `funtionthree`）；任务空状态改为图片（`task-empty.jpeg`）并去掉小字 |
+| 2026-11 | 删除会议详情页、产出并入会后页 | 删除 `/meetings/:meetingId` 详情页（路由改为重定向到 `/meetings?meeting=<id>`），主页「我的会议」与任务「跳转来源会议」改为打开**会议管理的该会议文件列表**；文件列表页顶部新增 **编辑/归档/删除**（`MeetingFormDialog` 复用编辑态）；`MinutesGenerateView` 新增**产出区**（生成纪要/提取行动项后出现，含「纪要」「行动项」两个标签，承接富文本确认与转个人任务）；随页删除 `PreparationSection`、`RecordSection`、`ChatPanel`、`IssuesSection`、`PostMeetingChecklist`、`AiAssistantEntry/Drawer`、`AudioSection`、`RecordItem` 与 `api/issues`（问题、会后收尾区块按产品决策一并不再提供）；e2e 三链路（core/audio/ai）改驱动阶段页：资料与会前准备→资料预处理、记录与音频→录音转写、纪要与行动项→会后智能处理（问题步骤移除） |

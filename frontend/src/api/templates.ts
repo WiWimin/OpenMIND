@@ -4,6 +4,9 @@ import type { ApiSuccess } from '@/types/api'
 import type {
   MeetingTemplate,
   MeetingTemplateDetail,
+  TemplateGenerateDraft,
+  TemplateGeneratePayload,
+  TemplateTextPayload,
   UploadTemplatePayload,
 } from '@/types/template'
 import { unwrapData } from '@/utils/apiEnvelope'
@@ -33,11 +36,33 @@ export async function uploadTemplate(
   if (payload.description) {
     form.append('description', payload.description)
   }
+  if (payload.category) {
+    form.append('category', payload.category)
+  }
   const { data } = await http.post<ApiSuccess<MeetingTemplate> | MeetingTemplate>(
     PATH,
     form,
     { timeout: LONG_REQUEST_TIMEOUT_MS },
   )
+  return unwrapData(data)
+}
+
+export async function createTemplateText(
+  payload: TemplateTextPayload,
+): Promise<MeetingTemplate> {
+  const { data } = await http.post<ApiSuccess<MeetingTemplate> | MeetingTemplate>(
+    `${PATH}/text`,
+    payload,
+  )
+  return unwrapData(data)
+}
+
+export async function generateTemplate(
+  payload: TemplateGeneratePayload,
+): Promise<TemplateGenerateDraft> {
+  const { data } = await http.post<
+    ApiSuccess<TemplateGenerateDraft> | TemplateGenerateDraft
+  >(`${PATH}/generate`, payload, { timeout: LONG_REQUEST_TIMEOUT_MS })
   return unwrapData(data)
 }
 

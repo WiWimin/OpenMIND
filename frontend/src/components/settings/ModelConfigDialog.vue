@@ -14,7 +14,6 @@
             </option>
             <option :value="CUSTOM_PROVIDER_ID">自定义（OpenAI 兼容）</option>
           </select>
-          <p v-if="activePreset?.hint" class="form-field__hint">密钥获取：{{ activePreset.hint }}</p>
         </div>
 
         <FormField
@@ -40,22 +39,7 @@
           />
         </template>
 
-        <p class="model-dialog__note">
-          保存后即可在会话时通过输入框旁的模型图标切换该提供商的模型；密钥加密存库，不会回显明文。
-        </p>
-
         <p v-if="mainError" class="model-dialog__error" role="alert">{{ mainError }}</p>
-
-        <dl v-if="store.config" class="model-dialog__current">
-          <div>
-            <dt>大模型</dt>
-            <dd>{{ llmSummary }}</dd>
-          </div>
-          <div>
-            <dt>向量模型</dt>
-            <dd>{{ embeddingSummary }}</dd>
-          </div>
-        </dl>
       </div>
     </div>
 
@@ -81,17 +65,6 @@
       @confirm="confirmReset"
       @cancel="resetDialogOpen = false"
     />
-
-    <ConfirmDialog
-      :open="clearDialogOpen"
-      title="确认保存"
-      :message="clearMessage"
-      confirm-text="继续保存"
-      danger
-      :loading="store.saving"
-      @confirm="doSave(pendingPayload)"
-      @cancel="clearDialogOpen = false"
-    />
   </AppModal>
 </template>
 
@@ -111,16 +84,10 @@ import {
   findPresetByApiBase,
 } from '@/constants/modelProviders'
 import { useModelConfigStore } from '@/stores/modelConfig'
-import type { ModelConfigPayload, ModelConfigSource } from '@/types/modelConfig'
+import type { ModelConfigPayload } from '@/types/modelConfig'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
-
-const SOURCE_LABELS: Record<ModelConfigSource, string> = {
-  user: '用户配置',
-  global: '服务端默认',
-  none: '未配置',
-}
 
 const store = useModelConfigStore()
 const toast = useToast()
@@ -132,30 +99,11 @@ const customModel = ref('')
 const mainError = ref('')
 const loadError = ref<unknown>(null)
 const resetDialogOpen = ref(false)
-const clearDialogOpen = ref(false)
-const clearMessage = ref('')
-const pendingPayload = ref<ModelConfigPayload>({})
 
 const isCustom = computed(() => providerId.value === CUSTOM_PROVIDER_ID)
 const activePreset = computed(
   () => MODEL_PROVIDER_PRESETS.find((preset) => preset.id === providerId.value) ?? null,
 )
-
-const llmSummary = computed(() => {
-  const config = store.config
-  if (!config || config.llm_source === 'none') {
-    return '未配置'
-  }
-  return `${config.llm_model || '默认模型'}（${SOURCE_LABELS[config.llm_source]}）`
-})
-
-const embeddingSummary = computed(() => {
-  const config = store.config
-  if (!config || config.embedding_source === 'none') {
-    return '未配置'
-  }
-  return `${config.embedding_model || '默认模型'}（${SOURCE_LABELS[config.embedding_source]}）`
-})
 
 function resetMainForm(): void {
   // 依据已保存配置回填提供商选择
@@ -206,7 +154,7 @@ function buildMainPayload(): ModelConfigPayload | null {
     mainError.value = '请选择提供商'
     return null
   }
-  // 后端要求三字段齐全：未填模型名时自动采用该提供商的第一个推荐模型
+  // 后端要求三字段齐全：模型名自动采用该提供商预设的第一个模型
   return {
     llm_api_base: preset.apiBase,
     llm_api_key: key,
@@ -219,24 +167,20 @@ async function saveMain(): Promise<void> {
   if (!payload) {
     return
   }
-  if (store.config?.embedding_source === 'user') {
-    pendingPayload.value = payload
-    clearMessage.value =
-      '你的向量模型为自备配置。本次保存会使其回退服务端默认（密钥无法回读）。确定继续？'
-    clearDialogOpen.value = true
-    return
-  }
   await doSave(payload)
 }
 
 async function doSave(payload: ModelConfigPayload): Promise<void> {
-  clearDialogOpen.value = false
   mainError.value = ''
   try {
-    await store.save(payload)
+    const saved = await store.save(payload)
     apiKey.value = ''
     resetMainForm()
-    toast.success('模型配置已保存')
+    if (saved.llm_probe_verified === false) {
+      toast.success('模型配置已保存（校验时服务限流，未完成调用验证）')
+    } else {
+      toast.success('模型配置已保存')
+    }
   } catch (err) {
     if (typeof err === 'object' && err !== null && 'message' in err) {
       mainError.value = String((err as { message: unknown }).message)
@@ -328,47 +272,10 @@ watch(
   box-shadow: var(--focus-ring);
 }
 
-.form-field__hint {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-}
-
-.model-dialog__note {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-  line-height: 1.6;
-}
-
 .model-dialog__error {
   margin: 0;
   color: var(--color-down);
   font-size: 0.8125rem;
-}
-
-.model-dialog__current {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-3);
-  background: var(--color-surface-strong);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.model-dialog__current dt {
-  color: var(--color-muted-foreground);
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-
-.model-dialog__current dd {
-  margin: 2px 0 0;
-  color: var(--color-foreground);
-  font-size: 0.8125rem;
-  word-break: break-all;
 }
 
 .model-dialog__reset {

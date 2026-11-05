@@ -1,95 +1,50 @@
 <template>
   <AppModal :open="open" title="知识库" @close="emit('close')">
     <div class="knowledge-dialog">
-      <!-- 图标气泡框 -->
-      <div class="knowledge-bubbles">
-        <button
-          type="button"
-          class="knowledge-bubble"
-          :class="{ 'knowledge-bubble--active': uploadOpen }"
-          :aria-expanded="uploadOpen"
-          @click="togglePanel('upload')"
-        >
-          <span class="knowledge-bubble__icon knowledge-bubble__icon--primary" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="19" height="19" fill="none">
-              <path
-                d="M12 16V4m0 0 4 4m-4-4-4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </span>
-          <span class="knowledge-bubble__body">
-            <strong>上传资料</strong>
-            <span>PDF · Word · TXT</span>
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="knowledge-bubble"
-          :class="{ 'knowledge-bubble--active': searchOpen }"
-          :aria-expanded="searchOpen"
-          @click="togglePanel('search')"
-        >
-          <span class="knowledge-bubble__icon knowledge-bubble__icon--accent" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="19" height="19" fill="none">
-              <path
-                d="M10.8 17.6a6.8 6.8 0 1 0 0-13.6 6.8 6.8 0 0 0 0 13.6ZM16 16l4 4"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-              />
-            </svg>
-          </span>
-          <span class="knowledge-bubble__body">
-            <strong>查找资料</strong>
-            <span>按问题检索知识片段</span>
-          </span>
-        </button>
+      <!-- 工具栏：上传 + 查找（点击上传直接打开文件选择；输入即查找） -->
+      <div class="knowledge-toolbar">
+        <AppButton :loading="uploading" @click="chooseFile">上传资料</AppButton>
+        <div class="knowledge-search">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.6" />
+            <path
+              d="m16 16 4.5 4.5"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+          </svg>
+          <input
+            v-model="query"
+            class="knowledge-search__input"
+            type="search"
+            placeholder="输入关键词查找资料"
+            aria-label="查找资料"
+            autocomplete="off"
+          />
+        </div>
+        <input
+          id="knowledge-file"
+          ref="fileInputEl"
+          type="file"
+          accept=".pdf,.docx,.txt"
+          hidden
+          @change="onFileChosen"
+        />
       </div>
 
-      <!-- 上传面板 -->
-      <section v-if="uploadOpen" class="knowledge-panel">
-        <KnowledgeUploader :uploading="uploading" @upload="upload" />
-        <ErrorMessage v-if="uploadError" :error="uploadError" />
-      </section>
+      <ErrorMessage v-if="uploadError" :error="uploadError" />
+      <ErrorMessage v-if="actionError" :error="actionError" />
 
-      <!-- 查找面板 -->
-      <section v-else-if="searchOpen" class="knowledge-panel">
-        <form class="knowledge-search" @submit.prevent="search">
-          <div class="knowledge-search__row">
-            <input
-              id="knowledge-search-input"
-              v-model="query"
-              class="knowledge-search__input"
-              type="search"
-              placeholder="例如：项目上线前需要检查哪些事项？"
-              autocomplete="off"
-            />
-            <label class="knowledge-search__topk">
-              <span>Top K</span>
-              <select v-model="topK">
-                <option value="3">3</option>
-                <option value="5">5</option>
-                <option value="10">10</option>
-              </select>
-            </label>
-            <AppButton type="submit" :loading="searching">检索</AppButton>
-          </div>
-          <p v-if="searchFormError" class="knowledge-search__error" role="alert">
-            {{ searchFormError }}
-          </p>
-        </form>
-
-        <ErrorMessage v-if="searchError" :error="searchError" retryable @retry="search" />
+      <!-- 检索结果（输入查询后出现在文件列表上方） -->
+      <section v-if="searched || searching" class="knowledge-panel">
+        <h3 class="list-head__title">检索结果</h3>
+        <ErrorMessage v-if="searchError" :error="searchError" retryable @retry="runSearch" />
         <LoadingSpinner v-if="searching" class="knowledge-panel__state" />
-        <p v-else-if="searched && hits.length === 0" class="knowledge-panel__empty">
-          没有检索到相关内容，换个问法试试。
+        <p v-else-if="hits.length === 0" class="knowledge-panel__empty">
+          没有检索到相关内容，换个关键词试试。
         </p>
-        <ul v-else-if="hits.length" class="hit-list">
+        <ul v-else class="hit-list">
           <li v-for="(hit, index) in hits" :key="`${hit.document_id}-${index}`" class="hit-item">
             <header class="hit-item__head">
               <strong>{{ index + 1 }}. {{ hit.file_name }}</strong>
@@ -105,7 +60,7 @@
         </ul>
       </section>
 
-      <!-- 已上传文件列表（常驻） -->
+      <!-- 文件列表（常驻） -->
       <section class="knowledge-panel knowledge-list">
         <div class="list-head">
           <h3 class="list-head__title">已上传文件</h3>
@@ -147,7 +102,6 @@
             @update:page="load"
           />
         </template>
-        <ErrorMessage v-if="actionError" :error="actionError" />
       </section>
     </div>
 
@@ -173,7 +127,6 @@ import AppModal from '@/components/AppModal.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
-import KnowledgeUploader from '@/components/KnowledgeUploader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -181,6 +134,7 @@ import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
 import type { KnowledgeDocument, KnowledgeSearchHit } from '@/types/knowledge'
 import { formatDateTime } from '@/utils/datetime'
+import { validateMaterialFile } from '@/utils/materialUpload'
 import { knowledgeStatusMeta } from '@/utils/statusLabels'
 
 const props = defineProps<{ open: boolean }>()
@@ -188,40 +142,24 @@ const emit = defineEmits<{ close: [] }>()
 
 const toast = useToast()
 
-const uploadOpen = ref(false)
-const searchOpen = ref(false)
-
-function togglePanel(panel: 'upload' | 'search'): void {
-  if (panel === 'upload') {
-    uploadOpen.value = !uploadOpen.value
-    if (uploadOpen.value) {
-      searchOpen.value = false
-    }
-  } else {
-    searchOpen.value = !searchOpen.value
-    if (searchOpen.value) {
-      uploadOpen.value = false
-    }
-  }
-}
-
 const { items, pagination, loading, error, load } = useAsyncList<KnowledgeDocument>({
   fetcher: ({ page, page_size }) => knowledgeApi.listDocuments({ page, page_size }),
 })
 
+const fileInputEl = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadError = ref<unknown>(null)
 const query = ref('')
-const topK = ref('5')
 const searching = ref(false)
 const searched = ref(false)
 const searchError = ref<unknown>(null)
-const searchFormError = ref('')
 const hits = ref<KnowledgeSearchHit[]>([])
 const actionError = ref<unknown>(null)
 const showDelete = ref(false)
 const deleting = ref(false)
 const pendingDeleteId = ref<string | null>(null)
+const SEARCH_DEBOUNCE_MS = 400
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 function refresh(): Promise<void> {
   return load()
@@ -229,6 +167,30 @@ function refresh(): Promise<void> {
 
 function statusOf(document: KnowledgeDocument) {
   return knowledgeStatusMeta[document.processing_status]
+}
+
+function chooseFile(): void {
+  fileInputEl.value?.click()
+}
+
+async function onFileChosen(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = ''
+  if (!file) {
+    return
+  }
+  const message = validateMaterialFile(file)
+  if (message) {
+    uploadError.value = {
+      status: 'error',
+      error_code: 'FILE_TYPE_NOT_SUPPORTED',
+      message,
+      retryable: false,
+    }
+    return
+  }
+  await upload(file)
 }
 
 async function upload(file: File): Promise<void> {
@@ -247,8 +209,6 @@ async function upload(file: File): Promise<void> {
       return
     }
     toast.success('资料已加入知识库')
-    // 上传成功后收起上传区，让新文件直接可见
-    uploadOpen.value = false
   } catch (caught) {
     uploadError.value = caught
   } finally {
@@ -256,20 +216,21 @@ async function upload(file: File): Promise<void> {
   }
 }
 
-async function search(): Promise<void> {
+async function runSearch(): Promise<void> {
   const text = query.value.trim()
   if (!text) {
-    searchFormError.value = '请输入检索内容'
+    searched.value = false
+    hits.value = []
+    searchError.value = null
     return
   }
-  searchFormError.value = ''
   searching.value = true
   searched.value = true
   searchError.value = null
   try {
     const result = await knowledgeApi.searchKnowledge({
       query: text,
-      top_k: Number(topK.value),
+      top_k: 5,
     })
     hits.value = result.items
   } catch (caught) {
@@ -279,6 +240,22 @@ async function search(): Promise<void> {
     searching.value = false
   }
 }
+
+// 输入即查找：停顿 400ms 后自动检索，清空输入则收起结果
+watch(query, (value) => {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+  }
+  if (!value.trim()) {
+    searched.value = false
+    hits.value = []
+    searchError.value = null
+    return
+  }
+  searchTimer = setTimeout(() => {
+    void runSearch()
+  }, SEARCH_DEBOUNCE_MS)
+})
 
 function askDelete(documentId: string): void {
   pendingDeleteId.value = documentId
@@ -313,8 +290,11 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
-      uploadOpen.value = false
-      searchOpen.value = false
+      query.value = ''
+      searched.value = false
+      hits.value = []
+      searchError.value = null
+      uploadError.value = null
       void refresh()
     }
   },
@@ -330,88 +310,44 @@ watch(
   max-height: 62vh;
 }
 
-/* 图标气泡框 */
-.knowledge-bubbles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.knowledge-bubble {
+/* 工具栏 */
+.knowledge-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  text-align: left;
-  font: inherit;
+  gap: var(--space-2);
+}
+
+.knowledge-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 2.4rem;
+  padding: 0 var(--space-3);
+  color: var(--color-muted-foreground);
   background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition:
-    transform var(--transition-fast),
-    border-color var(--transition-fast),
-    background var(--transition-fast),
-    box-shadow var(--transition-fast);
-}
-
-.knowledge-bubble:hover {
-  transform: translateY(-1px);
-  border-color: rgba(21, 94, 239, 0.35);
-  box-shadow: var(--shadow-md);
-}
-
-.knowledge-bubble--active {
-  background: var(--color-primary-soft);
-  border-color: rgba(21, 94, 239, 0.45);
-}
-
-.knowledge-bubble__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 2.35rem;
-  height: 2.35rem;
   border-radius: var(--radius-md);
 }
 
-.knowledge-bubble__icon--primary {
-  color: var(--color-primary-strong);
-  background: var(--color-primary-soft);
+.knowledge-search:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
-.knowledge-bubble__icon--accent {
-  color: var(--color-accent-strong);
-  background: var(--color-accent-soft);
-}
-
-.knowledge-bubble--active .knowledge-bubble__icon--primary {
-  color: #ffffff;
-  background: var(--color-primary);
-}
-
-.knowledge-bubble--active .knowledge-bubble__icon--accent {
-  color: #ffffff;
-  background: var(--color-accent);
-}
-
-.knowledge-bubble__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.knowledge-search__input {
+  flex: 1;
   min-width: 0;
-}
-
-.knowledge-bubble__body strong {
   color: var(--color-foreground);
+  font: inherit;
   font-size: 0.875rem;
-  font-weight: 650;
+  background: transparent;
+  border: 0;
 }
 
-.knowledge-bubble__body span {
-  color: var(--color-muted-foreground);
-  font-size: 0.6875rem;
+.knowledge-search__input:focus {
+  outline: none;
 }
 
 /* 面板 */
@@ -435,64 +371,6 @@ watch(
   margin: 0;
   padding: var(--space-2) 0;
   color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-}
-
-/* 查找 */
-.knowledge-search {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.knowledge-search__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.knowledge-search__input {
-  flex: 1;
-  min-width: 12rem;
-  min-height: 2.5rem;
-  padding: 0 var(--space-3);
-  color: var(--color-foreground);
-  font: inherit;
-  font-size: 0.875rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-}
-
-.knowledge-search__input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: var(--focus-ring);
-}
-
-.knowledge-search__topk {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-}
-
-.knowledge-search__topk select {
-  min-height: 2.5rem;
-  padding: 0 var(--space-2);
-  color: var(--color-foreground);
-  font: inherit;
-  font-size: 0.8125rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.knowledge-search__error {
-  margin: 0;
-  color: var(--color-down);
   font-size: 0.75rem;
 }
 

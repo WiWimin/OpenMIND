@@ -30,6 +30,7 @@ const audio: MeetingAudio = {
   type: 'mp3',
   status: 'transcribed',
   transcript: '转写文本',
+  segments: null,
   error: null,
   record_id: null,
   created_at: '2026-10-01T09:00:00+08:00',

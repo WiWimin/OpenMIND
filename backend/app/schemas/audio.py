@@ -14,6 +14,16 @@ class AudioStatus(StrEnum):
     confirmed = "confirmed"
 
 
+class AudioSegment(BaseModel):
+    """转写分段：seq 从 1 连续递增，offset_seconds 为录音内相对秒数。"""
+
+    seq: int
+    offset_seconds: int = 0
+    text: str = ""
+    marker_type: str | None = None
+    error: str | None = None
+
+
 class AudioRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,6 +33,7 @@ class AudioRead(BaseModel):
     type: str
     status: AudioStatus
     transcript: str | None
+    segments: list[AudioSegment] | None
     error: str | None
     record_id: str | None
     created_at: datetime
@@ -31,6 +42,15 @@ class AudioRead(BaseModel):
 
 class AudioUpdate(BaseModel):
     transcript: str = Field(min_length=1)
+
+
+class AudioLiveStart(BaseModel):
+    file_type: str = Field(default="webm", max_length=10)
+
+
+class AudioSegmentMarkerUpdate(BaseModel):
+    seq: int = Field(ge=1)
+    marker_type: str | None = None
 
 
 class AudioDeleteResult(BaseModel):

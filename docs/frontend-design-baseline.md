@@ -94,18 +94,18 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」，围绕**�
 | M00 基础工程 | 前后端骨架、数据库迁移、Docker Compose、CI、协作规范 | 已实现 | — |
 | M01 用户认证 | 注册、登录、退出、当前用户；HS256 JWT；无 refresh | 已实现 | `/login`、`/register` |
 | M02 会议管理 | 列表、创建、详情、编辑、删除、归档；仅 `scheduled` / `archived` | 已实现 | `/meetings`、`/meetings/:id` |
-| M03 会议资料 | PDF/DOCX/TXT 上传、解析、分块、向量索引、状态、删除 | 已实现 | 会议详情「材料」、资料预处理 |
+| M03 会议资料 | PDF/DOCX/TXT 上传、解析、分块、向量索引、状态、删除 | 已实现 | 资料预处理、会议管理文件列表 |
 | M04 模型与检索 | BYOK、Embedding、向量检索、模型探测、按用途模型路由 | 已实现 | `/settings` |
 | M05 会前准备 | 生成摘要与准备清单、编辑、确认、版本递增 | 已实现 | `/new-meeting/preprocess` |
-| M06 会议记录 | 记录增删改查、重点/决议/疑问标记、问答、整理记录 | 已实现 | 会议详情「记录」、录音转写页 |
-| M06 扩展 | 音频上传、同步 ASR、转写修订、确认转记录、失败重试 | 已实现 | 会议详情「音频」、录音转写页 |
-| M07 纪要与行动项 | 纪要生成/编辑/确认/模板、行动项提取/确认/转任务 | 已实现 | `/new-meeting/minutes`、会议详情「纪要」 |
+| M06 会议记录 | 记录增删改查、重点/决议/疑问标记、问答、整理记录 | 已实现 | 录音转写页、会议管理文件列表 |
+| M06 扩展 | 音频上传、同步 ASR、转写修订、确认转记录、失败重试 | 已实现 | 录音转写页、会议管理文件列表 |
+| M07 纪要与行动项 | 纪要生成/编辑/确认/模板、行动项提取/确认/转任务 | 已实现 | `/new-meeting/minutes`、会议管理文件列表 |
 | M08 个人任务 | 任务列表、详情、编辑、状态流转、取消；仅由行动项转换 | 已实现 | `/tasks`、`/tasks/archive` |
-| M09 未解决问题 | 问题提取、列表、编辑、跟进、状态 | 已实现 | 会议详情「问题」 |
+| M09 未解决问题 | 问题提取、列表、编辑、跟进、状态 | 后端 API 已实现 | 前端 UI 已按产品决策移除（后端 API 保留） |
 | M10 测试部署 | 异常处理、权限、Playwright E2E、Docker 部署 | 已实现 | — |
-| 扩展：知识库 | 个人知识库上传、解析、分块、索引、语义检索、删除 | 已实现 | `/knowledge`、`/knowledge/search` |
-| 扩展：记忆中心 | 角色、工作场景、表达偏好、默认纪要模板 | 已实现 | `/memory` |
-| 扩展：本地工作区 | 浏览器授权本地目录，导入资料、导出最新纪要 DOCX | 已实现（仅 Chromium） | `/meetings/folder`、会议详情「材料」 |
+| 扩展：知识库 | 个人知识库上传、解析、分块、索引、语义检索、删除 | 已实现 | 设置菜单弹窗（知识库） |
+| 扩展：记忆中心 | 角色、工作场景、表达偏好、默认纪要模板 | 已实现 | 设置菜单弹窗（记忆中心） |
+| 扩展：本地工作区 | 浏览器授权本地目录，导入资料、导出最新纪要 DOCX | 已实现（仅 Chromium） | 创建/编辑会议表单「存储文件夹」、会议管理「导入」 |
 
 ### 2.2 未实现 / 范围外能力
 
@@ -232,7 +232,7 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」，围绕**�
 frontend/src/
 ├── api/            # 14 个领域 API 模块 + client.ts + timeouts.ts
 ├── assets/         # main.css（全局设计令牌与共享原语）
-├── components/     # 42 个可复用组件
+├── components/     # 44 个可复用组件（含 settings/ 4 个设置弹窗）
 ├── composables/    # useAsyncList、useToast 等
 ├── constants/      # routeNames.ts、navigation.ts、upload.ts
 ├── layouts/        # WorkspaceLayout.vue（全局外壳）
@@ -240,7 +240,7 @@ frontend/src/
 ├── stores/         # auth / meetings / tasks / modelConfig
 ├── types/          # 领域类型
 ├── utils/          # 时间、错误、状态文案、DOCX、Markdown、上传校验
-└── views/          # 16 个页面级组件
+└── views/          # 11 个页面级组件
 ```
 
 ### 3.3 路由与页面清单
@@ -255,14 +255,11 @@ frontend/src/
 | `/new-meeting/asr` | `newMeeting/AsrView.vue` | 新建会议 → 录音转写 | 音频、记录、AI 辅助 | 仅上传音频；无实时录音/说话人分离 |
 | `/new-meeting/minutes` | `newMeeting/MinutesGenerateView.vue` | 新建会议 → 纪要生成 | 素材信号、Agent、纪要编辑/确认/导出 | 接近参考图 5，但缺「四张处理卡」与进度侧栏 |
 | `/meetings` | `meetings/MeetingManageView.vue` | 会议管理 → 历史会议列表 | 统计、状态筛选、会议表、分页 | 缺搜索、参会人、资料/纪要/待办列 |
-| `/meetings/folder` | `meetings/FolderConfigView.vue` | 会议管理 → 本地文件夹配置 | 目录授权、导入/导出说明 | 独立页面，参考图无对应 |
-| `/meetings/:meetingId` | `meetings/MeetingDetailView.vue` | 会议管理 → 详情 | 材料/准备/记录/音频/纪要/问题/收尾 | 功能全但信息密度高，适合作为「详情」而非主工作台 |
+| `/meetings/templates` | `meetings/TemplateManageView.vue` | 会议管理 → 会议模板管理 | 内置/自定义模板 CRUD、AI 生成草稿 | 已实现 |
+| `/meetings/:meetingId` | —（重定向 → `/meetings?meeting=<id>`） | 会议管理 → 该会议文件列表 | 会议资料/录音/纪要/记录四组 + 编辑/归档/删除 | 原会议详情页已删除：会前准备、记录问答、纪要与行动项分别在三个阶段页（纪要/行动项在会后页产出区） |
 | `/tasks` | `TasksView.vue` | 任务管理 → 任务总览 | 统计、任务列表、AI 建议 | 缺优先级/负责人/来源会议名/新建任务 |
 | `/tasks/archive` | `tasks/TaskArchiveView.vue` | 任务管理 → 已归档任务 | 已完成任务 | 简单复用 |
-| `/knowledge` | `KnowledgeView.vue` | 知识库 → 文档管理 | 上传、检索、文档列表、删除 | 缺分类、分块数、重新索引、卡片视图 |
-| `/knowledge/search` | `knowledge/KnowledgeSearchView.vue` | 知识库 → 向量检索测试 | TopK、相似度结果 | 偏调试工具，普通用户入口可合并 |
-| `/memory` | `MemoryView.vue` | 系统设置 → 用户记忆中心 | 角色/场景/偏好/默认模板 | 参考图无对应，保留为高级设置 |
-| `/settings` | `settings/ModelSettingsView.vue` | 系统设置 → 模型配置 | LLM/Embedding BYOK、用途模型 | 参考图 1 有「模型/导出/权限/账号」，当前只有模型 |
+| `/settings`、`/memory`、`/knowledge`、`/knowledge/search`、`/meetings/folder` 等旧路径 | —（重定向 → `/dashboard`） | — | 模型配置、记忆中心、知识库均已改为**设置菜单弹窗**（`components/settings/*Dialog.vue`）；会议存储文件夹改为创建/编辑表单的「存储文件夹」下拉 | 旧页面已删除，仅保留重定向兜底 |
 
 ### 3.4 布局与导航
 
@@ -313,16 +310,21 @@ frontend/src/
 - 字体依赖 Google Fonts，国内网络可能加载失败；Space Grotesk 对中文无意义。
 - 阴影与渐变使用较多，参考图更扁平、更克制；需要在「品牌感」与「企业后台密度」之间收敛。
 
-### 3.6 组件清单（42 个）
+### 3.6 组件清单（45 个：`components/` 44 + `layouts/WorkspaceLayout`）
 
 | 分组 | 组件 |
 | --- | --- |
 | 外壳与导航 | `WorkspaceLayout`、`AppBreadcrumb`、`NavIcon`、`PageHeader`、`StageShell`、`ToastHost` |
 | 基础原语 | `AppButton`、`AppModal`、`AppPagination`、`AppTag`、`ConfirmDialog`、`EmptyState`、`ErrorMessage`、`FormField`、`FormSelect`、`FormTextarea`、`LoadingSpinner`、`StatusBadge`、`MarkdownView`、`SourceRef`、`RichTextEditor` |
-| 会议 | `MeetingList`、`MeetingCard`、`MeetingFormDialog` |
-| 资料/记录/音频 | `MaterialSection`、`MaterialList`、`MaterialItem`、`MaterialUploader`、`RecordSection`、`RecordItem`、`AudioSection`、`LocalWorkspacePanel` |
-| AI 与产出 | `AgentChat`、`ChatPanel`、`AiAssistantDrawer`、`AiAssistantEntry`、`PreparationSection`、`MinutesSection`、`ActionItemSection`、`IssuesSection`、`PostMeetingChecklist` |
-| 知识库 | `KnowledgeUploader` |
+| 会议 | `CreateMeetingDialog`、`MeetingForm`、`MeetingFormDialog`、`MeetingFilesPanel` |
+| 资料与本地工作区 | `MaterialSection`、`MaterialList`、`MaterialItem`、`MaterialUploader`、`LocalWorkspacePanel` |
+| AI 与产出 | `AgentChat`、`MinutesSection`、`ActionItemSection`、`SummaryCard`、`PolishDiffPanel`、`ChatFileCard` |
+| 任务 | `TaskSection` |
+| 选择器 | `ModelPickerPopover`、`ModePicker`、`TemplatePickerPopover` |
+| 转写展示 | `TranscriptStream` |
+| 设置弹窗 | `KnowledgeDialog`、`MemoryDialog`、`ModelConfigDialog`、`TemplateFormDialog` |
+
+> 已删除（问题、会后收尾与原会议详情页相关）：`RecordSection`、`RecordItem`、`AudioSection`、`ChatPanel`、`AiAssistantDrawer`、`AiAssistantEntry`、`PreparationSection`、`IssuesSection`、`PostMeetingChecklist`、`MeetingList`、`MeetingCard`、`KnowledgeUploader`。
 
 ### 3.7 状态管理与 API 层
 
@@ -344,7 +346,7 @@ frontend/src/
 - **危险操作**：删除会议/材料/记录/知识库、归档、取消任务均二次确认。
 - **反馈**：`ToastHost` + `useToast`。
 - **AI 对话**：`AgentChat` 支持快捷提示、引用选中文本、复制、重新生成、停止、来源标签；但「流式」是前端逐字动画，不是真实 SSE。
-- **AI 入口**：资料预处理页内嵌聊天、录音转写页右侧聊天、会议详情浮动按钮 + 抽屉、纪要页聊天。
+- **AI 入口**：资料预处理页内嵌聊天、录音转写页右侧聊天、纪要生成页聊天。
 - **可访问性**：表单 label、`aria-label`、`role="log"`、`aria-busy`、焦点环、减少动效已具备；表格/标签页语义仍可加强。
 
 ### 3.9 测试与质量
@@ -601,13 +603,13 @@ OpenMIND 当前的「Agent」不是自主规划、工具调用型的 Agent Runti
 
 | 能力 | 接口 | 输入 | 输出 | 是否落库 | 状态 | 主要 UI |
 | --- | --- | --- | --- | --- | --- | --- |
-| 会前准备 | `POST /meetings/{id}/prepare` | `include_history`、`user_goal` | `summary`、`checklist` | 是，`draft` | generating/draft/confirmed/failed | 资料预处理、会议详情「会前准备」 |
-| 会议问答 | `POST /meetings/{id}/chat` | `question`、`context_scope`、`include_sources` | `answer`、`sources[]`、`insufficient_evidence` | 否 | 一次性 | 资料预处理、录音转写、详情抽屉、ChatPanel |
+| 会前准备 | `POST /meetings/{id}/prepare` | `include_history`、`user_goal` | `summary`、`checklist` | 是，`draft` | generating/draft/confirmed/failed | 资料预处理 |
+| 会议问答 | `POST /meetings/{id}/chat` | `question`、`context_scope`、`include_sources` | `answer`、`sources[]`、`insufficient_evidence` | 否 | 一次性 | 资料预处理、录音转写、纪要生成 |
 | 整理记录 | `POST /meetings/{id}/organize` | `record_ids`、`style` | `organized_content`、`source_record_ids` | 否（可另存为记录） | 一次性 | 记录区「AI 整理所选」 |
-| 纪要生成 | `POST /meetings/{id}/minutes/generate` | `record_ids`、`include_action_items`、`include_materials`、`template` | `content`、模板、来源快照 | 是，`draft` | draft/confirmed | 纪要生成、会议详情「纪要」 |
-| 行动项提取 | `POST /meetings/{id}/action-items/extract` | `record_ids` | `items[]` | 是，`pending_confirmation` | 待确认/已确认/已转任务/已取消 | 会议详情「纪要」下方行动项区 |
-| 问题提取 | `POST /meetings/{id}/issues/extract` | `record_ids` | `items[]` | 是，`open` | open/resolved/cancelled | 会议详情「问题」 |
-| 音频转写 | `POST /meetings/{id}/audio` | 音频文件 | `transcript`、`status` | 是 | uploaded/processing/transcribed/failed/confirmed | 录音转写、会议详情「音频」 |
+| 纪要生成 | `POST /meetings/{id}/minutes/generate` | `record_ids`、`include_action_items`、`include_materials`、`template` | `content`、模板、来源快照 | 是，`draft` | draft/confirmed | 纪要生成 |
+| 行动项提取 | `POST /meetings/{id}/action-items/extract` | `record_ids` | `items[]` | 是，`pending_confirmation` | 待确认/已确认/已转任务/已取消 | 纪要生成产出区行动项标签 |
+| 问题提取 | `POST /meetings/{id}/issues/extract` | `record_ids` | `items[]` | 是，`open` | open/resolved/cancelled | 前端 UI 已移除（后端 API 保留，`docs/api.md 5.16`） |
+| 音频转写 | `POST /meetings/{id}/audio` | 音频文件 | `transcript`、`status` | 是 | uploaded/processing/transcribed/failed/confirmed | 录音转写、会议管理文件列表 |
 | 知识库检索 | `POST /knowledge/search` | `query`、`top_k`、`min_score` | `items[{document_id, file_name, excerpt, score}]` | 否 | 一次性 | 知识库、检索测试页 |
 | 纪要导出 | 前端 `buildMinutesDocxBlob` | 纪要 Markdown/HTML | DOCX Blob | 否 | 一次性 | 纪要页、详情纪要区、本地工作区 |
 

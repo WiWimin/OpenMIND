@@ -4,6 +4,7 @@ import http from '@/api/client'
 import {
   clearModelConfig,
   getModelConfig,
+  getProviderModels,
   saveModelConfig,
   savePurposeModels,
 } from '@/api/settings'
@@ -26,8 +27,8 @@ const config: ModelConfig = {
   llm_purpose_models: {},
   embedding_api_base: 'https://emb.example.com/v1',
   embedding_model: 'text-embedding-1024',
-  embedding_api_key_masked: 'sk-...-key',
-  embedding_source: 'user',
+  embedding_api_key_masked: '',
+  embedding_source: 'global',
   embedding_dim: 1024,
 }
 
@@ -61,6 +62,14 @@ describe('settings api', () => {
 
     await expect(savePurposeModels(payload)).resolves.toEqual(config)
     expect(put).toHaveBeenCalledWith('/me/settings/model/purposes', payload)
+  })
+
+  it('fetches the provider model catalog', async () => {
+    const providerModels = { llm_model: 'custom-model', models: ['model-a', 'model-b'] }
+    get.mockResolvedValue(response({ status: 'success', data: providerModels }))
+
+    await expect(getProviderModels()).resolves.toEqual(providerModels)
+    expect(get).toHaveBeenCalledWith('/me/settings/model/provider-models')
   })
 
   it('clears the model config', async () => {
