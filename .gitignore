@@ -52,3 +52,18 @@ htmlcov/
 
 # Logs
 *.log
+
+# Test runtime storage / local artifacts
+tests/storage-test/
+frontend/e2e-artifacts/
+
+# Generated visual-check pages / archives
+docs/techdoc-5.0/pdf-pages*/
+docs/techdoc-5.0/test-logs.zip
+docs/techdoc-5.0.zip
+docs/test-review.zip
+docs/~$*
+
+# Keep documented test evidence logs
+!docs/techdoc-5.0/test-logs/*.log
+!docs/test-review/logs/*.log

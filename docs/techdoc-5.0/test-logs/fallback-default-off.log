@@ -1,0 +1,18 @@
+﻿docker :  Container openmind-test-mock-ai-1 Running 
+所在位置 行:1 字符: 1
++ docker compose -f tests/compose.test.yml run --rm -e ALLOW_GLOBAL_FAL ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( Container open...k-ai-1 Running :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ Container openmind-test-db-test-1 Running 
+ Container openmind-test-db-test-1 Waiting 
+ Container openmind-test-db-test-1 Healthy 
+ Container openmind-test-backend-test-run-2d4af1a7f278 Creating 
+ Container openmind-test-backend-test-run-2d4af1a7f278 Created 
+PASS ALLOW_GLOBAL_FALLBACK=false | False
+PASS 鏈厤缃敤鎴?LLM 涓虹┖ | base='' model=''
+PASS 鏈厤缃敤鎴疯皟鐢?LLM 鎶?MODEL_CONFIG_REQUIRED | MODEL_CONFIG_REQUIRED/400
+PASS Embedding 浠嶅彇鏈嶅姟绔厤缃?| http://mock-ai:9000/v1/mock-embedding
+
+SUMMARY total=4 passed=4 failed=0

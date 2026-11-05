@@ -1,0 +1,72 @@
+﻿# 独立测试编排：不触碰开发环境（8000/8001/5173/5432）与生产数据库。
+# 用法：docker compose -f tests/compose.test.yml up -d
+name: openmind-test
+
+services:
+  db-test:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openmind
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: openmind-db-test
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openmind -d openmind-db-test"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mock-ai:
+    image: openmind-backend:latest
+    restart: unless-stopped
+    working_dir: /mock
+    volumes:
+      - ../tests/mock-ai:/mock:ro
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "9000"]
+    ports:
+      - "127.0.0.1:9000:9000"
+
+  backend-test:
+    image: openmind-backend:latest
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://openmind:testpass@db-test:5432/openmind-db-test
+      CORS_ORIGINS: http://localhost:5174
+      STORAGE_DIR: /storage
+      SECRET_KEY: test-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz
+      ACCESS_TOKEN_EXPIRE_MINUTES: "1440"
+      MAX_UPLOAD_MB: "20"
+      # E2E 测试环境显式开启全局回退；默认关闭行为由 fallback_default_off.py 单独验证。
+      ALLOW_GLOBAL_FALLBACK: "true"
+      ALLOW_PRIVATE_MODEL_ENDPOINTS: "true"
+      LLM_API_BASE: http://mock-ai:9000/v1
+      LLM_API_KEY: mock-key
+      LLM_MODEL: mock-llm
+      EMBEDDING_API_BASE: http://mock-ai:9000/v1
+      EMBEDDING_API_KEY: mock-key
+      EMBEDDING_MODEL: mock-embedding
+      EMBEDDING_DIM: "1024"
+      ASR_API_BASE: http://mock-ai:9000/v1
+      ASR_API_KEY: mock-key
+      ASR_MODEL: mock-asr
+    volumes:
+      - ../backend:/app
+      - ../tests/storage-test:/storage
+      - ../tests:/tests:ro
+    ports:
+      - "127.0.0.1:8010:8000"
+    depends_on:
+      db-test:
+        condition: service_healthy
+      mock-ai:
+        condition: service_started
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+volumes:
+  pgdata_test:

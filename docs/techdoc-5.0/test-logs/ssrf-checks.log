@@ -1,0 +1,20 @@
+﻿docker :  Container openmind-test-mock-ai-1 Running 
+所在位置 行:1 字符: 1
++ docker compose -f tests/compose.test.yml run --rm -e ALLOW_PRIVATE_MO ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( Container open...k-ai-1 Running :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ Container openmind-test-db-test-1 Running 
+ Container openmind-test-db-test-1 Waiting 
+ Container openmind-test-db-test-1 Healthy 
+ Container openmind-test-backend-test-run-304e31fe54c4 Creating 
+ Container openmind-test-backend-test-run-304e31fe54c4 Created 
+PASS 鎷︽埅 http://127.0.0.1:9000/v1 | MODEL_CONFIG_INVALID
+PASS 鎷︽埅 http://localhost:9000/v1 | MODEL_CONFIG_INVALID
+PASS 鎷︽埅 http://169.254.169.254/latest | MODEL_CONFIG_INVALID
+PASS 鎷︽埅 http://10.0.0.5/v1 | MODEL_CONFIG_INVALID
+PASS 鎷︽埅 ftp://example.com/v1 | MODEL_CONFIG_INVALID
+PASS 鏀捐鍏綉 HTTPS | https://api.openai.com/v1
+
+SUMMARY total=6 passed=6 failed=0

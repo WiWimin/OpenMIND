@@ -1,0 +1,10 @@
+
+ RUN  v2.1.9 /app
+
+ ✓ tests/router.spec.ts > router guard > protects the tasks route 2602ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 11 skipped (12)
+   Start at  12:44:07
+   Duration  4.41s (transform 3.96s, setup 0ms, collect 670ms, tests 2.60s, environment 648ms, prepare 245ms)
+

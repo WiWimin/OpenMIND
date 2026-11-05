@@ -14,6 +14,21 @@ vi.mock('@/api/auth', () => ({
   fetchCurrentUser: vi.fn(),
 }))
 
+// 路由单测只验证守卫/重定向逻辑，不渲染真实页面。
+// 真实路由组件是懒加载 SFC（WorkspaceLayout + 各 View），router.push 会触发
+// 其编译与传递依赖加载；在 82 个测试文件并行的全量运行中，这会挤占 CPU 并
+// 超过 Vitest 默认 5000ms 的 testTimeout（不是调大 timeout 能根治的问题）。
+// 因此把这些懒加载组件替换为轻量 stub，保留真实 router/守卫/Pinia/mock。
+const stub = (name: string) => ({ default: { name, render: () => null } })
+vi.mock('@/layouts/WorkspaceLayout.vue', () => stub('WorkspaceLayout'))
+vi.mock('@/views/DashboardView.vue', () => stub('DashboardView'))
+vi.mock('@/views/meetings/MeetingManageView.vue', () => stub('MeetingManageView'))
+vi.mock('@/views/TasksView.vue', () => stub('TasksView'))
+vi.mock('@/views/newMeeting/PreprocessView.vue', () => stub('PreprocessView'))
+vi.mock('@/views/tasks/TaskArchiveView.vue', () => stub('TaskArchiveView'))
+vi.mock('@/views/auth/LoginView.vue', () => stub('LoginView'))
+vi.mock('@/views/auth/RegisterView.vue', () => stub('RegisterView'))
+
 const user: AuthUser = {
   user_id: 'user-1',
   name: 'Alice',

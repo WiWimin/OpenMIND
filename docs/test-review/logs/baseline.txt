@@ -1,0 +1,49 @@
+﻿date=2026-11-03T22:27:34.0840292+08:00
+branch=main
+HEAD=ff426413ef239e7f23133de206c402cab0b1d2a6
+origin_main=ff426413ef239e7f23133de206c402cab0b1d2a6
+origin_develop=7454a2025429656211b756f761a6eb4d6848f88d
+readme_332605e=332605e642cd02583f2b9f47b7c06fbd4ba20af6
+--- status ---
+ M frontend/e2e/ai-flow.spec.ts
+ M frontend/e2e/audio-flow.spec.ts
+ M frontend/e2e/core-flow.spec.ts
+ M frontend/e2e/local-workspace.spec.ts
+ M frontend/e2e/model-settings.spec.ts
+ M frontend/e2e/support.ts
+ M frontend/tests/router.spec.ts
+?? AGENTS1.md
+?? OpenMIND-OpenCode-Full-Test.zip
+?? OpenMIND-full-test-command.md
+?? OpenMIND_4.1_A4E5A1A1E585BBE5A1.zip
+?? OpenMIND_4.1_A4E5A1A1E585BBE5A1/
+?? OpenMIND_OpenCode_8AE6AF96E6A34.0BBE5A18C%85.zip
+?? OpenMIND_OpenCode_8AE6AF96E6A34.0BBE5A18C%85/
+?? OpenMIND_OpenCode_8AE6AF96E6A34.1B7E78BBBE5A18C%85.zip
+?? OpenMIND_OpenCode_8AE6AF96E6A34.1B7E78BBBE5A18C%85/
+?? docs/techdoc-5.0.zip
+?? docs/techdoc-5.0/
+?? docs/techdoc4-evidence/
+?? docs/techdoc4-img/
+?? docs/techdoc41-evidence/
+?? docs/techdoc41-img/
+?? docs/techdoc41-review/
+?? docs/test-review/
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\243.md"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2431.0.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2432.0.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2433.0.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2433.0_\345\244\207\344\273\275\357\274\210\345\220\210\345\271\266\345\211\215\357\274\211.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2433.0_\345\244\207\344\273\275\357\274\210\350\243\201\345\211\252\345\211\215\357\274\211.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2434.0.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2434.0.md"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2434.1.docx"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2434.1.md"
+?? "docs/\351\241\271\347\233\256\346\212\200\346\234\257\346\226\207\346\241\2434.1.pdf"
+?? frontend/e2e-artifacts/
+?? frontend/e2e/auth-flow.spec.ts
+?? frontend/e2e/minutes-flow.spec.ts
+?? frontend/e2e/task-closure.spec.ts
+?? tasks/
+?? tests.zip
+?? tests/
