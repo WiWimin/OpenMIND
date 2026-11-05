@@ -5,6 +5,8 @@ import {
   apiBase,
   authToken,
   createMeeting,
+  meetingIdOf,
+  openMeeting,
   openStage,
   prepareModelAccess,
   register,
@@ -21,7 +23,9 @@ test.describe('任务业务闭环', () => {
     const access = await prepareModelAccess(page, request)
     test.skip(!access.ready, access.reason ?? '模型配置不可用')
 
-    const meetingId = await createMeeting(page, `E2E 任务闭环 ${Date.now()}`)
+    const meetingTitle = `E2E 任务闭环 ${Date.now()}`
+    await createMeeting(page, meetingTitle)
+    const meetingId = meetingIdOf(await openMeeting(page, meetingTitle))
 
     // 1) 新增记录，作为行动项提取输入（阶段页「录音转写」）
     await openStage(page, 'asr', meetingId)

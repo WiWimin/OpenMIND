@@ -5,6 +5,8 @@ import {
   apiBase,
   authToken,
   createMeeting,
+  meetingIdOf,
+  openMeeting,
   openStage,
   prepareModelAccess,
   register,
@@ -19,7 +21,9 @@ test.describe('纪要生成闭环（本地 Mock 模型，非真实供应商）',
     const access = await prepareModelAccess(page, request)
     test.skip(!access.ready, access.reason ?? '模型配置不可用')
 
-    const meetingId = await createMeeting(page, `E2E 纪要 ${Date.now()}`)
+    const meetingTitle = `E2E 纪要 ${Date.now()}`
+    await createMeeting(page, meetingTitle)
+    const meetingId = meetingIdOf(await openMeeting(page, meetingTitle))
 
     // 1) 记录：阶段页「录音转写」新增（原会议详情页已删除）
     await openStage(page, 'asr', meetingId)
