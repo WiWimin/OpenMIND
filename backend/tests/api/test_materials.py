@@ -69,7 +69,7 @@ def test_upload_material(client: TestClient, media_root) -> None:
     assert (media_root / "materials" / f"{data['material_id']}.txt").exists()
 
 
-def test_upload_parse_failure_returns_failed_material(
+def test_upload_parse_failure_returns_422_and_leaves_nothing(
     client: TestClient, media_root
 ) -> None:
     headers = _auth(client)
@@ -83,10 +83,20 @@ def test_upload_parse_failure_returns_failed_material(
         content=b"not a real pdf",
     )
 
-    assert response.status_code == 201, response.text
-    data = response.json()["data"]
-    assert data["processing_status"] == "failed"
-    assert data["parse_error"]
+    assert response.status_code == 422, response.text
+    body = response.json()
+    assert body["error_code"] == "FILE_PARSE_FAILED"
+    assert body["retryable"] is False
+    assert body["details"]["reason"]
+    assert body["message"]
+
+    # 失败不留痕：列表无条目，存储目录无残留文件
+    listed = client.get(
+        f"/api/v1/meetings/{meeting['meeting_id']}/materials", headers=headers
+    )
+    assert listed.status_code == 200
+    assert listed.json()["data"]["items"] == []
+    assert list((media_root / "materials").glob("*")) == []
 
 
 def test_upload_requires_auth(client: TestClient, media_root) -> None:
@@ -118,6 +128,31 @@ def test_upload_too_large(client: TestClient, media_root, monkeypatch: pytest.Mo
     response = _upload(client, headers, meeting["meeting_id"], content=b"some-bytes")
     assert response.status_code == 413
     assert response.json()["error_code"] == "FILE_TOO_LARGE"
+
+
+def test_upload_content_length_precheck_rejects_oversized_body(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """中间件层预检：声明的 Content-Length 超限直接 413，不落盘不建库。"""
+    from app.core.config import get_settings
+
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+
+    monkeypatch.setenv("MAX_UPLOAD_MB", "1")
+    get_settings.cache_clear()
+    try:
+        oversized = b"x" * (2 * 1024 * 1024)
+        response = _upload(client, headers, meeting["meeting_id"], content=oversized)
+        assert response.status_code == 413
+        assert response.json()["error_code"] == "FILE_TOO_LARGE"
+
+        listing = client.get(
+            f"/api/v1/meetings/{meeting['meeting_id']}/materials", headers=headers
+        )
+        assert listing.json()["data"]["items"] == []
+    finally:
+        get_settings.cache_clear()
 
 
 def test_upload_meeting_not_found(client: TestClient, media_root) -> None:

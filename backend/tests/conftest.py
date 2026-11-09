@@ -14,6 +14,9 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-" + "a" * 32)
 os.environ.setdefault("RAG_JUDGE_ENABLED", "false")
 # 单测/接口测试禁用联网检索：拒答路径由测试显式开关覆盖，不发起真实搜索
 os.environ.setdefault("WEB_SEARCH_ENABLED", "false")
+# 限流在默认用例中关闭（注册/登录密集会被误伤），限流行为由
+# tests/unit/test_rate_limit.py 显式开关覆盖
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import app.models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.db.base import Base

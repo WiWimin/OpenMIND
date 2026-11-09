@@ -5,6 +5,8 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.rate_limit import RateLimitMiddleware
+from app.core.upload_guard import UploadGuardMiddleware
 
 
 def create_app() -> FastAPI:
@@ -19,6 +21,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(UploadGuardMiddleware)
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)

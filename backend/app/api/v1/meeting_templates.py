@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.schemas.common import Envelope
 from app.schemas.meeting_template import (
     MeetingTemplateDeleteResult,
@@ -33,6 +33,7 @@ def list_templates(db: DbSession, current_user: CurrentUser) -> Envelope[list[Me
 async def upload_template(
     db: DbSession,
     current_user: CurrentUser,
+    _size_check: UploadSizeCheck,
     file: Annotated[UploadFile, File()],
     name: Annotated[str | None, Form()] = None,
     description: Annotated[str | None, Form()] = None,

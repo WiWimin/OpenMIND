@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _WEAK_SECRET_KEYS = {
@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     max_upload_mb: int = 20
 
     cors_origins: str = "http://localhost:5173"
+    # 运维指标端点开关：关闭时 /api/v1/metrics 返回 404（隐藏端点存在性）
+    metrics_enabled: bool = True
+
+    # 限流（进程内滑动窗口；多 worker / 多实例下不共享，仅单实例有效）
+    rate_limit_enabled: bool = True
+    rate_limit_default_per_minute: int = 120
+    rate_limit_login_per_minute: int = 10
+    rate_limit_ai_per_minute: int = 20
+    # 是否信任 X-Forwarded-For 计算客户端 IP（仅在受信反向代理后开启）
+    trust_proxy_headers: bool = False
+    rate_limit_max_keys: int = 10000
 
     llm_api_base: str = ""
     llm_api_key: str = ""
@@ -83,6 +94,36 @@ class Settings(BaseSettings):
                 "SECRET_KEY 必须设置为至少 32 字符的随机值，且不能使用默认占位值"
             )
         return self
+
+    @field_validator("cors_origins", mode="after")
+    @classmethod
+    def _validate_cors_origins(cls, value: str) -> str:
+        """CORS 白名单校验：禁止 `*`，每个源必须是规范的 http/https origin。"""
+        from urllib.parse import urlsplit
+
+        normalized: list[str] = []
+        for raw in value.split(","):
+            origin = raw.strip()
+            if not origin:
+                continue
+            if origin == "*":
+                raise ValueError("CORS_ORIGINS 不允许使用通配符 *")
+            parts = urlsplit(origin)
+            if parts.scheme not in {"http", "https"}:
+                raise ValueError(f"CORS_ORIGINS 源非法（scheme 必须是 http/https）：{origin}")
+            if not parts.hostname:
+                raise ValueError(f"CORS_ORIGINS 源非法（缺少 host）：{origin}")
+            if parts.path not in ("", "/"):
+                raise ValueError(f"CORS_ORIGINS 源非法（不允许包含路径）：{origin}")
+            if parts.query or parts.fragment:
+                raise ValueError(f"CORS_ORIGINS 源非法（不允许包含 query/fragment）：{origin}")
+            # 去尾斜杠后归一化，避免同源因写法差异被重复或漏配
+            origin = f"{parts.scheme}://{parts.netloc}"
+            if origin not in normalized:
+                normalized.append(origin)
+        if not normalized:
+            raise ValueError("CORS_ORIGINS 至少需要配置一个源")
+        return ",".join(normalized)
 
     @property
     def cors_origin_list(self) -> list[str]:

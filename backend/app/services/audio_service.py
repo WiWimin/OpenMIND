@@ -404,6 +404,7 @@ def delete_audio(db: Session, audio_id: str, user_id: str) -> None:
             "BUSINESS_RULE_VIOLATION",
             "已确认的音频已生成会议记录，不能删除",
             http_status=409,
+            details={"reason": "audio_confirmed"},
         )
     meeting_service.get_mutable_meeting(db, audio.meeting_id, user_id)
     settings = get_settings()

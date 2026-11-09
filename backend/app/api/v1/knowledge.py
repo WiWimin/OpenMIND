@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData
 from app.schemas.knowledge import (
@@ -27,6 +27,7 @@ router = APIRouter(tags=["knowledge"])
 async def upload_document(
     db: DbSession,
     current_user: CurrentUser,
+    _size_check: UploadSizeCheck,
     file: Annotated[UploadFile, File()],
 ) -> Envelope[KnowledgeDocumentRead]:
     content = await file.read()

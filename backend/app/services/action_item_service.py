@@ -137,7 +137,10 @@ def delete_action_item(db: Session, action_id: str, user_id: str) -> None:
     meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
     if item.status == _CONVERTED:
         raise AppError(
-            "BUSINESS_RULE_VIOLATION", "已转为任务的行动项不可删除", http_status=409
+            "BUSINESS_RULE_VIOLATION",
+            "已转为任务的行动项不可删除",
+            http_status=409,
+            details={"reason": "action_item_converted"},
         )
     action_item_repository.delete(db, item)
 

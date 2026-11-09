@@ -24,11 +24,20 @@ services:
       args:
         # 慢速网络可在 docker/.env 指定 pip 镜像（如 https://pypi.tuna.tsinghua.edu.cn/simple）
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    # 开发模式热重载：挂载的代码变更后自动重启进程，
+    # 否则改了 backend/app/** 但进程仍跑启动时的旧代码（容器重启前不生效）
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-openmind}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-openmind}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_DEFAULT_PER_MINUTE: ${RATE_LIMIT_DEFAULT_PER_MINUTE:-120}
+      RATE_LIMIT_LOGIN_PER_MINUTE: ${RATE_LIMIT_LOGIN_PER_MINUTE:-10}
+      RATE_LIMIT_AI_PER_MINUTE: ${RATE_LIMIT_AI_PER_MINUTE:-20}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
       STORAGE_DIR: /storage
       SECRET_KEY: ${SECRET_KEY:-change-me}
       SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}

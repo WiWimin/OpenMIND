@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.api.page import PageParams, list_envelope
 from app.schemas.audio import (
     AudioDeleteResult,
@@ -28,6 +28,7 @@ async def upload_audio(
     meeting_id: str,
     db: DbSession,
     current_user: CurrentUser,
+    _size_check: UploadSizeCheck,
     file: Annotated[UploadFile, File()],
 ) -> Envelope[AudioRead]:
     content = await file.read()
@@ -101,6 +102,7 @@ async def upload_live_chunk(
     audio_id: str,
     db: DbSession,
     current_user: CurrentUser,
+    _size_check: UploadSizeCheck,
     file: Annotated[UploadFile, File()],
     seq: Annotated[int, Form(ge=1)],
     offset_seconds: Annotated[int, Form(ge=0)] = 0,

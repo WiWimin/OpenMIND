@@ -252,6 +252,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
+import { resolveErrorMessage } from '@/utils/errors'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import type { Meeting, MeetingStatus } from '@/types/meeting'
 import { formatDateTime } from '@/utils/datetime'
@@ -530,7 +531,7 @@ async function confirmArchive(): Promise<void> {
     toast.success('会议已归档')
     await load()
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '归档失败，请稍后重试')
+    toast.error(resolveErrorMessage(caught, '归档失败，请稍后重试'))
   } finally {
     archiving.value = false
   }
@@ -623,7 +624,7 @@ async function confirmDeleteMeeting(): Promise<void> {
     }
     await load()
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '删除失败，请稍后重试')
+    toast.error(resolveErrorMessage(caught, '删除失败，请稍后重试'))
   } finally {
     deletingMeeting.value = false
   }
