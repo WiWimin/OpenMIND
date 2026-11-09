@@ -247,6 +247,8 @@ uploaded → processing → processed | failed
 failed → processing   （重试）
 ```
 
+> **2026-11 统一失败策略（B1，取代 D-32 的失败清理）**：材料/知识库解析或索引失败**落库 `failed` 并保留记录与磁盘文件**（不回滚清理），可经重试接口 `failed → processing`（`api.md 4.6` / `api.md 2.6`）。
+
 ### 6.2 流程
 
 ```text
@@ -256,11 +258,12 @@ failed → processing   （重试）
   → 建材料记录（默认 uploaded）
   → 同步解析/索引：processing_status=processing
       ├─ 成功：写 content，processing_status=processed，parse_error=null
-      │        切分 + Embedding → document_chunks
-      └─ 失败：processing_status=failed，写 parse_error（安全摘要）
+      │        切分 + Embedding → document_chunks → 201 材料对象
+      └─ 失败：清理半成品分块，落库 failed + parse_error + parse_error_code
+               记录与磁盘文件保留 → 仍返回 201（对象 processing_status=failed）
 ```
 
-上传接口当前同步完成处理，响应中的材料状态通常已是 `processed` 或 `failed`；`uploaded/processing` 是内部/瞬时状态，不作为上传成功的客户端契约。
+上传接口当前同步完成处理，成功响应中的材料状态通常已是 `processed`；`uploaded/processing` 是内部/瞬时状态，不作为上传成功的客户端契约。**失败保留痕迹**：列表接口出现 `failed` 条目，前端展示 `parse_error`/`parse_error_code` 并可调用重试接口（`POST /materials/{id}/retry`，读取磁盘原文件重新处理）。
 
 - 解析层已实现（PR #4）：`parse_bytes(data, file_name) -> ParsedDocument{file_name, content, parser, metadata}`，按扩展名分发，未知/空/损坏统一抛 `ParseError`。
 - `type` 取值（无点）：`pdf`/`docx`/`txt`；解析层按扩展名（带点）分发，业务层负责去点归一。
@@ -276,11 +279,12 @@ failed → processing   （重试）
 | `invalid_file` | 读取/格式损坏 | `parser_service` |
 | `parse_failed` | 其他解析异常 | `parser_service` |
 
-### 6.4 失败补偿与幂等
+### 6.4 失败补偿与幂等（统一失败策略，2026-11 B1）
 
-- **解析失败**：材料置 `failed` 并记录 `parse_error`，不产生分块；用户可重新上传（重试）。
-- **索引失败**（解析成功但切分/Embedding 失败）：材料置 `failed`，写入原因；重试时先清理旧分块再重建。
-- **未预期处理异常**：材料置 `failed` 并写入安全错误摘要，记录服务端日志，不长期停留在 `processing`。
+- **解析失败**：`ParseError` 被 `_process_material`/`_process_document` 捕获，`_mark_failed` 统一落库——回滚事务、删除半成品分块、置 `processing_status=failed`、写 `parse_error`（可展示原因）与 `parse_error_code`（如 `FILE_PARSE_FAILED`），**记录与已落盘文件保留**；接口返回 `201`（对象 `failed`），不返回 422、不删除文件。
+- **索引失败**（解析成功但切分/Embedding 失败，如 `MODEL_CONFIG_REQUIRED`）：同上落 `failed` 保留记录与文件；已写入的部分分块被清理，避免 `failed` 记录带脏索引。
+- **未预期处理异常**：记服务端日志后同样 `_mark_failed`（`parse_error_code=INTERNAL_ERROR`），不上抛 500、不长期停留在 `processing`。
+- **重试**：`POST /materials/{id}/retry`、`POST /knowledge/documents/{id}/retry`——仅 `failed` 可重试（否则 `409` + `details.reason`），从磁盘读原文件重新走 `_process_*`；再次失败仍保持 `failed` 并刷新错误信息（接口不抛错）。原文件丢失返回 `404`。
 - **删除材料**：同步删除文件对象与 `document_chunks`；`meeting_records.source_material_id` 置空（`database.md 七`）。
 
 ### 6.5 音频转写
@@ -387,7 +391,7 @@ failed → processing   （重试）
 | 生成准备稿/纪要 | 非幂等（每次新增记录） | 失败置 `failed`，用户可重新生成 |
 | 提取行动项/问题 | 非幂等（允许重复候选） | 失败返回统一错误，可重试 |
 | 行动项转任务 | **幂等**：`personal_tasks.action_id` 唯一 | 重复转换返回已有任务 |
-| 文件解析/索引 | 重解析先删旧分块再重建 | `failed` 可重试；材料删除清理分块 |
+| 文件解析/索引 | 重解析先删旧分块再重建 | 失败落 `failed` 保留记录/文件（B1 统一策略），经重试接口重新处理；材料删除清理分块 |
 | 检索/问答 | 无副作用 | 无结果返回空来源 + `insufficient_evidence` |
 
 ## 十、错误码、超时与可重试
@@ -404,6 +408,7 @@ failed → processing   （重试）
 | 其他未预期 | `INTERNAL_ERROR` | 500 | 视情况 |
 
 - 对外错误体遵循 `api.md 一.2`（扁平 + `retryable` + 可选 `details.reason`）。
+- 材料/知识库上传的解析/索引失败**不返回 422**：落库 `failed` + `parse_error_code`（值可为 `FILE_PARSE_FAILED`）并保留记录与文件，经重试接口重新处理（见 6.4、`api.md 4.6`/`api.md 2.6`）；`FILE_PARSE_FAILED` 422 仅由模板上传等同步且不留记录的路径返回。
 
 ## 十一、验收标准
 

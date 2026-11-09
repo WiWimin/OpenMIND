@@ -33,27 +33,40 @@ def _infer_material_type(file_name: str, material_type: str | None) -> str:
     return candidate
 
 
+def _mark_failed(
+    db: Session, material: MeetingMaterial, *, message: str, code: str
+) -> None:
+    """统一失败策略：落库 `failed`，保留数据库记录、原始文件与分块清理，供重试使用。"""
+    db.rollback()
+    # 失败时清掉可能残留的半成品分块，避免 failed 记录带脏索引
+    chunk_repository.delete_by_material(db, material.material_id)
+    material.processing_status = "failed"
+    material.parse_error = message
+    material.parse_error_code = code
+    db.commit()
+    db.refresh(material)
+
+
 def _process_material(
     db: Session, material: MeetingMaterial, content: bytes, file_name: str
 ) -> None:
+    """解析 + 索引：成功转 `processed`，失败转 `failed` 并保留记录与文件（可重试）。"""
     material.processing_status = "processing"
+    db.commit()
     try:
         parsed = parse_bytes(content, file_name)
         material.content = parsed.content
         indexing_service.index_material(db, material)
         material.processing_status = "processed"
         material.parse_error = None
-    except AppError as exc:
-        material.processing_status = "failed"
-        material.parse_error = exc.message
-    except Exception:
-        material.processing_status = "failed"
-        material.parse_error = "材料处理失败，请重试"
-        logger.exception("材料处理出现未预期异常 material_id=%s", material.material_id)
-        raise
-    finally:
+        material.parse_error_code = None
         db.commit()
         db.refresh(material)
+    except AppError as exc:
+        _mark_failed(db, material, message=exc.message, code=exc.error_code)
+    except Exception:
+        logger.exception("材料处理出现未预期异常 material_id=%s", material.material_id)
+        _mark_failed(db, material, message="材料处理失败，请重试", code="INTERNAL_ERROR")
 
 
 def upload_material(
@@ -89,7 +102,39 @@ def upload_material(
             storage_key=storage_key,
         ),
     )
+    # 失败不再回滚清理：记录与文件保留为 failed，由重试接口处理（docs/database.md 统一策略）
     _process_material(db, material, content, file_name)
+    return material
+
+
+def retry_material(db: Session, material_id: str, user_id: str) -> MeetingMaterial:
+    """重新解析/索引处理失败的材料（仅 `failed` 可重试，读取磁盘原文件）。"""
+    material = get_owned_material(db, material_id, user_id)
+    meeting_service.get_mutable_meeting(db, material.meeting_id, user_id)
+    if material.processing_status == "processing":
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "材料正在处理中，请稍候再试",
+            http_status=409,
+            details={"reason": "material_processing"},
+        )
+    if material.processing_status != "failed":
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "仅处理失败的材料可重试",
+            http_status=409,
+            details={"reason": "material_not_failed"},
+        )
+    settings = get_settings()
+    try:
+        content = storage.read_bytes(settings.storage_dir, material.storage_key)
+    except FileNotFoundError:
+        raise AppError(
+            "RESOURCE_NOT_FOUND",
+            "原始文件已丢失，请重新上传",
+            http_status=404,
+        ) from None
+    _process_material(db, material, content, material.file_name)
     return material
 
 

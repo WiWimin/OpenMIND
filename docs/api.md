@@ -52,7 +52,7 @@
 | `VALIDATION_ERROR` | 422 | 字段缺失、格式错误或值不合法 | 否 |
 | `FILE_TYPE_NOT_SUPPORTED` | 415 | 文件类型不支持 | 否 |
 | `FILE_TOO_LARGE` | 413 | 文件超过大小限制 | 否 |
-| `FILE_PARSE_FAILED` | 422 | 文件无法解析（原因见 `details.reason`，见下） | 通常否 |
+| `FILE_PARSE_FAILED` | 422 | 文件无法解析（原因见 `details.reason`，见下；模板上传同步返回。材料/知识库解析失败改为落库 `failed` + `parse_error_code`，见 §4.2/§2.6，不返回 422） | 通常否 |
 | `MODEL_TIMEOUT` | 504 | 模型调用超时 | 是 |
 | `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析或未通过校验（经 1 次修复重试后仍失败时 `retryable=true`） | 视情况 |
 | `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/额度不足等） | 否 |
@@ -289,6 +289,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 | POST | `/api/v1/knowledge/documents` | 上传 PDF / DOCX / TXT，解析、分块并建立向量索引 |
 | GET | `/api/v1/knowledge/documents` | 当前用户知识库文档分页列表 |
 | GET | `/api/v1/knowledge/documents/{document_id}` | 文档详情 |
+| POST | `/api/v1/knowledge/documents/{document_id}/retry` | 重新解析/索引处理失败的文档（仅 `failed`） |
 | DELETE | `/api/v1/knowledge/documents/{document_id}` | 删除文档、分块和向量索引 |
 | POST | `/api/v1/knowledge/search` | 按语义检索当前用户知识库 |
 
@@ -301,11 +302,12 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "type": "pdf",
   "processing_status": "processed",
   "parse_error": null,
+  "parse_error_code": null,
   "created_at": "2026-10-01T09:00:00+08:00"
 }
 ```
 
-`processing_status`：`uploaded` / `processing` / `processed` / `failed`。
+`processing_status`：`uploaded` / `processing` / `processed` / `failed`。`parse_error_code`：失败错误码（如 `FILE_PARSE_FAILED` / `MODEL_CONFIG_REQUIRED` / `INTERNAL_ERROR`），供前端映射文案。
 
 检索请求：
 
@@ -334,7 +336,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 规则：
 - 所有文档、分块和检索结果严格限定当前用户。
 - 文件大小上限沿用 `MAX_UPLOAD_MB`；仅支持 PDF / DOCX / TXT。
-- 解析失败返回 `201`，对象 `processing_status=failed` 并带 `parse_error`；不支持的类型返回 `415 FILE_TYPE_NOT_SUPPORTED`。
+- 解析失败返回 `201`，对象 `processing_status=failed` 并带 `parse_error` / `parse_error_code`，**记录与磁盘文件保留**（统一失败策略，见 `database.md 五`）；不支持的类型返回 `415 FILE_TYPE_NOT_SUPPORTED`。
+- 重试 `POST /knowledge/documents/{document_id}/retry`：仅 `failed` 可重试，读取磁盘原文件重新解析/索引，成功转 `processed` 并清空错误；`processing` 或非 `failed` 返回 `409`（`details.reason=document_processing` / `document_not_failed`）；原文件丢失返回 `404`。
 - 删除文档同步删除分块与向量索引，删除后不得再被检索。
 - 知识库检索默认不混入会议问答；问答中选择 `context_scope=knowledge_base` 时仅检索知识库。
 
@@ -513,11 +516,13 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "source": "会前材料",
   "processing_status": "processed",
   "parse_error": null,
+  "parse_error_code": null,
   "created_at": "2026-10-01T09:10:00+08:00"
 }
 ```
 
-- `processing_status`：`uploaded` / `processing` / `processed` / `failed`。
+- `processing_status`：`uploaded` / `processing` / `processed` / `failed`。`failed` 为活跃状态：解析/索引失败落库 `failed` 并保留记录与文件，可经 §4.6 重试（统一失败策略，见 `database.md 五`）。
+- `parse_error_code`：失败错误码（如 `FILE_PARSE_FAILED` / `MODEL_CONFIG_REQUIRED` / `INTERNAL_ERROR`），供前端映射文案。
 - 允许 `pdf` / `docx` / `txt`；单文件 ≤ `MAX_UPLOAD_MB`（默认 20MB）。
 - 不暴露 `storage_key`、文件系统路径与未脱敏异常。
 
@@ -525,11 +530,11 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选，来源标识，前端已知取值：手动上传、`本地工作区`（会议详情/管理页手动导入）、`本地文件夹自动导入`（新建会议选文件夹后自动导入）、`AI 生成`（Build 模式文件三处保存之会议资料副本））、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
 
-响应 `201`：材料对象。当前为同步解析/索引，成功时 `processing_status = processed`；解析或索引失败时返回 `failed` 并写入 `parse_error`，文件类型不支持 `415`，过大 `413`。
+响应 `201`：材料对象。当前为同步解析/索引，成功时 `processing_status = processed`，文件类型不支持 `415`，过大 `413`。
 
 > 同名文件不去重（后端无唯一约束）：同名跳过由前端在自动/手动导入前以 `file_name` 集合判定；`POST` 侧不做内容比对或覆盖。
 
-> 上传路径的解析失败以 `processing_status=failed` + `parse_error` 表达，不返回 `422 FILE_PARSE_FAILED`；后者用于解析层错误语义说明，不是上传接口的响应。
+> **解析/索引失败（2026-11 统一失败策略）**：接口仍返回 `201`，材料对象 `processing_status=failed` 并带 `parse_error`（可展示原因）与 `parse_error_code`（如 `FILE_PARSE_FAILED`）。**记录、分块清理与已落盘文件全部保留**（不回滚、不删除），材料列表可见该条目；前端展示失败原因并可调用 §4.6 重试。未预期的服务端异常同样落 `failed`（`parse_error_code=INTERNAL_ERROR`），不再返回 `500`。
 
 ### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials`
 
@@ -537,18 +542,25 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ### 4.4 材料详情 `GET /api/v1/materials/{material_id}`
 
-响应 `200`：材料对象（含 `parse_error`，失败时用于前端提示）。
+响应 `200`：材料对象（含 `parse_error` 与 `parse_error_code`，失败时用于前端提示）。
 
 ### 4.5 删除材料 `DELETE /api/v1/materials/{material_id}`
 
 响应 `200`：`{ "status": "success", "data": { "deleted": true, "material_id": "mat_xxx" } }`。
 删除后相关分块与向量索引同步清理，RAG 不得再检索到；引用该材料的 `meeting_records.source_material_id` 置空。
 
-### 4.6 音频转写 `POST /api/v1/materials/{material_id}/transcribe` [扩展]
+### 4.6 重试材料处理 `POST /api/v1/materials/{material_id}/retry`
+
+对 `processing_status=failed` 的材料读取磁盘原文件重新解析/索引。响应 `200` 为处理后的材料对象（成功转 `processed` 并清空 `parse_error`/`parse_error_code`；再次失败保持 `failed` 并刷新错误信息，接口不抛错）。
+
+- 仅 `failed` 可重试：`processing` 返回 `409`（`details.reason=material_processing`），其余状态返回 `409`（`details.reason=material_not_failed`）。
+- 原文件已丢失返回 `404 RESOURCE_NOT_FOUND`（提示重新上传）；归档会议不可重试（沿用可变会议校验）。
+
+### 4.7 音频转写 `POST /api/v1/materials/{material_id}/transcribe` [扩展]
 
 非 MVP。一旦实现必须固定同步或 `202` 契约并写入 OpenAPI。
 
-### 4.7 记录对象
+### 4.8 记录对象
 
 ```json
 {
@@ -566,7 +578,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 `record_type`：`manual` / `transcript` / `imported`。
 `marker_type`：`highlight` / `decision` / `question`，或 `null`；每条记录最多一个标记。
 
-### 4.8 新增记录 `POST /api/v1/meetings/{meeting_id}/records`
+### 4.9 新增记录 `POST /api/v1/meetings/{meeting_id}/records`
 
 ```json
 { "content": "讨论记录正文", "record_type": "manual", "marker_type": "decision" }
@@ -574,15 +586,15 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 `content` 必填；`marker_type` 可选。响应 `201` 为记录对象。
 
-### 4.9 记录列表 `GET /api/v1/meetings/{meeting_id}/records`
+### 4.10 记录列表 `GET /api/v1/meetings/{meeting_id}/records`
 
 查询参数：`page`、`page_size`。响应 `200`：分页结构。
 
-### 4.10 编辑记录 `PATCH /api/v1/records/{record_id}`
+### 4.11 编辑记录 `PATCH /api/v1/records/{record_id}`
 
 可更新字段：`content`、`marker_type`。传 `marker_type: null` 清除标记；归档会议不可修改。响应 `200` 为更新后记录对象。
 
-### 4.11 删除记录 `DELETE /api/v1/records/{record_id}`
+### 4.12 删除记录 `DELETE /api/v1/records/{record_id}`
 
 响应 `200`：`{ "status": "success", "data": { "deleted": true, "record_id": "rec_xxx" } }`。
 若该记录被行动项或问题引用，返回 `409 BUSINESS_RULE_VIOLATION`，以保留来源可追溯性。

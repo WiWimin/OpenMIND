@@ -86,6 +86,20 @@ def delete_document(
 
 
 @router.post(
+    "/knowledge/documents/{document_id}/retry",
+    response_model=Envelope[KnowledgeDocumentRead],
+)
+def retry_document(
+    document_id: str, db: DbSession, current_user: CurrentUser
+) -> Envelope[KnowledgeDocumentRead]:
+    """重新解析/索引处理失败的文档：仅 `failed` 可重试，成功转 `processed`。"""
+    document = knowledge_service.retry_document(
+        db, document_id, current_user.user_id
+    )
+    return Envelope(data=KnowledgeDocumentRead.model_validate(document))
+
+
+@router.post(
     "/knowledge/search",
     response_model=Envelope[KnowledgeSearchResponse],
 )

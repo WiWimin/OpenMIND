@@ -69,9 +69,10 @@ def test_upload_material(client: TestClient, media_root) -> None:
     assert (media_root / "materials" / f"{data['material_id']}.txt").exists()
 
 
-def test_upload_parse_failure_returns_422_and_leaves_nothing(
+def test_upload_parse_failure_marks_failed_and_keeps_file(
     client: TestClient, media_root
 ) -> None:
+    """统一失败策略：解析失败返回 201 + `failed`，记录与磁盘文件保留（可重试）。"""
     headers = _auth(client)
     meeting = _create_meeting(client, headers)
 
@@ -83,20 +84,96 @@ def test_upload_parse_failure_returns_422_and_leaves_nothing(
         content=b"not a real pdf",
     )
 
-    assert response.status_code == 422, response.text
-    body = response.json()
-    assert body["error_code"] == "FILE_PARSE_FAILED"
-    assert body["retryable"] is False
-    assert body["details"]["reason"]
-    assert body["message"]
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["processing_status"] == "failed"
+    assert data["parse_error"]
+    assert data["parse_error_code"] == "FILE_PARSE_FAILED"
+    material_id = data["material_id"]
 
-    # 失败不留痕：列表无条目，存储目录无残留文件
+    # 记录保留：列表可见
     listed = client.get(
         f"/api/v1/meetings/{meeting['meeting_id']}/materials", headers=headers
     )
     assert listed.status_code == 200
-    assert listed.json()["data"]["items"] == []
-    assert list((media_root / "materials").glob("*")) == []
+    assert listed.json()["data"]["items"][0]["material_id"] == material_id
+
+    # 磁盘文件保留，供重试读取
+    assert (media_root / "materials" / f"{material_id}.pdf").exists()
+
+
+def test_retry_failed_material_succeeds(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """重试接口：读取磁盘原文件重新处理，成功后转 `processed` 并清空错误。"""
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    failed = _upload(
+        client,
+        headers,
+        meeting["meeting_id"],
+        name="broken.pdf",
+        content=b"not a real pdf",
+    ).json()["data"]
+    assert failed["processing_status"] == "failed"
+
+    # 模拟「故障已恢复」：重试时解析成功
+    class _Parsed:
+        content = "恢复后的正文"
+
+    monkeypatch.setattr(material_service, "parse_bytes", lambda *a, **k: _Parsed())
+
+    retry = client.post(
+        f"/api/v1/materials/{failed['material_id']}/retry", headers=headers
+    )
+    assert retry.status_code == 200, retry.text
+    data = retry.json()["data"]
+    assert data["processing_status"] == "processed"
+    assert data["parse_error"] is None
+    assert data["parse_error_code"] is None
+
+
+def test_retry_failed_material_still_fails_stays_failed(
+    client: TestClient, media_root
+) -> None:
+    """重试仍失败：不抛错、不清理，状态保持 `failed` 且错误信息刷新。"""
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    failed = _upload(
+        client,
+        headers,
+        meeting["meeting_id"],
+        name="broken.pdf",
+        content=b"not a real pdf",
+    ).json()["data"]
+
+    retry = client.post(
+        f"/api/v1/materials/{failed['material_id']}/retry", headers=headers
+    )
+    assert retry.status_code == 200, retry.text
+    data = retry.json()["data"]
+    assert data["processing_status"] == "failed"
+    assert data["parse_error_code"] == "FILE_PARSE_FAILED"
+    assert (media_root / "materials" / f"{failed['material_id']}.pdf").exists()
+
+
+def test_retry_rejects_non_failed_material(client: TestClient, media_root) -> None:
+    """仅 `failed` 可重试：处理成功的材料重试返回 409 并带 details.reason。"""
+    headers = _auth(client)
+    meeting = _create_meeting(client, headers)
+    ok = _upload(client, headers, meeting["meeting_id"]).json()["data"]
+    assert ok["processing_status"] == "processed"
+
+    retry = client.post(f"/api/v1/materials/{ok['material_id']}/retry", headers=headers)
+    assert retry.status_code == 409
+    body = retry.json()
+    assert body["error_code"] == "BUSINESS_RULE_VIOLATION"
+    assert body["details"]["reason"] == "material_not_failed"
+
+
+def test_retry_material_requires_auth(client: TestClient, media_root) -> None:
+    response = client.post("/api/v1/materials/mat_x/retry")
+    assert response.status_code == 401
 
 
 def test_upload_requires_auth(client: TestClient, media_root) -> None:

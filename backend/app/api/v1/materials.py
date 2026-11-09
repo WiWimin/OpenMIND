@@ -76,3 +76,14 @@ def delete_material(
 ) -> Envelope[MaterialDeleteResult]:
     material_service.delete_material(db, material_id, current_user.user_id)
     return Envelope(data=MaterialDeleteResult(material_id=material_id))
+
+
+@router.post("/materials/{material_id}/retry", response_model=Envelope[MaterialRead])
+def retry_material(
+    material_id: str, db: DbSession, current_user: CurrentUser
+) -> Envelope[MaterialRead]:
+    """重新解析/索引处理失败的材料：仅 `failed` 可重试，成功转 `processed`。"""
+    material = material_service.retry_material(
+        db, material_id, current_user.user_id
+    )
+    return Envelope(data=MaterialRead.model_validate(material))

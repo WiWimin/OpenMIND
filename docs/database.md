@@ -94,6 +94,7 @@
 | `content` | TEXT | ? | 解析后文本（原文件独立存储） |
 | `processing_status` | VARCHAR(20) | NN, default `uploaded` | 见 §五 |
 | `parse_error` | TEXT | ? | 内部安全错误摘要 |
+| `parse_error_code` | VARCHAR(40) | ? | 失败错误码（`FILE_PARSE_FAILED` / `MODEL_CONFIG_REQUIRED` / `INTERNAL_ERROR` 等），供前端映射文案 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -239,6 +240,7 @@
 | `content` | TEXT | ? | 解析文本 |
 | `processing_status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
 | `parse_error` | TEXT | ? | 解析/索引失败原因 |
+| `parse_error_code` | VARCHAR(40) | ? | 失败错误码，供前端映射文案 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -351,7 +353,7 @@
 | 对象 | 字段 | 取值 | 说明 |
 | --- | --- | --- | --- |
 | Meeting | `status` | `scheduled`、`archived` | **MVP 仅两态**；预留 `in_progress`/`completed` 将来扩展 |
-| Material | `processing_status` | `uploaded`、`processing`、`processed`、`failed` | 解析状态 |
+| Material | `processing_status` | `uploaded`、`processing`、`processed`、`failed` | 解析状态；`failed` 为活跃状态（见下） |
 | Preparation | `status` | `generating`、`draft`、`confirmed`、`failed` | |
 | Minutes | `status` | `draft`、`confirmed` | |
 | ActionItem | `status` | `pending_confirmation`、`confirmed`、`converted`、`cancelled` | |
@@ -361,7 +363,8 @@
 流转规则：
 
 - Meeting：`scheduled` ↔ `archived`（归档只读，MVP 不提供开始/完成操作）。
-- Material：`uploaded → processing → processed | failed`；重试允许 `failed → processing`。
+- Material：`uploaded → processing → processed | failed`；重试允许 `failed → processing`（`api.md 4.6`）。
+  - **2026-11 统一失败策略（B1）**：材料/知识库解析或索引失败**落库 `failed`，保留数据库记录与已上传磁盘文件**（不回滚、不删除），同时清理半成品分块并写入 `parse_error` + `parse_error_code`；提供重试接口 `POST /materials/{id}/retry`、`POST /knowledge/documents/{id}/retry` 读取磁盘原文件重新处理。接口对失败仍返回 `201`（对象 `processing_status=failed`），不再返回 `422 FILE_PARSE_FAILED` 或执行失败清理。
 - Preparation：`generating → draft → confirmed`；生成失败 `failed`；确认动作幂等（`api.md 5.6`）。
 - ActionItem：`pending_confirmation → confirmed → converted`；可由待确认/已确认进入 `cancelled`；**仅 `confirmed` 可转任务**。
 - PersonalTask：`todo → in_progress → completed`；未完成可 `cancelled`。

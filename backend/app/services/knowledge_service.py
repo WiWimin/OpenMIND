@@ -59,26 +59,38 @@ def _index_document(
         )
 
 
+def _mark_failed(
+    db: Session, document: KnowledgeDocument, *, message: str, code: str
+) -> None:
+    """统一失败策略：落库 `failed`，保留记录与已上传文件，供重试使用。"""
+    db.rollback()
+    knowledge_chunk_repository.delete_by_document(db, document.document_id)
+    document.processing_status = "failed"
+    document.parse_error = message
+    document.parse_error_code = code
+    db.commit()
+    db.refresh(document)
+
+
 def _process_document(
     db: Session, document: KnowledgeDocument, content: bytes, file_name: str
 ) -> None:
     document.processing_status = "processing"
+    db.commit()
     try:
         parsed = parse_bytes(content, file_name)
         document.content = parsed.content
         _index_document(db, document)
         document.processing_status = "processed"
         document.parse_error = None
-    except AppError as exc:
-        document.processing_status = "failed"
-        document.parse_error = exc.message
-    except Exception:
-        logger.exception("知识库索引失败 document_id=%s", document.document_id)
-        document.processing_status = "failed"
-        document.parse_error = "知识库索引失败"
-    finally:
+        document.parse_error_code = None
         db.commit()
         db.refresh(document)
+    except AppError as exc:
+        _mark_failed(db, document, message=exc.message, code=exc.error_code)
+    except Exception:
+        logger.exception("知识库索引失败 document_id=%s", document.document_id)
+        _mark_failed(db, document, message="知识库索引失败", code="INTERNAL_ERROR")
 
 
 def upload_document(
@@ -134,6 +146,36 @@ def delete_document(db: Session, document_id: str, user_id: str) -> None:
     storage.delete_object(get_settings().storage_dir, document.storage_key)
     knowledge_chunk_repository.delete_by_document(db, document_id)
     knowledge_repository.delete(db, document)
+
+
+def retry_document(db: Session, document_id: str, user_id: str) -> KnowledgeDocument:
+    """重新解析/索引处理失败的知识库文档（仅 `failed` 可重试，读取磁盘原文件）。"""
+    document = get_owned_document(db, document_id, user_id)
+    if document.processing_status == "processing":
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "文档正在处理中，请稍候再试",
+            http_status=409,
+            details={"reason": "document_processing"},
+        )
+    if document.processing_status != "failed":
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "仅处理失败的文档可重试",
+            http_status=409,
+            details={"reason": "document_not_failed"},
+        )
+    settings = get_settings()
+    try:
+        content = storage.read_bytes(settings.storage_dir, document.storage_key)
+    except FileNotFoundError:
+        raise AppError(
+            "RESOURCE_NOT_FOUND",
+            "原始文件已丢失，请重新上传",
+            http_status=404,
+        ) from None
+    _process_document(db, document, content, document.file_name)
+    return document
 
 
 def search_documents(
