@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -73,29 +74,50 @@ def _mark_failed(
 
 
 def _process_document(
-    db: Session, document: KnowledgeDocument, content: bytes, file_name: str
-) -> None:
+    db: Session,
+    document: KnowledgeDocument,
+    content: bytes,
+    file_name: str,
+    *,
+    progress_cb: Callable[[int], None] | None = None,
+) -> str:
+    """解析 + 索引：返回终态 `processed` / `failed`（供异步任务判定成败）。"""
     document.processing_status = "processing"
     db.commit()
+    if progress_cb:
+        progress_cb(10)
     try:
         parsed = parse_bytes(content, file_name)
         document.content = parsed.content
+        if progress_cb:
+            progress_cb(60)
         _index_document(db, document)
         document.processing_status = "processed"
         document.parse_error = None
         document.parse_error_code = None
         db.commit()
         db.refresh(document)
+        if progress_cb:
+            progress_cb(90)
+        return "processed"
     except AppError as exc:
         _mark_failed(db, document, message=exc.message, code=exc.error_code)
+        return "failed"
     except Exception:
         logger.exception("知识库索引失败 document_id=%s", document.document_id)
         _mark_failed(db, document, message="知识库索引失败", code="INTERNAL_ERROR")
+        return "failed"
 
 
 def upload_document(
-    db: Session, *, user_id: str, file_name: str, content: bytes
+    db: Session,
+    *,
+    user_id: str,
+    file_name: str,
+    content: bytes,
+    defer_processing: bool = False,
 ) -> KnowledgeDocument:
+    """上传并（同步或交由异步任务）处理文档；`defer_processing=True` 只落盘建记录。"""
     document_type = _infer_document_type(file_name)
     settings = get_settings()
     ensure_upload_size(content, max_mb=settings.max_upload_mb)
@@ -115,7 +137,8 @@ def upload_document(
             storage_key=storage_key,
         ),
     )
-    _process_document(db, document, content, file_name)
+    if not defer_processing:
+        _process_document(db, document, content, file_name)
     return document
 
 
@@ -148,8 +171,13 @@ def delete_document(db: Session, document_id: str, user_id: str) -> None:
     knowledge_repository.delete(db, document)
 
 
-def retry_document(db: Session, document_id: str, user_id: str) -> KnowledgeDocument:
-    """重新解析/索引处理失败的知识库文档（仅 `failed` 可重试，读取磁盘原文件）。"""
+def retry_document(
+    db: Session, document_id: str, user_id: str, *, defer_processing: bool = False
+) -> KnowledgeDocument:
+    """重新解析/索引处理失败的知识库文档（仅 `failed` 可重试，读取磁盘原文件）。
+
+    `defer_processing=True` 时只做状态与文件存在性校验，处理交由后台任务。
+    """
     document = get_owned_document(db, document_id, user_id)
     if document.processing_status == "processing":
         raise AppError(
@@ -174,7 +202,8 @@ def retry_document(db: Session, document_id: str, user_id: str) -> KnowledgeDocu
             "原始文件已丢失，请重新上传",
             http_status=404,
         ) from None
-    _process_document(db, document, content, document.file_name)
+    if not defer_processing:
+        _process_document(db, document, content, document.file_name)
     return document
 
 

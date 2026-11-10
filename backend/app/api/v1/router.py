@@ -7,6 +7,7 @@ from app.api.v1 import (
     auth,
     health,
     issues,
+    jobs,
     knowledge,
     materials,
     meeting_templates,
@@ -37,4 +38,5 @@ api_router.include_router(issues.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(memory.router)
 api_router.include_router(settings.router)
+api_router.include_router(jobs.router)
 api_router.include_router(metrics.router)

@@ -1,5 +1,6 @@
 from app.db.base import Base
 from app.models.action_item import ActionItem
+from app.models.async_job import AsyncJob
 from app.models.audio import MeetingAudio
 from app.models.chunk import DocumentChunk
 from app.models.issue import OpenIssue
@@ -18,6 +19,7 @@ from app.models.user_memory import UserMemory
 
 __all__ = [
     "ActionItem",
+    "AsyncJob",
     "Base",
     "DocumentChunk",
     "KnowledgeChunk",

@@ -29,6 +29,12 @@ def create(
     return preparation
 
 
+def get_by_id(db: Session, preparation_id: str) -> Preparation | None:
+    return db.execute(
+        select(Preparation).where(Preparation.preparation_id == preparation_id)
+    ).scalar_one_or_none()
+
+
 def get_owned(db: Session, preparation_id: str, user_id: str) -> Preparation | None:
     statement = (
         select(Preparation)

@@ -17,6 +17,9 @@ os.environ.setdefault("WEB_SEARCH_ENABLED", "false")
 # 限流在默认用例中关闭（注册/登录密集会被误伤），限流行为由
 # tests/unit/test_rate_limit.py 显式开关覆盖
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+# 异步长任务默认关闭：绝大多数用例断言同步语义（201/200）；
+# 异步行为由 tests/api/test_jobs.py 显式开启（monkeypatch + 缓存清理）
+os.environ.setdefault("ASYNC_JOBS_ENABLED", "false")
 
 import app.models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.db.base import Base
@@ -86,6 +89,15 @@ def client(db_engine: Engine) -> Iterator[TestClient]:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
+    # 后台任务（含启动回收）用独立会话：替换为测试内存库的 sessionmaker，
+    # 必须在进入 TestClient（触发 lifespan）之前设置
+    from app.services import task_runner
+
+    original_factory = task_runner.session_factory
+    task_runner.session_factory = testing_session
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        task_runner.session_factory = original_factory
+        app.dependency_overrides.clear()

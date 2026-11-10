@@ -84,6 +84,7 @@ npm run test:e2e:headed   # 观察真实交互
 | M07 纪要/行动项 | 纪要草稿；行动项默认 `pending_confirmation`；未确认不可转任务；重复转换幂等 |
 | M08 任务 | 状态流转校验；越权 `404`；取消幂等 |
 | M09 问题 | 提取候选；状态流转正确；越权 `404` |
+| 异步任务（B3） | `ASYNC_JOBS_ENABLED=true` 时 8 个长任务端点返回 `202 + job`；任务 `pending → running → succeeded/failed`、失败带 `error_code`；超窗 `pending`/超时 `running` 读取时回收为 `JOB_TIMEOUT`；越权 `404`；开关关闭回退同步 `200/201`（`tests/api/test_jobs.py`、`tests/unit/test_task_runner.py`） |
 
 通用：每个模块须覆盖正常流程、越权访问、非法状态流转与统一错误体。
 

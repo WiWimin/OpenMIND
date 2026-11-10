@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,12 +9,19 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.upload_guard import UploadGuardMiddleware
+from app.services import job_service
 
 
 def create_app() -> FastAPI:
     configure_logging()
 
-    app = FastAPI(title=settings.app_name, version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        # 启动兜底：回收上次进程残留的 pending/running 任务（失败不阻断启动）
+        job_service.reap_stale_on_startup()
+        yield
+
+    app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,

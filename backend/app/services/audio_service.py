@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -44,26 +45,42 @@ def _infer_audio_type(file_name: str) -> str:
 
 
 def _run_transcription(
-    db: Session, audio: MeetingAudio, content: bytes, file_name: str
-) -> None:
+    db: Session,
+    audio: MeetingAudio,
+    content: bytes,
+    file_name: str,
+    *,
+    progress_cb: Callable[[int], None] | None = None,
+) -> str | None:
+    """转写 + 分段：成功返回 `None`，失败落 `failed` 并返回错误码（供任务判定成败）。"""
     audio.status = _STATUS_PROCESSING
     audio.error = None
     db.commit()
+    if progress_cb:
+        progress_cb(10)
+    error_code: str | None = None
     try:
         transcript = transcribe_file(content, file_name)
+        if progress_cb:
+            progress_cb(70)
         audio.transcript = transcript
         _resplit_segments(audio, transcript)
         audio.status = _STATUS_TRANSCRIBED
+        if progress_cb:
+            progress_cb(90)
     except AppError as exc:
         audio.status = _STATUS_FAILED
         audio.error = exc.message
+        error_code = exc.error_code
     except Exception:
         logger.exception("音频转写失败 audio_id=%s", audio.audio_id)
         audio.status = _STATUS_FAILED
         audio.error = "音频转写失败"
+        error_code = "INTERNAL_ERROR"
     finally:
         db.commit()
         db.refresh(audio)
+    return error_code
 
 
 def upload_audio(
@@ -73,7 +90,9 @@ def upload_audio(
     user_id: str,
     file_name: str,
     content: bytes,
+    defer_processing: bool = False,
 ) -> MeetingAudio:
+    """上传并（同步或交由异步任务）转写；`defer_processing=True` 只落盘建记录。"""
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     audio_type = _infer_audio_type(file_name)
     settings = get_settings()
@@ -95,7 +114,8 @@ def upload_audio(
             storage_key=storage_key,
         ),
     )
-    _run_transcription(db, audio, content, file_name)
+    if not defer_processing:
+        _run_transcription(db, audio, content, file_name)
     return audio
 
 
@@ -319,7 +339,10 @@ def get_owned_audio(db: Session, audio_id: str, user_id: str) -> MeetingAudio:
     return audio
 
 
-def retry_transcription(db: Session, audio_id: str, user_id: str) -> MeetingAudio:
+def retry_transcription(
+    db: Session, audio_id: str, user_id: str, *, defer_processing: bool = False
+) -> MeetingAudio:
+    """重新转写音频；`defer_processing=True` 时只做校验，处理交由后台任务。"""
     audio = get_owned_audio(db, audio_id, user_id)
     if audio.status == _STATUS_CONFIRMED:
         raise AppError(
@@ -332,7 +355,8 @@ def retry_transcription(db: Session, audio_id: str, user_id: str) -> MeetingAudi
         raise AppError(
             "RESOURCE_NOT_FOUND", "音频文件不存在或不可访问", http_status=404
         ) from None
-    _run_transcription(db, audio, content, audio.file_name)
+    if not defer_processing:
+        _run_transcription(db, audio, content, audio.file_name)
     return audio
 
 

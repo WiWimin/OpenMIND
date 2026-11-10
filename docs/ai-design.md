@@ -393,6 +393,18 @@ failed → processing   （重试）
 | 行动项转任务 | **幂等**：`personal_tasks.action_id` 唯一 | 重复转换返回已有任务 |
 | 文件解析/索引 | 重解析先删旧分块再重建 | 失败落 `failed` 保留记录/文件（B1 统一策略），经重试接口重新处理；材料删除清理分块 |
 | 检索/问答 | 无副作用 | 无结果返回空来源 + `insufficient_evidence` |
+| 异步任务 | 单次执行（`pending` 才会被执行器拾取，终态不再变） | 失败写 `error_code`/`error_message`；超窗 `pending`/超时 `running` 回收为 `failed JOB_TIMEOUT` |
+
+### 9.1 长耗时任务异步化（B3，2026-11）
+
+- **载体（ADR-3）**：通用 `async_jobs` 表（`database.md 3.17`）+ FastAPI `BackgroundTasks`，不引入 Celery/Redis；单实例部署，进程重启丢 `pending` 任务（限制写入文档）。
+- **执行器**（`services/task_runner.py`）：`run_job` 用**独立会话**（`session_factory` 可替换，测试接入内存库）执行任务体，状态机 `pending → running → succeeded | failed`；`AppError` 原样记录其 `error_code`/`message`，未知异常记 `INTERNAL_ERROR`，异常不逃逸到响应链路。
+- **任务体**（`services/job_tasks.py`）：材料/知识库解析、音频转写直接复用同步处理函数（`_process_*` 返回 `processed|failed`，据失败结果抛 `AppError` 使任务失败）；纪要/准备先在受理时同步校验（404/400），任务内重取上下文再调 LLM；准备任务在受理时先落 `generating` 占位行，任务结束转 `draft`，失败标 `failed` 后原样上抛。
+- **进度点**：解析/转写 10 → 60 → 90，生成 20 → 70/80 → 95；`succeeded` 置 100。进度写入失败只告警，不阻断任务。
+- **失败补偿**：任务失败不改变统一失败策略——资源状态仍由 `_mark_failed` 等落 `failed` 并保留记录/文件（6.4）；任务只补充 `error_code`（供前端提示）与 `error_message`。
+- **僵尸回收**：启动 `lifespan` 跑 `reap_stale_on_startup()`（异常不阻断启动）；`GET /jobs/{id}` 懒回收超窗 `pending`（`created_at`）与超时 `running`（`started_at`）为 `failed` + `JOB_TIMEOUT`，窗口 `ASYNC_JOB_STALE_MINUTES`（默认 30 分钟）。
+- **回滚开关**：`ASYNC_JOBS_ENABLED=false` 时 8 个端点走原同步逻辑（200/201 + 业务对象）；默认值与 env 见 `docker/.env.example`。
+- **明确不做（Non-goals）**：WebSocket 实时录音、Refresh Token、Embedding BYOK、下载接口；模板上传与模板 AI 生成保持同步。
 
 ## 十、错误码、超时与可重试
 
@@ -405,6 +417,7 @@ failed → processing   （重试）
 | 模型额度不足 | `MODEL_QUOTA_EXCEEDED` | 402 | 否 |
 | 密钥/配置无效 | `MODEL_CONFIG_INVALID` | 400 | 否 |
 | 文件无法解析 | `FILE_PARSE_FAILED` | 422 | 通常否 |
+| 异步任务超时 | `JOB_TIMEOUT`（任务 `error_code`，非 HTTP 错误体） | — | 是 |
 | 其他未预期 | `INTERNAL_ERROR` | 500 | 视情况 |
 
 - 对外错误体遵循 `api.md 一.2`（扁平 + `retryable` + 可选 `details.reason`）。

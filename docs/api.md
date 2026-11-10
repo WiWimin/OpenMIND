@@ -59,6 +59,7 @@
 | `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
 | `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
 | `RATE_LIMITED` | 429 | 请求频率超过限制 | 是 |
+| `JOB_TIMEOUT` | — | 异步任务超时（作为任务的 `error_code` 返回，见 §1.9；不直接作为 HTTP 错误体） | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
 | `INTERNAL_ERROR` | 500 | 未预期的服务端错误 | 视情况 |
 
@@ -118,9 +119,9 @@
 | --- | --- | --- |
 | GET | `/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | `{ "status": "ok", "database": "up" }`（数据库不可用返回 503 统一错误体） |
-| GET | `/api/v1/metrics` | RAG 可观测性指标快照（见下） |
+| GET | `/api/v1/metrics` | RAG 可观测性指标快照（**需登录**；`METRICS_ENABLED=false` 时返回 404，见下） |
 
-`GET /api/v1/metrics`（运维端点，**无鉴权，建议仅内网暴露**；进程内累计，重启清零）：
+`GET /api/v1/metrics`（运维端点，**需登录**（任意已登录用户）；`METRICS_ENABLED=false` 时返回 404 隐藏；进程内累计，重启清零）：
 
 ```json
 {
@@ -139,6 +140,45 @@
 - `rag_judge.triggered` = Judge 实际调用 LLM 的次数（true+false+fallback）；高分带直通与 Judge 禁用不计入；
 - `windows.*` 来自滑动窗口（约最近 1000 次），样本 < 20 时 `p50/p95` 为 `null` 且 `insufficient=true`；
 - 不含任何查询原文、提示词或用户内容（与日志红线一致）。
+
+### 1.9 异步任务（Job，202 受理）
+
+长耗时 AI 任务（材料/知识库解析、音频转写、纪要生成、会前准备）在 `ASYNC_JOBS_ENABLED=true`（默认）时异步执行：受理端点返回 `202`，`data` 为**受理载荷**而非业务对象，前端轮询下表任务端点获取进度与终态。开关关闭时回退原同步契约（200/201 + 业务对象），用于回滚。
+
+任务对象（`JobRead`）：
+
+```json
+{
+  "job_id": "job_xxx",
+  "job_type": "material_parse",
+  "status": "running",
+  "resource_type": "material",
+  "resource_id": "mat_xxx",
+  "progress": 60,
+  "error_code": null,
+  "error_message": null,
+  "created_at": "2026-11-10T09:00:00+08:00",
+  "started_at": "2026-11-10T09:00:01+08:00",
+  "finished_at": null
+}
+```
+
+202 受理载荷（`JobAccepted`）：`{ "job": { …任务对象… } }`。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/jobs/{job_id}` | 任务详情（仅本人；超时的 `pending`/`running` 读取时懒回收为 `failed`） |
+| GET | `/api/v1/jobs` | 本人任务分页列表，可选查询参数 `resource_type` / `resource_id` 过滤 |
+
+规则：
+
+- `status` 状态机：`pending → running → succeeded | failed`，终态不可再变。
+- `job_type`：`material_parse` / `knowledge_parse` / `audio_transcribe` / `minutes_generate` / `preparation_generate`。
+- `resource_id`：关联资源 id；**纪要生成在任务结束才创建纪要**，受理时为 `null`；**会前准备**为 `generating` 占位稿 id（任务结束转 `draft`/`failed`，见 5.2）。
+- `progress`：0–100（10/60/90 等进度点，`succeeded` 时置 100）。
+- `error_code` 失败错误码与 §1.3 同名（`FILE_PARSE_FAILED` / `MODEL_CONFIG_REQUIRED` / `MODEL_TIMEOUT` / `JOB_TIMEOUT` / `INTERNAL_ERROR` …），`error_message` 为可展示文案；任务失败**不改变统一失败策略**——资源仍落 `failed` 并保留记录与文件（`ai-design.md 6.4`）。
+- 超时回收：单实例 + `BackgroundTasks`，进程重启丢失 `pending` 任务；启动与读取时按 `ASYNC_JOB_STALE_MINUTES`（默认 30 分钟）把超窗 `pending`（以 `created_at`）与超时 `running`（以 `started_at`）回收为 `failed` + `JOB_TIMEOUT`。
+- 归属隔离：任务仅本人可见，越权/不存在均返回 `404 RESOURCE_NOT_FOUND`。
 
 ## 二、用户认证（M01，A）
 
@@ -338,6 +378,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - 文件大小上限沿用 `MAX_UPLOAD_MB`；仅支持 PDF / DOCX / TXT。
 - 解析失败返回 `201`，对象 `processing_status=failed` 并带 `parse_error` / `parse_error_code`，**记录与磁盘文件保留**（统一失败策略，见 `database.md 五`）；不支持的类型返回 `415 FILE_TYPE_NOT_SUPPORTED`。
 - 重试 `POST /knowledge/documents/{document_id}/retry`：仅 `failed` 可重试，读取磁盘原文件重新解析/索引，成功转 `processed` 并清空错误；`processing` 或非 `failed` 返回 `409`（`details.reason=document_processing` / `document_not_failed`）；原文件丢失返回 `404`。
+- **异步模式（`ASYNC_JOBS_ENABLED=true`，默认）**：上传与重试均返回 `202` + `data = { "job": … }`（`job_type=knowledge_parse`，见 `api.md 1.9`），文档对象经详情接口查询（受理时为 `uploaded`）；开关关闭时按上述同步 `201`/`200` 返回。
 - 删除文档同步删除分块与向量索引，删除后不得再被检索。
 - 知识库检索默认不混入会议问答；问答中选择 `context_scope=knowledge_base` 时仅检索知识库。
 
@@ -423,6 +464,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 规则：
 - 上传使用 `multipart/form-data`，字段 `file`；大小上限沿用 `MAX_UPLOAD_MB`。
+- **异步模式（`ASYNC_JOBS_ENABLED=true`，默认）**：上传（`POST /meetings/{meeting_id}/audio`）与重试（`POST /audio/{audio_id}/retry`）返回 `202` + `data = { "job": … }`（`job_type=audio_transcribe`，见 `api.md 1.9`）；音频对象经详情接口查询（受理时为 `uploaded`）。开关关闭时同步转写并按 `201`/`200` 返回业务对象。
 - 转写同步调用 OpenAI 兼容的 `/audio/transcriptions`，服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`；未配置返回 `400 MODEL_CONFIG_REQUIRED`。
 - 转写成功后用户可修订文本；只有 `transcribed` 且文本非空才能确认。
 - 确认创建一条 `record_type=transcript` 的会议记录，确认幂等；已确认音频不能重新转写或删除。
@@ -536,6 +578,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 > **解析/索引失败（2026-11 统一失败策略）**：接口仍返回 `201`，材料对象 `processing_status=failed` 并带 `parse_error`（可展示原因）与 `parse_error_code`（如 `FILE_PARSE_FAILED`）。**记录、分块清理与已落盘文件全部保留**（不回滚、不删除），材料列表可见该条目；前端展示失败原因并可调用 §4.6 重试。未预期的服务端异常同样落 `failed`（`parse_error_code=INTERNAL_ERROR`），不再返回 `500`。
 
+> **异步模式（`ASYNC_JOBS_ENABLED=true`，默认）**：解析/索引交后台任务，响应改为 `202` + `data = { "job": … }`（`api.md 1.9`）；材料对象经 `GET /api/v1/materials/{material_id}` 查询，受理时通常为 `uploaded`。开关关闭时保持上述同步 `201` 契约。
+
 ### 4.3 材料列表 `GET /api/v1/meetings/{meeting_id}/materials`
 
 查询参数：`page`、`page_size`。响应 `200`：分页结构，`items` 为材料对象数组，按 `created_at` 倒序。
@@ -555,6 +599,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 - 仅 `failed` 可重试：`processing` 返回 `409`（`details.reason=material_processing`），其余状态返回 `409`（`details.reason=material_not_failed`）。
 - 原文件已丢失返回 `404 RESOURCE_NOT_FOUND`（提示重新上传）；归档会议不可重试（沿用可变会议校验）。
+- **异步模式**：返回 `202` + `data = { "job": … }`（`job_type=material_parse`），处理结果经任务与材料详情查询；开关关闭时按上述 `200` 同步返回。
 
 ### 4.7 音频转写 `POST /api/v1/materials/{material_id}/transcribe` [扩展]
 
@@ -632,6 +677,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 响应 `200`：准备稿对象（`status = draft`）。同步完成；超时返回统一错误。`include_history=true` 时在用户授权范围内加入有限历史材料；`false` 时只使用当前会议材料。
 每次生成**新增一条**准备稿记录；对某条记录的编辑原地更新并 `version` 递增（`ai-design.md 八.1`）。
+
+> **异步模式（`ASYNC_JOBS_ENABLED=true`，默认）**：先同步校验归属与模型配置（404/400 仍同步返回），随后落一条 `status=generating` 占位稿并返回 `202` + `data = { "job": … }`（`job_type=preparation_generate`，`resource_id` 为占位稿 id，见 `api.md 1.9`）；任务结束把占位稿转 `draft`，失败转 `failed`（任务 `error_code` 同步写入）。前端轮询任务后取准备稿详情。开关关闭时按上述 `200` 同步返回。
 
 ### 5.3 准备稿列表 `GET /api/v1/meetings/{meeting_id}/preparations`
 
@@ -764,6 +811,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - `record_ids` 为空时使用当前会议最近记录（最多 100 条）；标记只从实际参与生成的记录中提取。
 - 响应 `201`：纪要对象（`status = draft`）。
 - 每次生成**新增一条**纪要记录，不覆盖已确认纪要；编辑原地更新并 `version` 递增，确认置 `confirmed`（`ai-design.md 八.4`）。
+- **异步模式（`ASYNC_JOBS_ENABLED=true`，默认）**：先同步校验归属/记录/模型配置（404/400 同步返回），LLM 生成交后台任务，返回 `202` + `data = { "job": … }`（`job_type=minutes_generate`，`resource_id` 为 `null`——纪要到任务结束才创建，见 `api.md 1.9`）；前端轮询任务后刷新纪要列表。开关关闭时按上述 `201` 同步返回。
 
 ### 5.11 纪要列表 `GET /api/v1/meetings/{meeting_id}/minutes`
 

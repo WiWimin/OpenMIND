@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
     rate_limit_max_keys: int = 10000
 
+    # 异步长任务（ADR-3：async_jobs + BackgroundTasks，无 Celery/Redis）。
+    # 关闭时 5 个长任务入口走原同步逻辑（回滚开关）；单实例有效，进程重启丢 pending 任务
+    # （启动 reap_stale + 读取懒回收兜底为 failed JOB_TIMEOUT）
+    async_jobs_enabled: bool = True
+    async_job_stale_minutes: int = 30
+
     llm_api_base: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
