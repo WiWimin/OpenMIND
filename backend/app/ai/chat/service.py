@@ -129,7 +129,9 @@ class ChatService:
         if mode == "build":
             # Build：基于资料直接产出可交付文件（结构化输出），summary 作为回答
             deliverable = run_structured(
-                lambda msgs: self.llm.chat_json(msgs, schema=BuildDeliverable),
+                lambda msgs: self.llm.chat_json(
+                msgs, schema=BuildDeliverable, scene="chat_build"
+            ),
                 build_deliverable(
                     {
                         "question": question,
@@ -154,7 +156,7 @@ class ChatService:
                     "memory_context": memory_context,
                 }
             )
-            answer = self.llm.chat(messages).text
+            answer = self.llm.chat(messages, scene="chat").text
         return ChatAnswer(
             answer=answer,
             sources=prepared.sources,
@@ -232,7 +234,9 @@ class ChatService:
                     "memory_context": prepared.memory_context,
                 }
             )
-            async for delta in self.llm.astream_chat(messages, on_usage=on_usage):
+            async for delta in self.llm.astream_chat(
+                messages, on_usage=on_usage, scene="chat"
+            ):
                 yield delta
             return
 
@@ -246,7 +250,7 @@ class ChatService:
             for item in results
         ]
         messages = build_web_chat({"question": prepared.question, "sources": numbered})
-        stream = self.llm.astream_chat(messages, on_usage=on_usage)
+        stream = self.llm.astream_chat(messages, on_usage=on_usage, scene="chat")
         try:
             first = await stream.__anext__()
         except StopAsyncIteration:
@@ -280,7 +284,7 @@ class ChatService:
         ]
         messages = build_web_chat({"question": question, "sources": numbered})
         try:
-            answer = self.llm.chat(messages).text
+            answer = self.llm.chat(messages, scene="chat").text
         except AppError as exc:  # 未配置/超时/额度 → 回退拒答，绝不裸报错
             logger.warning("联网回答 LLM 调用失败，回退拒答：%s", exc.error_code)
             return refusal

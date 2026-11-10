@@ -289,9 +289,7 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
     messages = [{"role": "user", "content": prompt}]
     try:
         draft = run_structured(
-            lambda msgs: client.chat_json(
-                msgs, schema=_GeneratedTemplate, temperature=0.4
-            ),
+            lambda msgs: client.chat_json(msgs, schema=_GeneratedTemplate, scene="template_draft"),
             messages,
             _GeneratedTemplate,
             scene="template_draft",

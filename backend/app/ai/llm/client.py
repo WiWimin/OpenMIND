@@ -20,8 +20,11 @@ from app.ai.http_client import (
     classify_transport_error,
     log_transport_warning,
 )
+from app.ai.llm.chain import configured_chain, should_fall_back
 from app.ai.retry import MAX_ATTEMPTS, RetryPolicy
+from app.ai.scenes import get_scene
 from app.ai.structured import normalize_json_text, validation_error_summary
+from app.ai.tokens import ensure_input_within_limit
 from app.core import metrics
 from app.core.config import get_settings
 from app.core.exceptions import AppError
@@ -73,45 +76,81 @@ class LLMClient(ModelHTTPClient):
         messages: list[dict[str, str]],
         *,
         model: str | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
         max_tokens: int | None = None,
-        timeout_s: float = 60,
+        timeout_s: float | None = None,
         response_format: dict[str, Any] | None = None,
+        scene: str | None = None,
     ) -> LLMResult:
-        self._ensure_configured()
-        payload: dict[str, Any] = {
-            "model": model or self.model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
-        if response_format is not None:
-            payload["response_format"] = response_format
+        """同步对话；`scene` 取 `ai/scenes.py` 的用途/生成参数并参与输入预检。
 
-        started = time.monotonic()
-        response = self._request_with_retry(
-            lambda attempt_timeout: self._client.post(
-                "/chat/completions",
-                json=payload,
-                headers=self._headers(),
-                timeout=attempt_timeout,
-            ),
-            model=model or self.model,
-            timeout_s=timeout_s,
-        )
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        return self._parse_result(response, model or self.model, elapsed_ms)
+        输入超限在发送前拒绝（`MODEL_INPUT_TOO_LONG`）；模型级错误按
+        `LLM_FALLBACK_MODELS` 降级链切换候选（见 `ai/llm/chain.py`），
+        全部候选失败抛最后一次错误。
+        """
+        self._ensure_configured()
+        spec = get_scene(scene)
+        if temperature is None:
+            temperature = spec.temperature
+        if timeout_s is None:
+            timeout_s = spec.timeout_s
+        ensure_input_within_limit(messages, scene_limit=spec.input_token_limit)
+
+        chain = configured_chain(model or self.model)
+        last_error: AppError | None = None
+        for index, candidate in enumerate(chain):
+            payload: dict[str, Any] = {
+                "model": candidate,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+            elif spec.max_tokens is not None:
+                payload["max_tokens"] = spec.max_tokens
+            if response_format is not None:
+                payload["response_format"] = response_format
+
+            started = time.monotonic()
+            try:
+                response = self._request_with_retry(
+                    # 默认参数绑定本轮 payload，规避 B023 循环变量捕获
+                    lambda attempt_timeout, _payload=payload: self._client.post(
+                        "/chat/completions",
+                        json=_payload,
+                        headers=self._headers(),
+                        timeout=attempt_timeout,
+                    ),
+                    model=candidate,
+                    timeout_s=timeout_s,
+                )
+            except AppError as exc:
+                last_error = exc
+                if index + 1 < len(chain) and should_fall_back(exc):
+                    metrics.inc_counter("ai_fallback_total")
+                    logger.warning(
+                        "LLM 降级切换 model=%s → %s error_code=%s scene=%s",
+                        candidate,
+                        chain[index + 1],
+                        exc.error_code,
+                        scene or "-",
+                    )
+                    continue
+                raise
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return self._parse_result(response, candidate, elapsed_ms)
+        raise last_error or self._network_error()
 
     async def astream_chat(
         self,
         messages: list[dict[str, str]],
         *,
         model: str | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
         max_tokens: int | None = None,
-        timeout_s: float = 60,
+        timeout_s: float | None = None,
         on_usage: Callable[[dict[str, int]], None] | None = None,
+        scene: str | None = None,
     ) -> AsyncIterator[str]:
         """流式对话（SSE）：逐段 yield `choices[0].delta.content`。
 
@@ -120,64 +159,101 @@ class LLMClient(ModelHTTPClient):
         - **首增量后一律不重试**（已下发部分答案，重试会造成重复内容）；
         - 非 200 先读响应体再按统一错误映射；收到 `[DONE]` 结束；
         - 无增量且无异常 → `MODEL_OUTPUT_INVALID`；
-        - `on_usage` 在收到 usage 分片时回调（终态分片可能无内容增量）。
+        - `on_usage` 在收到 usage 分片时回调（终态分片可能无内容增量）；
+        - 输入超限发送前拒绝；首增量前的模型级错误按 `LLM_FALLBACK_MODELS`
+          切换候选（同 sync `chat`）。
         """
         self._ensure_configured()
-        resolved_model = model or self.model
-        payload: dict[str, Any] = {
-            "model": resolved_model,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": True,
-        }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+        spec = get_scene(scene)
+        if temperature is None:
+            temperature = spec.temperature
+        if timeout_s is None:
+            timeout_s = spec.timeout_s
+        ensure_input_within_limit(messages, scene_limit=spec.input_token_limit)
 
-        emitted = False
+        chain = configured_chain(model or self.model)
         last_error: AppError | None = None
-        for attempt in range(2):
-            if attempt:
-                metrics.inc_counter("ai_retry_total")
-                await asyncio.sleep(BACKOFF_SECONDS[attempt - 1])
-            try:
-                async for delta in self._stream_once(
-                    payload, resolved_model, timeout_s, on_usage=on_usage
-                ):
-                    emitted = True
-                    yield delta
-            except AppError as exc:
-                last_error = exc
-                if emitted or not self.retry_policy.allows(
-                    app_error_kind(exc), retryable=exc.retryable
-                ):
-                    raise
-            except httpx.TimeoutException as exc:
-                kind = classify_transport_error(exc)
-                log_transport_warning(
-                    f"{self.service_label}超时", self.api_base, resolved_model, exc
-                )
-                last_error = self._timeout_error()
-                if emitted or not self.retry_policy.allows(kind, retryable=True):
-                    raise last_error from None
-            except httpx.HTTPError as exc:
-                kind = classify_transport_error(exc)
-                log_transport_warning(
-                    f"{self.service_label}网络异常", self.api_base, resolved_model, exc
-                )
-                last_error = self._network_error()
-                if emitted or not self.retry_policy.allows(kind, retryable=True):
-                    raise last_error from None
+        for candidate_index, resolved_model in enumerate(chain):
+            payload: dict[str, Any] = {
+                "model": resolved_model,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": True,
+            }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
+            elif spec.max_tokens is not None:
+                payload["max_tokens"] = spec.max_tokens
+
+            emitted = False
+            for attempt in range(2):
+                if attempt:
+                    metrics.inc_counter("ai_retry_total")
+                    await asyncio.sleep(BACKOFF_SECONDS[attempt - 1])
+                try:
+                    async for delta in self._stream_once(
+                        payload, resolved_model, timeout_s, on_usage=on_usage
+                    ):
+                        emitted = True
+                        yield delta
+                except AppError as exc:
+                    last_error = exc
+                    if emitted or not self.retry_policy.allows(
+                        app_error_kind(exc), retryable=exc.retryable
+                    ):
+                        # 首增量前的模型级错误 → 尝试降级链下一个候选
+                        if (
+                            not emitted
+                            and candidate_index + 1 < len(chain)
+                            and should_fall_back(exc)
+                        ):
+                            metrics.inc_counter("ai_fallback_total")
+                            logger.warning(
+                                "LLM 流式降级切换 model=%s → %s error_code=%s scene=%s",
+                                resolved_model,
+                                chain[candidate_index + 1],
+                                exc.error_code,
+                                scene or "-",
+                            )
+                            break
+                        raise
+                except httpx.TimeoutException as exc:
+                    kind = classify_transport_error(exc)
+                    log_transport_warning(
+                        f"{self.service_label}超时",
+                        self.api_base,
+                        resolved_model,
+                        exc,
+                    )
+                    last_error = self._timeout_error()
+                    if emitted or not self.retry_policy.allows(kind, retryable=True):
+                        raise last_error from None
+                except httpx.HTTPError as exc:
+                    kind = classify_transport_error(exc)
+                    log_transport_warning(
+                        f"{self.service_label}网络异常",
+                        self.api_base,
+                        resolved_model,
+                        exc,
+                    )
+                    last_error = self._network_error()
+                    if emitted or not self.retry_policy.allows(kind, retryable=True):
+                        raise last_error from None
+                else:
+                    if emitted:
+                        logger.info("LLM 流式调用成功 model=%s", resolved_model)
+                        return
+                    last_error = AppError(
+                        "MODEL_OUTPUT_INVALID",
+                        "模型输出为空",
+                        http_status=502,
+                        retryable=False,
+                    )
+                    raise last_error
             else:
-                if emitted:
-                    logger.info("LLM 流式调用成功 model=%s", resolved_model)
-                    return
-                last_error = AppError(
-                    "MODEL_OUTPUT_INVALID",
-                    "模型输出为空",
-                    http_status=502,
-                    retryable=False,
-                )
-                raise last_error
+                # 两次尝试均以可重试错误结束且未触发降级 → 结束
+                raise last_error or self._network_error()
+            # 内层 break（降级切换）落到此处，进入下一个候选
         raise last_error or self._network_error()
 
     async def _stream_once(

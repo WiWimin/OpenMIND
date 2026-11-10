@@ -75,7 +75,7 @@ def _chat_service(db: Session, user_id: str, model_override: str | None = None) 
 
 
 def _run_organize_llm(messages: list[dict[str, str]], config: ModelConfig) -> str:
-    return build_llm_client(config).chat(messages).text
+    return build_llm_client(config).chat(messages, scene="organize").text
 
 
 def _recent_record_context(

@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.ai import connection, resilience
+from app.ai import errors as ai_errors
 from app.ai.retry import (
     BACKOFF_SECONDS,
     MAX_ATTEMPTS,
@@ -45,18 +46,13 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-QUOTA_HINTS = ("quota", "balance", "insufficient", "billing", "免费额度", "额度", "余额")
-
 # 单次发送：接收本次尝试的超时预算（受全局 deadline 收窄）
 Sender = Callable[[float], httpx.Response]
 
 
 def is_quota_error(response: httpx.Response) -> bool:
-    try:
-        text = response.text.lower()
-    except Exception:
-        return False
-    return any(hint in text for hint in QUOTA_HINTS)
+    """兼容导出：额度判定已移至 `app/ai/errors.py`。"""
+    return ai_errors.is_quota_error(response)
 
 
 def log_transport_warning(kind: str, api_base: str, model: str | None, exc: Exception) -> None:
@@ -242,45 +238,5 @@ class ModelHTTPClient:
         )
 
     def http_error(self, response: httpx.Response) -> AppError:
-        """把非 200 响应映射为统一 AppError（错误码集合见 docs/api.md 一.3）。"""
-        status_code = response.status_code
-        if status_code == httpx.codes.TOO_MANY_REQUESTS:
-            details: dict[str, object] | None = None
-            retry_after = parse_retry_after(response.headers.get("retry-after"))
-            if retry_after is not None:
-                # 供上层与前端提示「还需等待多久」，同时用于本地退避
-                details = {"retry_after_s": round(retry_after, 1)}
-            return AppError(
-                "RATE_LIMITED",
-                f"{self.service_label}限流",
-                http_status=429,
-                retryable=True,
-                details=details,
-            )
-        if 500 <= status_code < 600:
-            return AppError(
-                "INTERNAL_ERROR",
-                f"{self.service_label}暂时不可用",
-                http_status=500,
-                retryable=True,
-            )
-        if status_code in (401, 403):
-            return AppError(
-                "MODEL_CONFIG_INVALID",
-                f"{self.service_label}密钥无效或已失效",
-                http_status=400,
-                retryable=False,
-            )
-        if status_code == httpx.codes.PAYMENT_REQUIRED or is_quota_error(response):
-            return AppError(
-                "MODEL_QUOTA_EXCEEDED",
-                f"{self.service_label}额度不足",
-                http_status=402,
-                retryable=False,
-            )
-        return AppError(
-            "MODEL_CONFIG_INVALID",
-            f"{self.service_label}调用失败，请检查配置",
-            http_status=400,
-            retryable=False,
-        )
+        """把非 200 响应映射为统一 AppError（细分实现见 `app/ai/errors.py`）。"""
+        return ai_errors.classify_error(response, service_label=self.service_label)

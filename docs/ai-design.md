@@ -146,6 +146,43 @@ class LLMClient:
 - 开关：`AI_RESILIENCE_ENABLED=false` 全部直通（回滚用）。
 - 指标（`/api/v1/metrics` 的 `ai_*` 计数器）：`ai_retry_total`（实际发出的重试次数）、`ai_concurrency_rejected_total`（排队超时拒绝）、`ai_circuit_open_total`（熔断打开拦截）。
 
+### 3.7 错误细分（`ai/errors.py`，2026-11 B3）
+
+`http_client.http_error` 委托 `errors.classify_error(response, service_label=...)`。在状态码映射之外解析服务商错误体（OpenAI 兼容 `error.code/message` 或顶层 `code`，扫描上限 8KB），把两类语义从笼统 400 中分离：
+
+| 判定 | 结果 |
+| --- | --- |
+| 状态 413 或 body 命中上下文超限提示（`context_length` / `too many tokens` / 上下文长度等） | `MODEL_INPUT_TOO_LONG`（413，`details.reason="context_length"`，不可重试） |
+| body 命中模型不存在提示（`model_not_found` / 模型不存在等） | `MODEL_CONFIG_INVALID`（400，`details.reason="model_not_found"`） |
+| 其余 | 沿用 3.2 映射（429/5xx/401/402/额度提示/通用 400） |
+
+判定顺序：429 → 5xx → 401/403 → 输入超限 → 额度 → 模型名 → 通用 400（输入超限优先于额度，语义更具体）。日志与错误 details 均不透出服务商原始报文。
+
+### 3.8 输入 token 预检（`ai/tokens.py`，2026-11 B3）
+
+`LLMClient.chat` / `astream_chat` 发包前调用 `ensure_input_within_limit(messages, scene_limit=...)`，超限直接抛 `MODEL_INPUT_TOO_LONG`（413，`details` 带 `estimated_tokens/limit`），不发 HTTP、不进重试与熔断。
+
+- 估算为启发式下界：CJK 字符按 1 字 ≈ 1 token，其余按 4 字符 ≈ 1 token，每条消息加 4 token 结构开销；**宁可漏判**（由服务商 413 兜底，见 3.7），不误杀正常输入。
+- 上限：场景值（`scenes.SceneSpec.input_token_limit`）优先，否则全局 `AI_INPUT_TOKEN_LIMIT`（默认 100000，`<=0` 关闭预检）。
+- 已按场景收紧：`minutes` 60000（长转写）、`rag_judge` 4000（问题 + 3 段摘录）。
+
+### 3.9 模型降级链（`ai/llm/chain.py`，2026-11 B3）
+
+`LLM_FALLBACK_MODELS`（逗号分隔，**同 provider**——与主模型共用 `api_base/api_key`，空 = 关闭）配置备用模型。`chat` / `astream_chat` 构造候选链（主模型在首、去重、总长 ≤4），主模型失败且错误属于「换模型可能解决」时切换下一个候选（埋点 `ai_fallback_total` + warning 日志），全部失败抛最后一次错误。
+
+- **触发降级**：`MODEL_QUOTA_EXCEEDED`、`MODEL_INPUT_TOO_LONG`、`MODEL_UPSTREAM_UNAVAILABLE`（熔断键含 model，备用模型独立）、`MODEL_TIMEOUT`——均为模型维度问题。
+- **不降级**：`MODEL_CONFIG_INVALID`（密钥问题对所有模型一致）、`RATE_LIMITED`（按 key 限流）、`INTERNAL_ERROR`（网络/网关与模型无关）、`MODEL_OUTPUT_INVALID`、其他 4xx。
+- 流式仅在**首增量前**降级（与 3.2 重试规则一致，首增量后不切换以免内容重复）；请求级 `model` 覆盖值作为链首同样参与；`probe()` 不走降级——配置校验必须验证用户所选模型。
+- 最坏耗时 ≈ 链长 × 单模型 deadline，链长上限 4 控制上界。
+
+### 3.10 场景参数注册表（`ai/scenes.py`，2026-11 B3）
+
+场景 → 用途 + 生成参数 + 输入上限的唯一来源，替代散落魔数：
+
+- `SceneSpec(name, purpose, temperature, max_tokens, timeout_s, input_token_limit)`；`get_scene()` 未登记/空名回退默认场景（0.2/60s/无上限）。
+- `purpose` 供 `resolve_model_config(purpose=scene_purpose(...))` 做 BYOK 用途路由；`chat(..., scene=...)` 用 `temperature/max_tokens/timeout_s` 填充调用方未显式覆盖的参数（显式传参优先）。
+- 已登记场景与 `run_structured(scene=...)` 同名：`prepare`、`chat`、`chat_build`、`organize*`、`minutes`（timeout 120s）、`extract_*`、`template_draft`（温度 0.4）、`rag_judge`（温度 0 / 16 token / 上限 4000）。
+
 ## 四、Embedding 与文本切分（`ai/embeddings/`）
 
 ### 4.1 Embedding 客户端
@@ -457,6 +494,7 @@ failed → processing   （重试）
 | 模型输出无法解析/不符合 schema | `MODEL_OUTPUT_INVALID` | 502 | 视情况 |
 | 触发限流 | `RATE_LIMITED` | 429 | 是 |
 | 熔断打开（模型服务不可用） | `MODEL_UPSTREAM_UNAVAILABLE` | 503 | 是 |
+| 输入超限（发送前预检 / 服务商上下文超限） | `MODEL_INPUT_TOO_LONG` | 413 | 否 |
 | 并发排队超时（`details.scope="concurrency"`） | `RATE_LIMITED` | 429 | 是 |
 | 未配置模型（BYOK） | `MODEL_CONFIG_REQUIRED` | 400 | 否 |
 | 模型额度不足 | `MODEL_QUOTA_EXCEEDED` | 402 | 否 |

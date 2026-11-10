@@ -52,8 +52,7 @@ class RelevanceJudge:
                     },
                 ],
                 schema=RelevanceVerdict,
-                temperature=0,
-                max_tokens=16,
+                scene="rag_judge",
             )
             return verdict.relevant
         except Exception as exc:  # noqa: BLE001 —— Judge 失败不得阻断检索

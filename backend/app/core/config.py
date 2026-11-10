@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     ai_circuit_failure_threshold: int = 5
     ai_circuit_window_seconds: float = 60.0
     ai_circuit_open_seconds: float = 30.0
+    # 输入 token 预检（ai/tokens.py）：超过则发送前拒绝 MODEL_INPUT_TOO_LONG；<=0 关闭
+    # 场景可覆盖（scenes.SceneSpec.input_token_limit）
+    ai_input_token_limit: int = 100_000
+    # LLM 降级链（ai/llm/chain.py）：逗号分隔的同 provider 备用模型，空 = 关闭
+    llm_fallback_models: str = ""
     embedding_api_base: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""

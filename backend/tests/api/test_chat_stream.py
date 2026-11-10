@@ -73,10 +73,11 @@ class FakeLLM:
         messages: list[dict[str, str]],
         *,
         model: str | None = None,
-        temperature: float = 0.2,
+        temperature: float | None = None,
         max_tokens: int | None = None,
-        timeout_s: float = 60,
+        timeout_s: float | None = None,
         on_usage=None,
+        scene: str | None = None,
     ):
         for index, text in enumerate(self.deltas):
             if self.error is not None and index >= (self.error_at or 0):

@@ -56,7 +56,9 @@ class ActionItemExtractor:
     def extract(self, record_transcripts: list[str]) -> list[ActionItemCandidate]:
         messages = build_extract_action_items({"record_transcripts": record_transcripts})
         result = run_structured(
-            lambda msgs: self.llm.chat_json(msgs, schema=ActionItemsResult),
+            lambda msgs: self.llm.chat_json(
+                msgs, schema=ActionItemsResult, scene="extract_action_items"
+            ),
             messages,
             ActionItemsResult,
             scene="extract_action_items",
@@ -72,7 +74,9 @@ class IssueExtractor:
     def extract(self, record_transcripts: list[str]) -> list[IssueCandidate]:
         messages = build_extract_issues({"record_transcripts": record_transcripts})
         result = run_structured(
-            lambda msgs: self.llm.chat_json(msgs, schema=IssuesResult),
+            lambda msgs: self.llm.chat_json(
+                msgs, schema=IssuesResult, scene="extract_issues"
+            ),
             messages,
             IssuesResult,
             scene="extract_issues",
