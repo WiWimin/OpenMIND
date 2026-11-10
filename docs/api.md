@@ -58,7 +58,8 @@
 | `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/额度不足等） | 否 |
 | `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
 | `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
-| `RATE_LIMITED` | 429 | 请求频率超过限制 | 是 |
+| `RATE_LIMITED` | 429 | 请求频率超过限制（`details.scope="concurrency"` 时表示模型调用并发排队超时） | 是 |
+| `MODEL_UPSTREAM_UNAVAILABLE` | 503 | 模型服务熔断打开（近期失败过多，`details.circuit="open"`），冷却后自动恢复 | 是 |
 | `JOB_TIMEOUT` | — | 异步任务超时（作为任务的 `error_code` 返回，见 §1.9；不直接作为 HTTP 错误体） | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
 | `INTERNAL_ERROR` | 500 | 未预期的服务端错误 | 视情况 |
@@ -140,6 +141,7 @@
 - `rag_judge.triggered` = Judge 实际调用 LLM 的次数（true+false+fallback）；高分带直通与 Judge 禁用不计入；
 - `windows.*` 来自滑动窗口（约最近 1000 次），样本 < 20 时 `p50/p95` 为 `null` 且 `insufficient=true`；
 - 计数器还包含流式问答埋点：`chat_stream_total`（进入 SSE 流的次数）、`chat_stream_error_total`（首增量前 JSON 错误与流内 `error` 事件合计）；窗口 `chat_stream_first_token_ms` 为流式首 token 延迟（见 5.7a）；
+- 计数器还包含模型调用底座埋点（见 `ai-design.md 3.6`）：`ai_retry_total`（实际发出的重试次数）、`ai_concurrency_rejected_total`（模型并发排队超时拒绝）、`ai_circuit_open_total`（熔断打开拦截次数）；
 - 不含任何查询原文、提示词或用户内容（与日志红线一致）。
 
 ### 1.9 异步任务（Job，202 受理）
@@ -1033,18 +1035,20 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 }
 ```
 
-`status`：`todo` / `in_progress` / `completed` / `cancelled`。允许流转：`todo → in_progress → completed`；未完成任务可转入 `cancelled`，终态不可回退。
+`status`：`todo` / `in_progress` / `completed` / `cancelled`。允许流转：`todo ↔ in_progress`；`todo`、`in_progress` 可直接转入 `completed`；`completed` 可撤回 `todo`（归档撤回）；未完成任务可转入 `cancelled`，`cancelled` 为终态不可回退。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
+| POST | `/api/v1/tasks` | 新建个人任务（`201`） |
 | GET | `/api/v1/tasks` | 任务列表 |
 | GET | `/api/v1/tasks/{task_id}` | 任务详情 |
 | PATCH | `/api/v1/tasks/{task_id}` | 修改任务 |
 | POST | `/api/v1/tasks/{task_id}/cancel` | 取消任务 |
 
+- 新建：请求体 `{ "title": 必填 ≤255, "due_date": 可选日期 }`；默认 `status = todo`，不关联会议（`meeting_id` / `action_id` 为 `null`）。
 - 列表查询参数：`page`、`page_size`、`status`（MVP）；`keyword`、`due_before`、`due_after` 为后续增强。
-- 编辑可更新 `title`、`due_date`、`status`（后端校验状态流转）。
-- 取消：幂等成功，返回 `status = cancelled`。
+- 编辑可更新 `title`、`due_date`、`status`（后端校验状态流转，非法流转返回 `409 BUSINESS_RULE_VIOLATION`）。
+- 取消：幂等成功，返回 `status = cancelled`；已完成任务不可取消（`409`）。
 
 ## 七、未解决问题（M09，A）
 

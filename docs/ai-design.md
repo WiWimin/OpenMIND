@@ -131,6 +131,21 @@ class LLMClient:
 - 模型额度不足返回 `MODEL_QUOTA_EXCEEDED`（402）；密钥无效返回 `MODEL_CONFIG_INVALID`（400）。
 - Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），由服务端 `EMBEDDING_DIM` 决定，更换模型或维度需重建 pgvector 列。
 
+### 3.6 并发闸门与熔断（`ai/resilience.py`，2026-11 B2）
+
+目标：单一 provider 故障时快速失败、限制在途请求，避免故障放大打穿本服务。单实例进程内状态（与 `core/rate_limit.py` 同口径：多 worker/多实例不共享）。
+
+| 机制 | 维度 | 行为 |
+| --- | --- | --- |
+| 并发闸门 `ProviderGate` | `api_base` | 进程内信号量限制在途请求数（`AI_MAX_CONCURRENCY_PER_PROVIDER`，默认 8）；同步 `threading.Semaphore` 与异步轮询共用同一计数。排队超过 `AI_CONCURRENCY_TIMEOUT_S`（默认 5s）→ `RATE_LIMITED`（429，`details.scope="concurrency"`） |
+| 熔断器 `CircuitBreaker` | `api_base｜model` | 近 `AI_CIRCUIT_WINDOW_SECONDS`（默认 60s）内失败达 `AI_CIRCUIT_FAILURE_THRESHOLD`（默认 5）→ open：直接抛 `MODEL_UPSTREAM_UNAVAILABLE`（503，可重试，`details.circuit="open"`），不再发包；`AI_CIRCUIT_OPEN_SECONDS`（默认 30s）后放行 1 个探针（half-open），探针成功闭合并清零、失败立即重开 |
+
+- **计入失败**：5xx、读超时、传输中断（provider 侧不可用）。
+- **不计入失败**：429/4xx（限流与请求侧问题，provider 是健康）、消费者提前关闭流式（`GeneratorExit`，如前端断开）。
+- 接入点：同步路径 `ModelHTTPClient._request_with_retry`（熔断检查先于排队，打开时不占名额直接失败）；流式路径 `LLMClient._iter_stream`（发包前 `breaker.check` + `gate.aacquire`，正常结束记成功，`finally` 归还名额）。
+- 开关：`AI_RESILIENCE_ENABLED=false` 全部直通（回滚用）。
+- 指标（`/api/v1/metrics` 的 `ai_*` 计数器）：`ai_retry_total`（实际发出的重试次数）、`ai_concurrency_rejected_total`（排队超时拒绝）、`ai_circuit_open_total`（熔断打开拦截）。
+
 ## 四、Embedding 与文本切分（`ai/embeddings/`）
 
 ### 4.1 Embedding 客户端
@@ -441,6 +456,8 @@ failed → processing   （重试）
 | 模型超时 | `MODEL_TIMEOUT` | 504 | 是 |
 | 模型输出无法解析/不符合 schema | `MODEL_OUTPUT_INVALID` | 502 | 视情况 |
 | 触发限流 | `RATE_LIMITED` | 429 | 是 |
+| 熔断打开（模型服务不可用） | `MODEL_UPSTREAM_UNAVAILABLE` | 503 | 是 |
+| 并发排队超时（`details.scope="concurrency"`） | `RATE_LIMITED` | 429 | 是 |
 | 未配置模型（BYOK） | `MODEL_CONFIG_REQUIRED` | 400 | 否 |
 | 模型额度不足 | `MODEL_QUOTA_EXCEEDED` | 402 | 否 |
 | 密钥/配置无效 | `MODEL_CONFIG_INVALID` | 400 | 否 |

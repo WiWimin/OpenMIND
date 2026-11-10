@@ -22,13 +22,15 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from app.ai import connection
+from app.ai import connection, resilience
 from app.ai.retry import (
     BACKOFF_SECONDS,
     MAX_ATTEMPTS,
     RetryPolicy,
     parse_retry_after,
 )
+from app.core import metrics
+from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 # 供 `tests/unit/test_llm_stream.py` 等按模块路径 monkeypatch 的常量（保持向后兼容）
@@ -128,6 +130,11 @@ class ModelHTTPClient:
         last_error: AppError | None = None
         retry_after_s: float | None = None
         kind = "unknown"
+        settings = get_settings()
+        gate = resilience.get_gate()
+        breaker = resilience.get_breaker()
+        gkey = resilience.gate_key(self.api_base)
+        bkey = resilience.breaker_key(self.api_base, model)
 
         for attempt in range(policy.max_attempts):
             if attempt:
@@ -156,30 +163,60 @@ class ModelHTTPClient:
             if remaining is not None:
                 attempt_timeout = min(timeout_s, remaining) if timeout_s else remaining
 
+            # 熔断先于排队检查：打开时直接快速失败，不占用并发名额
             try:
-                response = send(attempt_timeout)
-            except httpx.TimeoutException as exc:
-                kind = classify_transport_error(exc)
-                log_transport_warning(f"{self.service_label}超时", self.api_base, model, exc)
-                last_error = timeout_error or self._timeout_error()
-            except httpx.HTTPError as exc:
-                kind = classify_transport_error(exc)
-                log_transport_warning(
-                    f"{self.service_label}网络异常", self.api_base, model, exc
+                breaker.check(bkey)
+            except AppError:
+                metrics.inc_counter("ai_circuit_open_total")
+                raise
+            if not gate.acquire(gkey, timeout_s=settings.ai_concurrency_timeout_s):
+                metrics.inc_counter("ai_concurrency_rejected_total")
+                raise AppError(
+                    "RATE_LIMITED",
+                    f"{self.service_label}并发已满，请稍后重试",
+                    http_status=429,
+                    retryable=True,
+                    details={"scope": "concurrency"},
                 )
-                last_error = network_error or self._network_error()
-            else:
-                if response.status_code == httpx.codes.OK:
-                    return response
-                status = response.status_code
-                last_error = self.http_error(response)
-                if status == httpx.codes.TOO_MANY_REQUESTS:
-                    kind = "http_429"
-                    retry_after_s = parse_retry_after(response.headers.get("retry-after"))
-                elif 500 <= status < 600:
-                    kind = "http_5xx"
+            # 通过闸门后才真正发出（可能被熔断/并发拒绝拦下，不算重试）
+            if attempt:
+                metrics.inc_counter("ai_retry_total")
+            try:
+                try:
+                    response = send(attempt_timeout)
+                except httpx.TimeoutException as exc:
+                    kind = classify_transport_error(exc)
+                    log_transport_warning(
+                        f"{self.service_label}超时", self.api_base, model, exc
+                    )
+                    last_error = timeout_error or self._timeout_error()
+                    breaker.record_failure(bkey)
+                except httpx.HTTPError as exc:
+                    kind = classify_transport_error(exc)
+                    log_transport_warning(
+                        f"{self.service_label}网络异常", self.api_base, model, exc
+                    )
+                    last_error = network_error or self._network_error()
+                    breaker.record_failure(bkey)
                 else:
-                    kind = "http"
+                    if response.status_code == httpx.codes.OK:
+                        breaker.record_success(bkey)
+                        return response
+                    status = response.status_code
+                    last_error = self.http_error(response)
+                    if status == httpx.codes.TOO_MANY_REQUESTS:
+                        kind = "http_429"
+                        retry_after_s = parse_retry_after(
+                            response.headers.get("retry-after")
+                        )
+                    elif 500 <= status < 600:
+                        kind = "http_5xx"
+                        breaker.record_failure(bkey)
+                    else:
+                        # 429/4xx 属于请求侧或限流问题，provider 本身健康，不计入熔断
+                        kind = "http"
+            finally:
+                gate.release(gkey)
 
             if not policy.allows(kind, retryable=last_error.retryable):
                 raise last_error

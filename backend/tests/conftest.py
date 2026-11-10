@@ -91,6 +91,18 @@ def _clean_connection_pool() -> Iterator[None]:
         connection.close_ai_clients()
 
 
+@pytest.fixture(autouse=True)
+def _clean_resilience() -> Iterator[None]:
+    """并发闸门与熔断状态按用例清零，避免跨用例串扰。"""
+    from app.ai import resilience
+
+    resilience.reset()
+    try:
+        yield
+    finally:
+        resilience.reset()
+
+
 @pytest.fixture()
 def db_engine() -> Iterator[Engine]:
     """每个用例一个独立的 SQLite 内存库，CI 无需 PostgreSQL。"""

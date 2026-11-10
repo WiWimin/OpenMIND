@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.ai import connection
+from app.ai import connection, resilience
 from app.ai.http_client import (
     BACKOFF_SECONDS,
     ModelHTTPClient,
@@ -22,6 +22,7 @@ from app.ai.http_client import (
 )
 from app.ai.retry import MAX_ATTEMPTS, RetryPolicy
 from app.ai.structured import normalize_json_text, validation_error_summary
+from app.core import metrics
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 
@@ -136,6 +137,7 @@ class LLMClient(ModelHTTPClient):
         last_error: AppError | None = None
         for attempt in range(2):
             if attempt:
+                metrics.inc_counter("ai_retry_total")
                 await asyncio.sleep(BACKOFF_SECONDS[attempt - 1])
             try:
                 async for delta in self._stream_once(
@@ -213,46 +215,94 @@ class LLMClient(ModelHTTPClient):
         *,
         on_usage: Callable[[dict[str, int]], None] | None,
     ) -> AsyncIterator[str]:
-        """单次流请求体：非 200 先读响应体再按统一错误映射。"""
-        async with client.stream(
-            "POST",
-            "/chat/completions",
-            json=payload,
-            headers=self._headers(),
-            timeout=timeout_s,
-        ) as response:
-            if response.status_code != httpx.codes.OK:
-                # 非 200 需先读响应体才能映射额度类错误
-                await response.aread()
-                raise self.http_error(response)
-            async for line in response.aiter_lines():
-                stripped = line.strip()
-                if not stripped.startswith("data:"):
-                    continue
-                data = stripped[5:].strip()
-                if data == "[DONE]":
-                    return
-                try:
-                    chunk = json.loads(data)
-                except ValueError:
-                    logger.debug("流式分片无法解析，已忽略 model=%s", model)
-                    continue
-                if not isinstance(chunk, dict):
-                    continue
-                usage = chunk.get("usage")
-                if usage and on_usage:
-                    on_usage(
-                        {
-                            "input": int(usage.get("prompt_tokens") or 0),
-                            "output": int(usage.get("completion_tokens") or 0),
-                        }
-                    )
-                choices = chunk.get("choices") or []
-                if not choices:
-                    continue
-                delta = (choices[0].get("delta") or {}).get("content")
-                if delta:
-                    yield delta
+        """单次流请求体：非 200 先读响应体再按统一错误映射。
+
+        与同步路径共用并发闸门与熔断（`app/ai/resilience.py`）：
+        发包前 `breaker.check` + `gate.aacquire`，正常结束记成功，
+        5xx/超时/传输中断记失败；消费者提前关闭（GeneratorExit，如前端断开）
+        只释放名额、不计入熔断失败。
+        """
+        gate = resilience.get_gate()
+        breaker = resilience.get_breaker()
+        gkey = resilience.gate_key(self.api_base)
+        bkey = resilience.breaker_key(self.api_base, model)
+
+        try:
+            breaker.check(bkey)
+        except AppError:
+            metrics.inc_counter("ai_circuit_open_total")
+            raise
+        if not await gate.aacquire(
+            gkey, timeout_s=get_settings().ai_concurrency_timeout_s
+        ):
+            metrics.inc_counter("ai_concurrency_rejected_total")
+            raise AppError(
+                "RATE_LIMITED",
+                f"{self.service_label}并发已满，请稍后重试",
+                http_status=429,
+                retryable=True,
+                details={"scope": "concurrency"},
+            )
+        completed = False
+        try:
+            async with client.stream(
+                "POST",
+                "/chat/completions",
+                json=payload,
+                headers=self._headers(),
+                timeout=timeout_s,
+            ) as response:
+                if response.status_code != httpx.codes.OK:
+                    # 非 200 需先读响应体才能映射额度类错误
+                    await response.aread()
+                    if 500 <= response.status_code < 600:
+                        breaker.record_failure(bkey)
+                    raise self.http_error(response)
+                async for line in response.aiter_lines():
+                    stripped = line.strip()
+                    if not stripped.startswith("data:"):
+                        continue
+                    data = stripped[5:].strip()
+                    if data == "[DONE]":
+                        completed = True
+                        return
+                    try:
+                        chunk = json.loads(data)
+                    except ValueError:
+                        logger.debug("流式分片无法解析，已忽略 model=%s", model)
+                        continue
+                    if not isinstance(chunk, dict):
+                        continue
+                    usage = chunk.get("usage")
+                    if usage and on_usage:
+                        on_usage(
+                            {
+                                "input": int(usage.get("prompt_tokens") or 0),
+                                "output": int(usage.get("completion_tokens") or 0),
+                            }
+                        )
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = (choices[0].get("delta") or {}).get("content")
+                    if delta:
+                        yield delta
+                # 流正常读完但未见 [DONE]：同样视为 provider 正常响应
+                completed = True
+        except GeneratorExit:
+            # 消费者提前关闭（前端断开/上层取消）：不判定为 provider 失败
+            raise
+        except httpx.TimeoutException:
+            breaker.record_failure(bkey)
+            raise
+        except httpx.HTTPError:
+            breaker.record_failure(bkey)
+            raise
+        finally:
+            # `return`（收到 [DONE]）会跳过 else，故成功判定放在 finally 内
+            if completed:
+                breaker.record_success(bkey)
+            gate.release(gkey)
 
     def probe(self, *, timeout_s: float = 15) -> None:
         """保存配置时的连通性校验：单次请求，不重试。

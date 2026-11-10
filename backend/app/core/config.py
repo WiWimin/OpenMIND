@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     ai_keepalive_expiry_s: float = 30.0
     # LLM 非幂等调用的全局 deadline（单次超时取 min(单次超时, 剩余预算)），<=0 关闭
     ai_call_deadline_s: float = 90.0
+    # 并发闸门与熔断（ai/resilience.py）：单实例进程内状态，false 时全部直通
+    ai_resilience_enabled: bool = True
+    ai_max_concurrency_per_provider: int = 8
+    ai_concurrency_timeout_s: float = 5.0
+    ai_circuit_failure_threshold: int = 5
+    ai_circuit_window_seconds: float = 60.0
+    ai_circuit_open_seconds: float = 30.0
     embedding_api_base: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""
