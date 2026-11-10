@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.ai.chat import ChatAnswer, ChatService, RecordContext
+from app.ai.chat import ChatAnswer, ChatPreparation, ChatService, RecordContext
 from app.ai.prompts import build_organize
 from app.ai.rag import VectorRetriever
 from app.ai.structured import run_structured
@@ -157,6 +157,49 @@ def chat(
             else _recent_record_context(db, meeting_id)
         ),
         memory_context=memory_service.memory_context_for(db, user_id, "chat"),
+    )
+
+
+@dataclass(frozen=True)
+class ChatStreamSession:
+    """流式问答的会话内准备结果：归属校验、检索、记忆均已完成（纯内存）。"""
+
+    service: ChatService
+    prepared: ChatPreparation
+    include_sources: bool
+    model: str | None
+
+
+def prepare_chat(
+    db: Session,
+    *,
+    meeting_id: str,
+    user_id: str,
+    question: str,
+    context_scope: str,
+    include_sources: bool,
+    model: str | None = None,
+) -> ChatStreamSession:
+    """同步校验与上下文收集：404 归属、400 模型未配置在流开始前返回。"""
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    service = _chat_service(db, user_id, model)
+    prepared = service.prepare(
+        question,
+        user_id=user_id,
+        scope=context_scope,
+        current_meeting_id=meeting_id,
+        records=(
+            []
+            if context_scope == "knowledge_base"
+            else _recent_record_context(db, meeting_id)
+        ),
+        memory_context=memory_service.memory_context_for(db, user_id, "chat"),
+    )
+    return ChatStreamSession(
+        service=service,
+        prepared=prepared,
+        include_sources=include_sources,
+        model=service.llm.model,
     )
 
 

@@ -139,6 +139,7 @@
 
 - `rag_judge.triggered` = Judge 实际调用 LLM 的次数（true+false+fallback）；高分带直通与 Judge 禁用不计入；
 - `windows.*` 来自滑动窗口（约最近 1000 次），样本 < 20 时 `p50/p95` 为 `null` 且 `insufficient=true`；
+- 计数器还包含流式问答埋点：`chat_stream_total`（进入 SSE 流的次数）、`chat_stream_error_total`（首增量前 JSON 错误与流内 `error` 事件合计）；窗口 `chat_stream_first_token_ms` 为流式首 token 延迟（见 5.7a）；
 - 不含任何查询原文、提示词或用户内容（与日志红线一致）。
 
 ### 1.9 异步任务（Job，202 受理）
@@ -736,6 +737,43 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 - `sources` 可为空数组，不得伪造引用；`origin` 标识来源类别：`material`（会议材料/知识库，`material_id` 或 `document_id` 有值）、`record`（当前会议记录，`record_id` 有值）、`web`（联网检索，`url`/`title` 有值）。
 - 证据不足时 `insufficient_evidence = true`，并进入**两段式联网补救**：先在回答开头告知「你的会议资料中未找到相关证据」，再基于联网检索片段作答（`origin=web` 来源）；联网关闭、无结果或失败时回退为原拒答文案，绝不裸报错。联网仅发生在答案层，不改变检索层阈值/Judge 口径；问题文本会发送至所配置的搜索服务（默认 cn.bing.com）。
 - `mode=build` 且证据充分时 `file` 返回 `{ "filename": "xxx.md", "content": "Markdown 正文" }`；`plan` 模式或证据不足时为 `null`。
+
+### 5.7a 流式问答（SSE）`POST /api/v1/meetings/{meeting_id}/chat/stream`
+
+与 5.7 同一请求体（`question` / `context_scope` / `include_sources` / `model` / `mode`），**仅支持 `mode=plan`**：传 `mode=build` 返回 `422 VALIDATION_ERROR`（Build 继续走同步 5.7）。检索、归属校验与模型解析在返回流之前同步完成（404/400/402 等错误在此阶段以普通 JSON 错误体返回）。
+
+**该端点不使用统一信封**（直接输出 SSE 事件流）。响应头：
+
+```
+Content-Type: text/event-stream
+Cache-Control: no-cache
+X-Accel-Buffering: no
+```
+
+事件协议（每帧 `event:` + `data:`（JSON）+ 空行）：
+
+```
+event: meta
+data: {"insufficient_evidence":false,"sources":[{ ...同 5.7 的 source 字段... }],"model":"gpt-4o-mini"}
+
+event: delta
+data: {"text":"增量文本"}
+
+event: done
+data: {"answer":"完整文本","usage":{"input":123,"output":45},"latency_ms":2345}
+
+event: error
+data: {"status":"error","error_code":"MODEL_TIMEOUT","message":"模型响应超时","retryable":true}
+```
+
+- 顺序保证：**`meta` 先于首个 `delta`**（服务端预取首增量后才开始下发）；`include_sources=false` 时 `sources` 为空数组；`insufficient_evidence`、拒答文案与 5.7 同口径。
+- `done.usage` 为服务商返回的 token 用量（拿不到时为 `null`）；`latency_ms` 为从受理到下发 `done` 的耗时。
+- 错误两段式：**首增量前**的错误（归属/检索/模型配置/首 token 失败）返回普通 JSON 错误体（HTTP 状态码 + `error_code`，Content-Type 为 `application/json`）；**首增量后**的错误下发 `event: error` 后关闭连接，**不下发 `done`**。
+- 心跳：无增量时每 `SSE_HEARTBEAT_SECONDS`（默认 15 秒）发送注释行 `: ping`，防止代理断开空闲连接。首增量前处于预取阶段（等待模型首个 token），该时段内没有心跳——这是「首 token 前错误走 JSON」的既定取舍。
+- 客户端断开：服务端停止读取上游并关闭连接，不写半条 assistant 消息（对应前端 `AbortController` 取消）。
+- 兼容开关：`SSE_CHAT_ENABLED=false` 时该端点返回 `404 RESOURCE_NOT_FOUND`，前端回退同步 5.7；开关与心跳见 `docker/.env.example`。
+- 可观测：`GET /api/v1/metrics` 计数器 `chat_stream_total`（成功进入流的次数）、`chat_stream_error_total`（首增量前 JSON 错误 + 流内 error 事件）与窗口 `chat_stream_first_token_ms`（首 token 延迟，见 1.8）。
+- 限流：与 5.7 同属 AI 组（按用户每分钟 `RATE_LIMIT_AI_PER_MINUTE`）。
 
 ### 5.8 整理记录 `POST /api/v1/meetings/{meeting_id}/organize`
 

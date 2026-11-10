@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -73,6 +74,17 @@ class ChatAnswer:
     file: FileAttachment | None = None
 
 
+@dataclass(frozen=True)
+class ChatPreparation:
+    """流式问答的同步准备结果：检索、记录上下文与来源（不含 LLM 调用）。"""
+
+    question: str
+    memory_context: str
+    contexts: list[str]
+    sources: list[Source]
+    has_evidence: bool
+
+
 class Retriever(Protocol):
     def retrieve(
         self,
@@ -102,19 +114,17 @@ class ChatService:
         memory_context: str = "",
         mode: str = "plan",
     ) -> ChatAnswer:
-        chunks = self.retriever.retrieve(
+        prepared = self.prepare(
             question,
             user_id=user_id,
             scope=scope,
             current_meeting_id=current_meeting_id,
+            records=records,
+            memory_context=memory_context,
         )
-        record_context = [] if scope == "knowledge_base" else (records or [])
-        if not chunks and not record_context:
+        if not prepared.has_evidence:
             return self._answer_with_web(question)
-        contexts = [chunk.excerpt for chunk in chunks]
-        contexts.extend(
-            f"[记录 {record.record_id}] {record.content}" for record in record_context
-        )
+        contexts = prepared.contexts
         attachment: FileAttachment | None = None
         if mode == "build":
             # Build：基于资料直接产出可交付文件（结构化输出），summary 作为回答
@@ -145,6 +155,35 @@ class ChatService:
                 }
             )
             answer = self.llm.chat(messages).text
+        return ChatAnswer(
+            answer=answer,
+            sources=prepared.sources,
+            insufficient_evidence=False,
+            file=attachment,
+        )
+
+    def prepare(
+        self,
+        question: str,
+        *,
+        user_id: str,
+        scope: str = "current_meeting",
+        current_meeting_id: str | None = None,
+        records: list[RecordContext] | None = None,
+        memory_context: str = "",
+    ) -> ChatPreparation:
+        """同步完成检索与上下文收集（不含 LLM 调用），供流式回答复用。"""
+        chunks = self.retriever.retrieve(
+            question,
+            user_id=user_id,
+            scope=scope,
+            current_meeting_id=current_meeting_id,
+        )
+        record_context = [] if scope == "knowledge_base" else (records or [])
+        contexts = [chunk.excerpt for chunk in chunks]
+        contexts.extend(
+            f"[记录 {record.record_id}] {record.content}" for record in record_context
+        )
         sources = [
             Source(
                 meeting_id=chunk.meeting_id,
@@ -165,9 +204,62 @@ class ChatService:
             )
             for record in record_context
         )
-        return ChatAnswer(
-            answer=answer, sources=sources, insufficient_evidence=False, file=attachment
+        return ChatPreparation(
+            question=question,
+            memory_context=memory_context,
+            contexts=contexts,
+            sources=sources,
+            has_evidence=bool(chunks or record_context),
         )
+
+    async def answer_stream(
+        self,
+        prepared: ChatPreparation,
+        *,
+        on_usage: Callable[[dict[str, int]], None] | None = None,
+    ) -> AsyncIterator[str]:
+        """流式回答：有证据 → `build_chat` 流式增量；错误原样上抛。
+
+        无证据 → 两段式联网补救：先取首个增量（失败回退拒答文案，
+        不留空气泡），成功后先 yield 联网提示语再续流；web 关闭/无结果
+        直接 yield 拒答文案。
+        """
+        if prepared.has_evidence:
+            messages = build_chat(
+                {
+                    "question": prepared.question,
+                    "contexts": prepared.contexts,
+                    "memory_context": prepared.memory_context,
+                }
+            )
+            async for delta in self.llm.astream_chat(messages, on_usage=on_usage):
+                yield delta
+            return
+
+        refusal = "根据现有材料无法确认该问题的答案。"
+        results: list[WebResult] = web_search(prepared.question)
+        if not results:
+            yield refusal
+            return
+        numbered = [
+            {"title": item.title, "url": item.url, "snippet": item.snippet}
+            for item in results
+        ]
+        messages = build_web_chat({"question": prepared.question, "sources": numbered})
+        stream = self.llm.astream_chat(messages, on_usage=on_usage)
+        try:
+            first = await stream.__anext__()
+        except StopAsyncIteration:
+            yield refusal
+            return
+        except Exception as exc:  # noqa: BLE001 — 首增量前失败回退拒答，绝不裸报错
+            logger.warning("联网流式回答失败，回退拒答：%s", type(exc).__name__)
+            await stream.aclose()
+            yield refusal
+            return
+        yield f"{_WEB_NOTICE}\n\n{first}"
+        async for delta in stream:
+            yield delta
 
     def _answer_with_web(self, question: str) -> ChatAnswer:
         """资料无证据 → 两段式联网补救（答案层，不进入检索层）。

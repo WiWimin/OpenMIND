@@ -85,6 +85,7 @@ npm run test:e2e:headed   # 观察真实交互
 | M08 任务 | 状态流转校验；越权 `404`；取消幂等 |
 | M09 问题 | 提取候选；状态流转正确；越权 `404` |
 | 异步任务（B3） | `ASYNC_JOBS_ENABLED=true` 时 8 个长任务端点返回 `202 + job`；任务 `pending → running → succeeded/failed`、失败带 `error_code`；超窗 `pending`/超时 `running` 读取时回收为 `JOB_TIMEOUT`；越权 `404`；开关关闭回退同步 `200/201`（`tests/api/test_jobs.py`、`tests/unit/test_task_runner.py`） |
+| 流式问答（B2） | SSE 事件顺序 `meta → delta → done`；`include_sources=false` 时 meta.sources 为空；首增量前错误 → JSON 错误体（`chat_stream_error_total` 计数）、首增量后错误 → `event: error` 且无 `done`；证据不足单段拒答；`mode=build` → 422；`SSE_CHAT_ENABLED=false` → 404；越权/未登录 `404/401`（`tests/api/test_chat_stream.py`）；LLM 流式增量/首增量前重试 1 次/401 不重试/超时映射/空流 `MODEL_OUTPUT_INVALID`（`tests/unit/test_llm_stream.py`） |
 
 通用：每个模块须覆盖正常流程、越权访问、非法状态流转与统一错误体。
 

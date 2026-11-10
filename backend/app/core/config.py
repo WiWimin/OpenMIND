@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     async_jobs_enabled: bool = True
     async_job_stale_minutes: int = 30
 
+    # SSE 流式问答（ADR-1）：关闭时 /chat/stream 返回 404，前端回退同步 /chat
+    sse_chat_enabled: bool = True
+    # 心跳间隔（秒）：无增量时发送 `: ping` 注释行，<=0 关闭心跳
+    sse_heartbeat_seconds: int = 15
+
     llm_api_base: str = ""
     llm_api_key: str = ""
     llm_model: str = ""

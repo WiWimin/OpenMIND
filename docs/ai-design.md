@@ -60,10 +60,22 @@ class LLMClient:
     ) -> LLMResult: ...
 
     def chat_json(self, messages, *, schema: type[BaseModel], **kw) -> BaseModel: ...
+
+    async def astream_chat(
+        self,
+        messages: list[dict],
+        *,
+        model: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+        timeout_s: float = 60,
+        on_usage: Callable[[dict], None] | None = None,  # 终态 usage 回调
+    ) -> AsyncIterator[str]: ...   # 逐段 yield choices[0].delta.content
 ```
 
 - 配置来源：`ModelConfig`（`services/model_config_service.py`），按用户解析；优先级为**用户配置 > 服务端全局**（`settings.llm_*`）。用户未配置时回退全局，全局默认为空则不兜底。
 - MVP 使用**同步**调用；调用发生在请求线程内，超时转化为统一错误（见 §十）。
+- 流式（`astream_chat`，ADR-1，2026-11 B2）：仅会中问答的 SSE 端点使用（`api.md 5.7a`）；解析 OpenAI 兼容 `data:` 行与 `[DONE]`，非 200 先读响应体再按 §十映射。
 
 ### 3.2 超时与重试
 
@@ -74,6 +86,8 @@ class LLMClient:
 | 退避 | 指数：1s、3s |
 | 可重试条件 | 超时、`429`、`5xx`、网络错误 |
 | 不可重试 | `401/403`（密钥/权限）、`400`（请求非法） |
+
+流式例外（`astream_chat`）：**首个增量前**允许 1 次退避重试（共 2 次尝试，沿用 1s 退避）；**首增量后不重试**（已下发部分答案，重试会造成重复内容），错误直接上抛由 SSE 层下发 `event: error`；无增量且无异常视为 `MODEL_OUTPUT_INVALID`。
 
 ### 3.3 结构化输出
 
@@ -343,6 +357,13 @@ failed → processing   （重试）
 - `mode`（`plan` 默认 / `build`）：`build` 且证据充分时走 `build_deliverable` 结构化产出（结构化管线 §3.3，业务校验要求 `filename`/`content_md` 非空且文件名不含路径），返回 `file={filename, content}`（Markdown，前端转 DOCX 下载/保存为会议资料/镜像到会议根）；证据不足时不产出文件。
 - 来源 `origin`：`material` / `record` / `web`；`web` 来源携带 `url`/`title`，前端渲染为可点击链接。
 - 不落库（问答历史非 MVP）。
+
+**流式变体（ADR-1，2026-11 B2）：`POST /meetings/{id}/chat/stream`（`api.md 5.7a`）**
+- 仅 `plan` 模式（`mode=build` → 422，Build 走同步 5.7）；`SSE_CHAT_ENABLED=false` 时端点 404，前端回退同步。
+- 分层：`ChatService.prepare()` 在请求会话内完成检索、记录上下文与来源（返回纯内存 `ChatPreparation`，**流内不再访问 DB**）；`answer_stream(prepared)` 逐段 yield 增量。
+- `answer_stream` 分支：有证据 → `build_chat` + `astream_chat` 流式；无证据且联网无结果 → 单段拒答文案；有联网结果 → **先取首个增量**（失败回退拒答，不留空气泡），成功后先 yield `_WEB_NOTICE` 再续流。
+- 端点在返回 `StreamingResponse` 前预取首增量：**首增量前**错误 → 普通 JSON 错误体（HTTP 状态码），**首增量后** → `event: error` 后关闭；`meta`（sources/insufficient_evidence/model）在首增量取得后才下发，字节顺序 meta → delta。
+- 心跳 `: ping`（`SSE_HEARTBEAT_SECONDS`，默认 15s）、客户端断开即停读上游且不写半条消息；埋点 `chat_stream_total` / `chat_stream_first_token_ms` / `chat_stream_error_total`（§3.4、`api.md 1.8`）。
 
 **两段式联网补救（答案层，`ai/websearch/`）**
 - 边界：只在 `insufficient_evidence` 之后触发，**不进入检索层** —— 阈值/Judge 与负样本拦截口径不变；评测脚本固定 `WEB_SEARCH_ENABLED=false`。

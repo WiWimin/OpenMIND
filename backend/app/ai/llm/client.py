@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import time
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -9,7 +12,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.ai.http_client import ModelHTTPClient
+from app.ai.http_client import BACKOFF_SECONDS, ModelHTTPClient, log_transport_warning
 from app.ai.structured import normalize_json_text, validation_error_summary
 from app.core.config import get_settings
 from app.core.exceptions import AppError
@@ -42,6 +45,8 @@ class LLMClient(ModelHTTPClient):
             api_key=settings.llm_api_key if api_key is None else api_key,
             transport=transport,
         )
+        # 异步流式请求复用同一 transport（测试注入 MockTransport）
+        self._transport = transport
         self.model = settings.llm_model if model is None else model
 
     def chat(
@@ -77,6 +82,127 @@ class LLMClient(ModelHTTPClient):
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
         return self._parse_result(response, model or self.model, elapsed_ms)
+
+    async def astream_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+        timeout_s: float = 60,
+        on_usage: Callable[[dict[str, int]], None] | None = None,
+    ) -> AsyncIterator[str]:
+        """流式对话（SSE）：逐段 yield `choices[0].delta.content`。
+
+        - 首个增量前允许 1 次退避重试（429/5xx/超时/网络）；首增量后不重试；
+        - 非 200 先读响应体再按统一错误映射；收到 `[DONE]` 结束；
+        - 无增量且无异常 → `MODEL_OUTPUT_INVALID`；
+        - `on_usage` 在收到 usage 分片时回调（终态分片可能无内容增量）。
+        """
+        self._ensure_configured()
+        resolved_model = model or self.model
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        emitted = False
+        last_error: AppError | None = None
+        for attempt in range(2):
+            if attempt:
+                await asyncio.sleep(BACKOFF_SECONDS[attempt - 1])
+            try:
+                async for delta in self._stream_once(
+                    payload, resolved_model, timeout_s, on_usage=on_usage
+                ):
+                    emitted = True
+                    yield delta
+            except AppError as exc:
+                last_error = exc
+                if emitted or not exc.retryable:
+                    raise
+            except httpx.TimeoutException as exc:
+                log_transport_warning(
+                    f"{self.service_label}超时", self.api_base, resolved_model, exc
+                )
+                last_error = self._timeout_error()
+                if emitted:
+                    raise last_error from None
+            except httpx.HTTPError as exc:
+                log_transport_warning(
+                    f"{self.service_label}网络异常", self.api_base, resolved_model, exc
+                )
+                last_error = self._network_error()
+                if emitted:
+                    raise last_error from None
+            else:
+                if emitted:
+                    logger.info("LLM 流式调用成功 model=%s", resolved_model)
+                    return
+                last_error = AppError(
+                    "MODEL_OUTPUT_INVALID",
+                    "模型输出为空",
+                    http_status=502,
+                    retryable=False,
+                )
+                raise last_error
+        raise last_error or self._network_error()
+
+    async def _stream_once(
+        self,
+        payload: dict[str, Any],
+        model: str,
+        timeout_s: float,
+        *,
+        on_usage: Callable[[dict[str, int]], None] | None,
+    ) -> AsyncIterator[str]:
+        """单次流式请求：解析 SSE `data:` 行并 yield 内容增量。"""
+        async with httpx.AsyncClient(
+            base_url=self.api_base, transport=self._transport, timeout=timeout_s
+        ) as client:
+            async with client.stream(
+                "POST",
+                "/chat/completions",
+                json=payload,
+                headers=self._headers(),
+            ) as response:
+                if response.status_code != httpx.codes.OK:
+                    # 非 200 需先读响应体才能映射额度类错误
+                    await response.aread()
+                    raise self.http_error(response)
+                async for line in response.aiter_lines():
+                    stripped = line.strip()
+                    if not stripped.startswith("data:"):
+                        continue
+                    data = stripped[5:].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        chunk = json.loads(data)
+                    except ValueError:
+                        logger.debug("流式分片无法解析，已忽略 model=%s", model)
+                        continue
+                    if not isinstance(chunk, dict):
+                        continue
+                    usage = chunk.get("usage")
+                    if usage and on_usage:
+                        on_usage(
+                            {
+                                "input": int(usage.get("prompt_tokens") or 0),
+                                "output": int(usage.get("completion_tokens") or 0),
+                            }
+                        )
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = (choices[0].get("delta") or {}).get("content")
+                    if delta:
+                        yield delta
 
     def probe(self, *, timeout_s: float = 15) -> None:
         """保存配置时的连通性校验：单次请求，不重试。
