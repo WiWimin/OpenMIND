@@ -128,9 +128,10 @@ def test_astream_401_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls["n"] == 1  # 不可重试错误不发起第二次请求
 
 
-def test_astream_timeout_maps_to_model_timeout(
+def test_astream_timeout_not_retried(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """首增量前的读超时不重传（非幂等，可能已计费），仅 1 次尝试。"""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -144,7 +145,7 @@ def test_astream_timeout_maps_to_model_timeout(
 
     assert exc_info.value.error_code == "MODEL_TIMEOUT"
     assert exc_info.value.retryable is True
-    assert calls["n"] == 2  # 超时可重试：首增量前共 2 次尝试
+    assert calls["n"] == 1
 
 
 def test_astream_no_delta_raises_output_invalid(

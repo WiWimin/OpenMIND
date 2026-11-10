@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     llm_api_base: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
+    # AI 调用连接池：按 api_base 进程内复用 httpx 客户端（详见 ai/connection.py）
+    ai_connection_pool_enabled: bool = True
+    ai_max_connections: int = 20
+    ai_max_keepalive_connections: int = 10
+    ai_keepalive_expiry_s: float = 30.0
+    # LLM 非幂等调用的全局 deadline（单次超时取 min(单次超时, 剩余预算)），<=0 关闭
+    ai_call_deadline_s: float = 90.0
     embedding_api_base: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Response, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.api.page import PageParams, list_envelope
@@ -57,7 +58,8 @@ async def upload_document(
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
-    document = knowledge_service.upload_document(
+    document = await run_in_threadpool(
+        knowledge_service.upload_document,
         db,
         user_id=current_user.user_id,
         file_name=file.filename or "upload",

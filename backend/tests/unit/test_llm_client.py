@@ -46,7 +46,8 @@ def test_chat_returns_llm_result() -> None:
     assert result.latency_ms >= 0
 
 
-def test_chat_timeout_retries_then_model_timeout() -> None:
+def test_chat_read_timeout_fails_without_retry() -> None:
+    """非幂等 chat 不重传读超时：请求可能已被服务商处理并计费，重发有重复扣费风险。"""
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -57,6 +58,22 @@ def test_chat_timeout_retries_then_model_timeout() -> None:
         _client(handler).chat([{"role": "user", "content": "x"}], timeout_s=0.01)
 
     assert exc_info.value.error_code == "MODEL_TIMEOUT"
+    assert exc_info.value.retryable is True  # 仍标记可重试，由调用方决定是否手动重试
+    assert len(calls) == 1  # 已送达但未收到响应 → 不重发
+
+
+def test_chat_connect_error_retries_then_network_error() -> None:
+    """连接建立失败（请求未送达）可安全重试，按退避共 3 次尝试。"""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "INTERNAL_ERROR"
     assert exc_info.value.retryable is True
     assert len(calls) == 3
 

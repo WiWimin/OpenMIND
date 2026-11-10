@@ -12,7 +12,15 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.ai.http_client import BACKOFF_SECONDS, ModelHTTPClient, log_transport_warning
+from app.ai import connection
+from app.ai.http_client import (
+    BACKOFF_SECONDS,
+    ModelHTTPClient,
+    app_error_kind,
+    classify_transport_error,
+    log_transport_warning,
+)
+from app.ai.retry import MAX_ATTEMPTS, RetryPolicy
 from app.ai.structured import normalize_json_text, validation_error_summary
 from app.core.config import get_settings
 from app.core.exceptions import AppError
@@ -30,6 +38,8 @@ class LLMResult:
 
 class LLMClient(ModelHTTPClient):
     service_label = "模型服务"
+    # chat 补全非幂等：读超时/传输中断可能已被服务商计费，不重传
+    idempotent = False
 
     def __init__(
         self,
@@ -44,6 +54,14 @@ class LLMClient(ModelHTTPClient):
             api_base=settings.llm_api_base if api_base is None else api_base,
             api_key=settings.llm_api_key if api_key is None else api_key,
             transport=transport,
+            # 全局 deadline：含重试与退避的总预算，防止单次调用穿透网关超时（<=0 关闭）
+            retry_policy=RetryPolicy(
+                max_attempts=MAX_ATTEMPTS,
+                deadline_s=(
+                    settings.ai_call_deadline_s if settings.ai_call_deadline_s > 0 else None
+                ),
+                retry_ambiguous=False,
+            ),
         )
         # 异步流式请求复用同一 transport（测试注入 MockTransport）
         self._transport = transport
@@ -72,13 +90,14 @@ class LLMClient(ModelHTTPClient):
 
         started = time.monotonic()
         response = self._request_with_retry(
-            lambda: self._client.post(
+            lambda attempt_timeout: self._client.post(
                 "/chat/completions",
                 json=payload,
                 headers=self._headers(),
-                timeout=timeout_s,
+                timeout=attempt_timeout,
             ),
             model=model or self.model,
+            timeout_s=timeout_s,
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
         return self._parse_result(response, model or self.model, elapsed_ms)
@@ -95,7 +114,9 @@ class LLMClient(ModelHTTPClient):
     ) -> AsyncIterator[str]:
         """流式对话（SSE）：逐段 yield `choices[0].delta.content`。
 
-        - 首个增量前允许 1 次退避重试（429/5xx/超时/网络）；首增量后不重试；
+        - **首个增量前**允许 1 次退避重试，但按幂等性分级：`429/5xx/连接失败`
+          可重试，`读超时/传输中断`（请求可能已被计费）**不重传**；
+        - **首增量后一律不重试**（已下发部分答案，重试会造成重复内容）；
         - 非 200 先读响应体再按统一错误映射；收到 `[DONE]` 结束；
         - 无增量且无异常 → `MODEL_OUTPUT_INVALID`；
         - `on_usage` 在收到 usage 分片时回调（终态分片可能无内容增量）。
@@ -124,21 +145,25 @@ class LLMClient(ModelHTTPClient):
                     yield delta
             except AppError as exc:
                 last_error = exc
-                if emitted or not exc.retryable:
+                if emitted or not self.retry_policy.allows(
+                    app_error_kind(exc), retryable=exc.retryable
+                ):
                     raise
             except httpx.TimeoutException as exc:
+                kind = classify_transport_error(exc)
                 log_transport_warning(
                     f"{self.service_label}超时", self.api_base, resolved_model, exc
                 )
                 last_error = self._timeout_error()
-                if emitted:
+                if emitted or not self.retry_policy.allows(kind, retryable=True):
                     raise last_error from None
             except httpx.HTTPError as exc:
+                kind = classify_transport_error(exc)
                 log_transport_warning(
                     f"{self.service_label}网络异常", self.api_base, resolved_model, exc
                 )
                 last_error = self._network_error()
-                if emitted:
+                if emitted or not self.retry_policy.allows(kind, retryable=True):
                     raise last_error from None
             else:
                 if emitted:
@@ -161,48 +186,73 @@ class LLMClient(ModelHTTPClient):
         *,
         on_usage: Callable[[dict[str, int]], None] | None,
     ) -> AsyncIterator[str]:
-        """单次流式请求：解析 SSE `data:` 行并 yield 内容增量。"""
-        async with httpx.AsyncClient(
-            base_url=self.api_base, transport=self._transport, timeout=timeout_s
-        ) as client:
-            async with client.stream(
-                "POST",
-                "/chat/completions",
-                json=payload,
-                headers=self._headers(),
-            ) as response:
-                if response.status_code != httpx.codes.OK:
-                    # 非 200 需先读响应体才能映射额度类错误
-                    await response.aread()
-                    raise self.http_error(response)
-                async for line in response.aiter_lines():
-                    stripped = line.strip()
-                    if not stripped.startswith("data:"):
-                        continue
-                    data = stripped[5:].strip()
-                    if data == "[DONE]":
-                        return
-                    try:
-                        chunk = json.loads(data)
-                    except ValueError:
-                        logger.debug("流式分片无法解析，已忽略 model=%s", model)
-                        continue
-                    if not isinstance(chunk, dict):
-                        continue
-                    usage = chunk.get("usage")
-                    if usage and on_usage:
-                        on_usage(
-                            {
-                                "input": int(usage.get("prompt_tokens") or 0),
-                                "output": int(usage.get("completion_tokens") or 0),
-                            }
-                        )
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = (choices[0].get("delta") or {}).get("content")
-                    if delta:
-                        yield delta
+        """单次流式请求：解析 SSE `data:` 行并 yield 内容增量。
+
+        客户端来自 `app/ai/connection.py` 的异步池（按事件循环 + api_base 复用），
+        注入 transport（测试）时按次新建并随 `async with` 关闭。
+        """
+        client = connection.get_async_client(self.api_base, transport=self._transport)
+        if connection.pooled(self._transport):
+            async for delta in self._iter_stream(
+                client, payload, model, timeout_s, on_usage=on_usage
+            ):
+                yield delta
+            return
+        async with client:
+            async for delta in self._iter_stream(
+                client, payload, model, timeout_s, on_usage=on_usage
+            ):
+                yield delta
+
+    async def _iter_stream(
+        self,
+        client: httpx.AsyncClient,
+        payload: dict[str, Any],
+        model: str,
+        timeout_s: float,
+        *,
+        on_usage: Callable[[dict[str, int]], None] | None,
+    ) -> AsyncIterator[str]:
+        """单次流请求体：非 200 先读响应体再按统一错误映射。"""
+        async with client.stream(
+            "POST",
+            "/chat/completions",
+            json=payload,
+            headers=self._headers(),
+            timeout=timeout_s,
+        ) as response:
+            if response.status_code != httpx.codes.OK:
+                # 非 200 需先读响应体才能映射额度类错误
+                await response.aread()
+                raise self.http_error(response)
+            async for line in response.aiter_lines():
+                stripped = line.strip()
+                if not stripped.startswith("data:"):
+                    continue
+                data = stripped[5:].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    chunk = json.loads(data)
+                except ValueError:
+                    logger.debug("流式分片无法解析，已忽略 model=%s", model)
+                    continue
+                if not isinstance(chunk, dict):
+                    continue
+                usage = chunk.get("usage")
+                if usage and on_usage:
+                    on_usage(
+                        {
+                            "input": int(usage.get("prompt_tokens") or 0),
+                            "output": int(usage.get("completion_tokens") or 0),
+                        }
+                    )
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = (choices[0].get("delta") or {}).get("content")
+                if delta:
+                    yield delta
 
     def probe(self, *, timeout_s: float = 15) -> None:
         """保存配置时的连通性校验：单次请求，不重试。

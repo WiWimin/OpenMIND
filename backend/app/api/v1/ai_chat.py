@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, DbSession
 from app.core import metrics
@@ -108,8 +109,11 @@ async def chat_stream(
             "Build 模式不支持流式，请使用同步问答接口",
             http_status=422,
         )
-    # 同步准备：归属校验、检索、记忆、模型解析（DB 访问在返回流之前完成）
-    session = ai_chat_service.prepare_chat(
+    # 同步准备：归属校验、检索、记忆、模型解析（DB 访问在返回流之前完成）。
+    # prepare_chat 是同步实现（DB + 同步 Embedding/Judge），必须放线程池，
+    # 否则会阻塞事件循环、拖垮同进程的其他连接（含正在下发的 SSE 流）。
+    session = await run_in_threadpool(
+        ai_chat_service.prepare_chat,
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,

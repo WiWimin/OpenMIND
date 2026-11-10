@@ -63,6 +63,8 @@ def transcode_to_wav(content: bytes, file_name: str) -> tuple[bytes, str, str]:
 
 class TranscriptionClient(ModelHTTPClient):
     service_label = "音频转写"
+    # 转写非幂等：读超时可能已被 ASR 计费并返回结果，不重传
+    idempotent = False
 
     def __init__(
         self,
@@ -88,14 +90,15 @@ class TranscriptionClient(ModelHTTPClient):
         else:
             mime_type = _MIME_TYPES.get(extension, "application/octet-stream")
         response = self._request_with_retry(
-            lambda: self._client.post(
+            lambda attempt_timeout: self._client.post(
                 "/audio/transcriptions",
                 data={"model": self.model},
                 files={"file": (file_name, content, mime_type)},
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=120,
+                timeout=attempt_timeout,
             ),
             model=self.model,
+            timeout_s=120,
         )
         return self._parse_text(response)
 

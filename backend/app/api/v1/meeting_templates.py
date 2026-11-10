@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.schemas.common import Envelope
@@ -40,7 +41,8 @@ async def upload_template(
     category: Annotated[str | None, Form()] = None,
 ) -> Envelope[MeetingTemplateRead]:
     content = await file.read()
-    template = meeting_template_service.upload_template(
+    template = await run_in_threadpool(
+        meeting_template_service.upload_template,
         db,
         user_id=current_user.user_id,
         file_name=file.filename or "template",

@@ -50,6 +50,47 @@ def _clean_metrics() -> Iterator[None]:
         metrics.reset()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_backoff(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """模型重试的退避与 deadline 用假时钟：不真实 sleep，且可被用例拨动。
+
+    只替换 `app.ai.http_client` 模块内的 `time` 属性（非全局 `time` 模块），
+    其他模块的真实 `time.sleep`（如限流用例）不受影响。
+    用例可通过 `app.ai.http_client.time.sleeps / .now` 断言等待与推进时间。
+    """
+    import app.ai.http_client as http_client
+
+    class _FakeTime:
+        def __init__(self) -> None:
+            self.now = 1_000.0
+            self.sleeps: list[float] = []
+
+        def monotonic(self) -> float:
+            return self.now
+
+        def sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+            self.now += seconds
+
+    monkeypatch.setattr(http_client, "time", _FakeTime())
+    try:
+        yield
+    finally:
+        monkeypatch.undo()
+
+
+@pytest.fixture(autouse=True)
+def _clean_connection_pool() -> Iterator[None]:
+    """每个用例后关闭池化 HTTP 客户端，避免跨用例复用连接。"""
+    from app.ai import connection
+
+    connection.close_ai_clients()
+    try:
+        yield
+    finally:
+        connection.close_ai_clients()
+
+
 @pytest.fixture()
 def db_engine() -> Iterator[Engine]:
     """每个用例一个独立的 SQLite 内存库，CI 无需 PostgreSQL。"""

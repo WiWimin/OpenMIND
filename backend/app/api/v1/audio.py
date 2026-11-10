@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Response, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.api.page import PageParams, list_envelope
@@ -59,7 +60,9 @@ async def upload_audio(
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
-    audio = audio_service.upload_audio(
+    # 同步路径会调用 ASR 转写（长音频可达分钟级），放线程池避免阻塞事件循环
+    audio = await run_in_threadpool(
+        audio_service.upload_audio,
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
@@ -135,7 +138,9 @@ async def upload_live_chunk(
     offset_seconds: Annotated[int, Form(ge=0)] = 0,
 ) -> Envelope[AudioRead]:
     content = await file.read()
-    audio, _segment = audio_service.append_live_chunk(
+    # 分片同步转写（可能秒级到十秒级），放线程池避免阻塞事件循环
+    audio, _segment = await run_in_threadpool(
+        audio_service.append_live_chunk,
         db,
         audio_id,
         current_user.user_id,

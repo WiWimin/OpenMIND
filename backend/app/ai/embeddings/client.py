@@ -54,13 +54,14 @@ class EmbeddingClient(ModelHTTPClient):
             "dimensions": self.dim,
         }
         response = self._request_with_retry(
-            lambda: self._client.post(
+            lambda attempt_timeout: self._client.post(
                 "/embeddings",
                 json=payload,
                 headers=self._headers(),
-                timeout=_BATCH_TIMEOUT_S,
+                timeout=attempt_timeout,
             ),
             model=model or self.model,
+            timeout_s=_BATCH_TIMEOUT_S,
         )
         return self._parse_embeddings(response, len(texts))
 

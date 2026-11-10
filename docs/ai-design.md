@@ -74,20 +74,27 @@ class LLMClient:
 ```
 
 - 配置来源：`ModelConfig`（`services/model_config_service.py`），按用户解析；优先级为**用户配置 > 服务端全局**（`settings.llm_*`）。用户未配置时回退全局，全局默认为空则不兜底。
-- MVP 使用**同步**调用；调用发生在请求线程内，超时转化为统一错误（见 §十）。
+- MVP 使用**同步**调用；调用发生在请求线程内（`async def` 端点经 `run_in_threadpool` 隔离，见 3.2a），超时转化为统一错误（见 §十）。
+- **连接池（`app/ai/connection.py`）**：同步 `httpx.Client` 按 `api_base` 进程级共享（keep-alive 复用，`AUTHORIZATION` 逐请求注入不进池键）；异步 `httpx.AsyncClient` 按「事件循环 + `api_base`」共享，跨 loop 不复用。注入 `transport`（测试 `MockTransport`）或 `AI_CONNECTION_POOL_ENABLED=false` 时不进池。进程退出由 `main.py` lifespan 调 `aclose_ai_clients()` 关闭。
 - 流式（`astream_chat`，ADR-1，2026-11 B2）：仅会中问答的 SSE 端点使用（`api.md 5.7a`）；解析 OpenAI 兼容 `data:` 行与 `[DONE]`，非 200 先读响应体再按 §十映射。
 
-### 3.2 超时与重试
+### 3.2 超时与重试（分级重试，2026-11 B1）
 
 | 项 | 约定 |
 | --- | --- |
 | 单次超时 | 默认 60s（生成类可上调至 120s） |
 | 重试次数 | 最多 2 次重试（共 3 次尝试） |
-| 退避 | 指数：1s、3s |
-| 可重试条件 | 超时、`429`、`5xx`、网络错误 |
-| 不可重试 | `401/403`（密钥/权限）、`400`（请求非法） |
+| 退避 | 指数 + 抖动：第 1 次 1s、第 2 次 3s，之后封顶 3s；每次乘 0.5–1.5 倍随机抖动 |
+| `Retry-After` | 解析秒数或 HTTP-date（采纳上限 30s），实际等待取 `max(退避, Retry-After)` |
+| 全局 deadline | LLM 调用含重试总预算 `AI_CALL_DEADLINE_S`（默认 90s）：单次超时取 `min(单次超时, 剩余预算)`，预算不足直接返回最后一次错误，防止重试穿透网关超时；`<=0` 关闭。Embedding/ASR 不设 deadline |
+| 可重试 | `连接失败`（请求未送达）、`429`、`5xx` |
+| 不可重试 | `读超时/传输中断`（**非幂等调用**，可能已被服务商计费）、`401/403`（密钥/权限）、`400`（请求非法）、`402`（额度） |
 
-流式例外（`astream_chat`）：**首个增量前**允许 1 次退避重试（共 2 次尝试，沿用 1s 退避）；**首增量后不重试**（已下发部分答案，重试会造成重复内容），错误直接上抛由 SSE 层下发 `event: error`；无增量且无异常视为 `MODEL_OUTPUT_INVALID`。
+**幂等分级（关键变更）**：`chat/completions` 与 `/audio/transcriptions` 标记为**非幂等**——读超时与传输中断意味着「请求可能已被服务商处理并计费」，**一律不重传**（错误仍标记 `retryable=true`，由调用方决定是否手动重试）；`EmbeddingClient` 为幂等，保留完整重试。实现：`RetryPolicy`（`ai/retry.py`）+ `ModelHTTPClient._request_with_retry`，类别为 `connect` / `timeout` / `transport` / `http_429` / `http_5xx`。
+
+**3.2a 事件循环边界**：`async def` 端点内的同步重活（`prepare_chat` 检索准备、材料/知识库/模板解析与嵌入、音频转写）统一经 `starlette.concurrency.run_in_threadpool` 执行，避免阻塞事件循环与同进程的 SSE 下发。
+
+流式例外（`astream_chat`）：**首个增量前**允许 1 次退避重试，但同样分级——`429/5xx/连接失败` 可重试，`读超时/传输中断` 不重传；**首增量后一律不重试**（已下发部分答案，重试会造成重复内容），错误直接上抛由 SSE 层下发 `event: error`；无增量且无异常视为 `MODEL_OUTPUT_INVALID`。
 
 ### 3.3 结构化输出
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Response, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.api.page import PageParams, list_envelope
@@ -57,7 +58,8 @@ async def upload_material(
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
-    material = material_service.upload_material(
+    material = await run_in_threadpool(
+        material_service.upload_material,
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
