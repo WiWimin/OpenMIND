@@ -291,12 +291,14 @@ import MarkdownView from '@/components/MarkdownView.vue'
 import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
 import { formatTime } from '@/utils/datetime'
+import { resolveErrorMessage } from '@/utils/errors'
 import type { PolishSuggestion, SummaryStructured } from '@/types/chat'
 import type {
   AgentChatMessage,
   AgentQuickAction,
   AgentReply,
   AgentSendHandler,
+  AgentSendStreamHandler,
   AgentTaskHandler,
 } from '@/types/agent'
 
@@ -312,6 +314,11 @@ const props = withDefaults(
     onSend: AgentSendHandler
     /** 快捷任务处理器：quickAction 带 task 时调用，走后端专用实现链 */
     onTask?: AgentTaskHandler
+    /**
+     * 流式发送处理器（SSE）：非任务对话走增量渲染（meta 来源先渲染、正文逐段追加、
+     * 跳过打字动画）；缺省时全部走 onSend 同步链路。
+     */
+    onSendStream?: AgentSendStreamHandler
     placeholder?: string
     disabled?: boolean
     compact?: boolean
@@ -333,6 +340,7 @@ const props = withDefaults(
     meetingId: '',
     quickActions: () => [],
     onTask: undefined,
+    onSendStream: undefined,
     placeholder: '描述目标，或选中内容后提问…',
     disabled: false,
     compact: false,
@@ -554,6 +562,22 @@ function typeReply(message: AgentChatMessage, full: string): Promise<void> {
   })
 }
 
+/** 停止生成时的正文处理：保留已流出的部分正文，仅占位文本替换为「已停止生成。」 */
+function applyStoppedContent(message: AgentChatMessage): void {
+  if (!message.content || message.content.includes('正在停止生成')) {
+    message.content = '已停止生成。'
+  }
+}
+
+/** 结构化回复不做逐字动画，直接渲染卡片 */
+function applyStructured(message: AgentChatMessage, reply: AgentReply): void {
+  message.kind = reply.kind
+  message.structured = reply.structured
+  message.content = reply.content
+  message.streaming = false
+  scrollToBottom()
+}
+
 async function runTurn(
   text: string,
   context: string | undefined,
@@ -601,42 +625,84 @@ async function runTurn(
   activeController = controller
 
   try {
-    const reply: AgentReply | string = await (options?.task && props.onTask
-      ? props.onTask(options.task, value, controller.signal)
-      : props.onSend(composed, controller.signal))
-    const normalized: AgentReply = typeof reply === 'string' ? { content: reply } : reply
-    pending.value = false
-    if (cancelled) {
-      assistant.streaming = false
-      assistant.content = '已停止生成。'
-      return
-    }
-    if (normalized.structured) {
-      // 结构化回复不做逐字动画，直接渲染卡片
-      assistant.kind = normalized.kind
-      assistant.structured = normalized.structured
-      assistant.content = normalized.content
-      assistant.streaming = false
-      scrollToBottom()
+    // 非快捷任务且提供流式处理器时走 SSE 增量；快捷任务保持同步实现链
+    const streamHandler = options?.task ? undefined : props.onSendStream
+    let normalized: AgentReply | null = null
+
+    if (streamHandler) {
+      let streamed = ''
+      normalized =
+        (await streamHandler(composed, controller.signal, {
+          onMeta: (sources) => {
+            // meta 先于正文到达：来源标签立即渲染
+            assistant.sources = sources
+          },
+          onDelta: (chunk) => {
+            streamed += chunk
+            assistant.content = streamed
+            scrollToBottom()
+          },
+        })) ?? null
+      pending.value = false
+      if (cancelled) {
+        assistant.streaming = false
+        applyStoppedContent(assistant)
+        return
+      }
+      if (streamed) {
+        // 增量已直接写入：跳过打字动画
+        assistant.streaming = false
+        scrollToBottom()
+      } else if (normalized?.structured) {
+        applyStructured(assistant, normalized)
+      } else if (normalized) {
+        await typeReply(assistant, normalized.content)
+      } else {
+        assistant.streaming = false
+      }
     } else {
-      await typeReply(assistant, normalized.content)
+      const reply: AgentReply | string = await (options?.task && props.onTask
+        ? props.onTask(options.task, value, controller.signal)
+        : props.onSend(composed, controller.signal))
+      normalized = typeof reply === 'string' ? { content: reply } : reply
+      pending.value = false
+      if (cancelled) {
+        assistant.streaming = false
+        applyStoppedContent(assistant)
+        return
+      }
+      if (normalized.structured) {
+        applyStructured(assistant, normalized)
+      } else {
+        await typeReply(assistant, normalized.content)
+      }
     }
     if (cancelled) {
       return
     }
-    assistant.sources = normalized.sources
-    assistant.note = normalized.note
-    assistant.file = normalized.file
+    if (normalized) {
+      if (normalized.sources !== undefined) {
+        assistant.sources = normalized.sources
+      }
+      assistant.note = normalized.note
+      assistant.file = normalized.file
+    }
   } catch (caught) {
     pending.value = false
     assistant.streaming = false
     if (cancelled) {
-      assistant.content = '已停止生成。'
+      applyStoppedContent(assistant)
       assistant.note = '输出已停止'
       return
     }
     assistant.error = true
-    assistant.content = caught instanceof Error ? caught.message : '生成失败，请稍后重试。'
+    const message = resolveErrorMessage(caught, '生成失败，请稍后重试。')
+    if (assistant.content) {
+      // 流式已输出部分正文：保留原文，错误改以备注提示
+      assistant.note = message
+    } else {
+      assistant.content = message
+    }
   } finally {
     if (activeController === controller) {
       activeController = null

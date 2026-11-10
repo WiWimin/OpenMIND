@@ -435,6 +435,7 @@
               welcome-title="AI答疑助手"
               :quick-actions="quickActions"
               :on-send="handleSend"
+              :on-send-stream="handleSend"
               :on-task="handleTask"
               :context-text="selectedText"
               :disabled="!meeting.meeting_id"
@@ -543,9 +544,10 @@ import { useLiveRecording } from '@/composables/useLiveRecording'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
-import type { AgentQuickAction, AgentReply } from '@/types/agent'
+import type { AgentQuickAction, AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
 import type { MeetingAudio, TranscriptEntry } from '@/types/audio'
 import type {
+  ChatPayload,
   ChatSource,
   OrganizePayload,
   OrganizeTask,
@@ -1362,27 +1364,42 @@ function captureSelection(): void {
   selectedText.value = text.slice(0, 1200)
 }
 
-async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply> {
+function mapSources(sources: ChatSource[]): AgentSource[] {
+  return sources.slice(0, 3).map((source) => ({
+    label: sourceLabel(source),
+    detail: source.excerpt.replace(/\s+/g, ' ').slice(0, 64),
+  }))
+}
+
+async function handleSend(
+  text: string,
+  signal: AbortSignal,
+  stream?: AgentStreamHandlers,
+): Promise<AgentReply> {
   if (!meetingId.value) {
     throw new Error('请先选择一场会议。')
   }
+  const payload: ChatPayload = {
+    question: text,
+    context_scope: 'current_meeting',
+    include_sources: true,
+    model: selectedModel.value || undefined,
+  }
   try {
-    const result = await chatApi.askMeeting(
-      meetingId.value,
-      {
-        question: text,
-        context_scope: 'current_meeting',
-        include_sources: true,
-        model: selectedModel.value || undefined,
-      },
-      signal,
-    )
+    const result = stream
+      ? await chatApi.askMeetingStream(
+          meetingId.value,
+          payload,
+          {
+            onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources)),
+            onDelta: stream.onDelta,
+          },
+          signal,
+        )
+      : await chatApi.askMeeting(meetingId.value, payload, signal)
     return {
       content: result.answer,
-      sources: result.sources.slice(0, 3).map((source) => ({
-        label: sourceLabel(source),
-        detail: source.excerpt.replace(/\s+/g, ' ').slice(0, 64),
-      })),
+      sources: mapSources(result.sources),
       note: result.insufficient_evidence ? '证据不足，回答仅供参考。' : undefined,
     }
   } catch (caught) {

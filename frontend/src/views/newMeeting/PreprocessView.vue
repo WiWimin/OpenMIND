@@ -68,6 +68,7 @@
           :meeting-id="meetingId"
           :show-welcome="false"
           :on-send="handleSend"
+          :on-send-stream="handleSend"
           :disabled="!meetingId"
           placeholder="输入补充要求或调整议程…"
         >
@@ -127,8 +128,8 @@ import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
-import type { AgentReply } from '@/types/agent'
-import type { ChatMode, ChatSource } from '@/types/chat'
+import type { AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
+import type { ChatMode, ChatPayload, ChatResult, ChatSource } from '@/types/chat'
 import type { MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
 import { preparationStatusMeta } from '@/utils/statusLabels'
@@ -284,7 +285,30 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
   }
 }
 
-async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply> {
+function mapSources(sources: ChatSource[]): AgentSource[] {
+  return sources.slice(0, 3).map((source) => ({
+    label: sourceLabel(source),
+    detail: excerpt(source.excerpt, 64),
+  }))
+}
+
+function buildAskReply(result: ChatResult): AgentReply {
+  return {
+    content: result.answer,
+    file: result.file ?? undefined,
+    sources: mapSources(result.sources),
+    note:
+      result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
+        ? '证据不足，回答仅供参考。'
+        : undefined,
+  }
+}
+
+async function handleSend(
+  text: string,
+  signal: AbortSignal,
+  stream?: AgentStreamHandlers,
+): Promise<AgentReply> {
   if (!meetingId.value) {
     throw new Error('请先选择一场会议。')
   }
@@ -317,30 +341,27 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
       }
     }
 
-    const result = await chatApi.askMeeting(
+    const payload: ChatPayload = {
+      question: text,
+      context_scope: 'current_meeting',
+      include_sources: true,
+      model,
+      mode: chatMode.value,
+    }
+    // Build 模式走同步（流式端点仅支持 plan，api.md 5.7a）；否则走 SSE 增量
+    if (!stream || chatMode.value === 'build') {
+      return buildAskReply(await chatApi.askMeeting(meetingId.value, payload, signal))
+    }
+    const result = await chatApi.askMeetingStream(
       meetingId.value,
+      payload,
       {
-        question: text,
-        context_scope: 'current_meeting',
-        include_sources: true,
-        model,
-        mode: chatMode.value,
+        onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources)),
+        onDelta: stream.onDelta,
       },
       signal,
     )
-
-    return {
-      content: result.answer,
-      file: result.file ?? undefined,
-      sources: result.sources.slice(0, 3).map((source) => ({
-        label: sourceLabel(source),
-        detail: excerpt(source.excerpt, 64),
-      })),
-      note:
-        result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
-          ? '证据不足，回答仅供参考。'
-          : undefined,
-    }
+    return buildAskReply(result)
   } catch (caught) {
     throw new Error(resolveErrorMessage(caught, 'Agent 处理失败，请稍后重试。'))
   }

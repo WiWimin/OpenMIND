@@ -1,9 +1,25 @@
 import http from '@/api/client'
+import { extractJob, requireResourceId, waitForJob, type JobAccepted } from '@/api/jobs'
 import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type { MeetingAudio } from '@/types/audio'
 import type { PageParams } from '@/types/pagination'
 import { unwrapData } from '@/utils/apiEnvelope'
+
+async function fetchAudio(audioId: string): Promise<MeetingAudio> {
+  const { data } = await http.get<ApiSuccess<MeetingAudio> | MeetingAudio>(`/audio/${audioId}`)
+  return unwrapData(data)
+}
+
+/** 202 受理（api.md 1.9）→ 轮询终态 → 回查音频详情；同步契约保持原样 */
+async function waitAudioJob(payload: MeetingAudio | JobAccepted): Promise<MeetingAudio> {
+  const job = extractJob(payload)
+  if (!job) {
+    return payload as MeetingAudio
+  }
+  const finished = await waitForJob(job.job_id)
+  return fetchAudio(requireResourceId(finished))
+}
 
 export async function listAudio(
   meetingId: string,
@@ -19,7 +35,9 @@ export async function listAudio(
 export async function uploadAudio(meetingId: string, file: File): Promise<MeetingAudio> {
   const form = new FormData()
   form.append('file', file)
-  const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
+  const { data } = await http.post<
+    ApiSuccess<MeetingAudio | JobAccepted> | MeetingAudio | JobAccepted
+  >(
     `/meetings/${meetingId}/audio`,
     form,
     {
@@ -27,7 +45,7 @@ export async function uploadAudio(meetingId: string, file: File): Promise<Meetin
       timeout: LONG_REQUEST_TIMEOUT_MS,
     },
   )
-  return unwrapData(data)
+  return waitAudioJob(unwrapData<MeetingAudio | JobAccepted>(data))
 }
 
 export async function updateTranscript(
@@ -42,12 +60,10 @@ export async function updateTranscript(
 }
 
 export async function retryAudio(audioId: string): Promise<MeetingAudio> {
-  const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
-    `/audio/${audioId}/retry`,
-    undefined,
-    { timeout: LONG_REQUEST_TIMEOUT_MS },
-  )
-  return unwrapData(data)
+  const { data } = await http.post<
+    ApiSuccess<MeetingAudio | JobAccepted> | MeetingAudio | JobAccepted
+  >(`/audio/${audioId}/retry`, undefined, { timeout: LONG_REQUEST_TIMEOUT_MS })
+  return waitAudioJob(unwrapData<MeetingAudio | JobAccepted>(data))
 }
 
 export async function confirmAudio(audioId: string): Promise<MeetingAudio> {

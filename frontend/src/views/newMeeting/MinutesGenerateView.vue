@@ -67,6 +67,7 @@
           mascot-size="8rem"
           :meeting-id="meeting.meeting_id"
           :on-send="handleSend"
+          :on-send-stream="handleSend"
           :on-task="handleAgentTask"
           :disabled="!meeting.meeting_id"
           placeholder="生成纪要、整理记录、拆解待办，或检索会议内容…"
@@ -135,9 +136,9 @@ import StageShell from '@/components/StageShell.vue'
 import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
-import type { AgentReply } from '@/types/agent'
+import type { AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
 import type { ActionItem } from '@/types/actionItem'
-import type { ChatMode, ChatSource, OrganizeTask } from '@/types/chat'
+import type { ChatMode, ChatPayload, ChatSource, OrganizeTask } from '@/types/chat'
 import type { Minutes, MinutesTemplate } from '@/types/minutes'
 import { resolveErrorMessage } from '@/utils/errors'
 import { minutesTemplateMeta } from '@/utils/statusLabels'
@@ -317,31 +318,43 @@ async function extractActionsReply(): Promise<AgentReply> {
   }
 }
 
+function mapSources(sources: ChatSource[]): AgentSource[] {
+  return sources.slice(0, 3).map((source) => ({
+    label: sourceLabel(source),
+    detail: source.excerpt.replace(/\s+/g, ' ').slice(0, 64),
+  }))
+}
+
 async function askReply(
   text: string,
   signal: AbortSignal,
   withSources: boolean,
+  stream?: AgentStreamHandlers,
 ): Promise<AgentReply> {
-  const result = await chatApi.askMeeting(
-    meetingId.value,
-    {
-      question: text,
-      context_scope: 'current_meeting',
-      include_sources: withSources,
-      model: selectedModel.value || undefined,
-      mode: chatMode.value,
-    },
-    signal,
-  )
+  const payload: ChatPayload = {
+    question: text,
+    context_scope: 'current_meeting',
+    include_sources: withSources,
+    model: selectedModel.value || undefined,
+    mode: chatMode.value,
+  }
+  // Build 模式走同步（流式端点仅支持 plan，api.md 5.7a）；否则走 SSE 增量
+  const result =
+    stream && chatMode.value !== 'build'
+      ? await chatApi.askMeetingStream(
+          meetingId.value,
+          payload,
+          {
+            onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources)),
+            onDelta: stream.onDelta,
+          },
+          signal,
+        )
+      : await chatApi.askMeeting(meetingId.value, payload, signal)
   return {
     content: result.answer,
     file: result.file ?? undefined,
-    sources: withSources
-      ? result.sources.slice(0, 3).map((source) => ({
-          label: sourceLabel(source),
-          detail: source.excerpt.replace(/\s+/g, ' ').slice(0, 64),
-        }))
-      : undefined,
+    sources: withSources ? mapSources(result.sources) : undefined,
     note: result.insufficient_evidence ? '证据不足，回答仅供参考。' : undefined,
   }
 }
@@ -396,7 +409,11 @@ async function handleAgentTask(
   }
 }
 
-async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply> {
+async function handleSend(
+  text: string,
+  signal: AbortSignal,
+  stream?: AgentStreamHandlers,
+): Promise<AgentReply> {
   if (!meetingId.value) {
     throw new Error('请先选择一场会议。')
   }
@@ -410,7 +427,7 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
     if (organizeIntent.test(text)) {
       return await organizeReply(signal)
     }
-    return await askReply(text, signal, searchIntent.test(text))
+    return await askReply(text, signal, searchIntent.test(text), stream)
   } catch (caught) {
     if (signal.aborted) {
       throw new Error('已取消本次请求。')

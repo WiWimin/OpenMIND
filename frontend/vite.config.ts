@@ -26,6 +26,15 @@ export default defineConfig({
       '/api': {
         target: apiProxyTarget,
         changeOrigin: true,
+        // SSE 流式问答（/chat/stream）：剥离压缩/定长响应头，确保增量即时透传、不被代理缓冲
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            if (String(proxyRes.headers['content-type'] ?? '').includes('text/event-stream')) {
+              delete proxyRes.headers['content-encoding']
+              delete proxyRes.headers['content-length']
+            }
+          })
+        },
       },
     },
   },
