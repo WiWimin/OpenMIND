@@ -5,13 +5,19 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.minutes import MinutesService
 from app.core.exceptions import resource_not_found
 from app.models.meeting import Meeting
 from app.models.minutes import MeetingMinutes
 from app.repositories import material_repository, minutes_repository
 from app.schemas.minutes import MinutesGenerateRequest, MinutesTemplate, MinutesUpdate
-from app.services import meeting_service, meeting_template_service, memory_service
+from app.services import (
+    ai_audit_service,
+    meeting_service,
+    meeting_template_service,
+    memory_service,
+)
 from app.services.extraction_support import gather_records
 from app.services.model_config_service import (
     ModelConfig,
@@ -169,16 +175,23 @@ def run_minutes_generation(
     """LLM 生成 + 落库纪要（+ 可选行动项抽取）；失败以 `AppError` 上抛。"""
     if progress_cb:
         progress_cb(20)
-    content = generate_text(
-        context.meeting,
-        context.transcripts,
-        context.config,
-        material_snippets=context.material_snippets,
-        marked_records=context.marked_records,
-        template=context.template,
-        memory_context=context.memory_context,
-        template_instructions=context.template_instructions,
-    )
+    with ai_audit_service.audit_call(
+        db,
+        user_id=context.meeting.user_id,
+        scene="minutes",
+        model=context.config.llm_model,
+        provider=audit.provider_host(context.config.llm_api_base),
+    ):
+        content = generate_text(
+            context.meeting,
+            context.transcripts,
+            context.config,
+            material_snippets=context.material_snippets,
+            marked_records=context.marked_records,
+            template=context.template,
+            memory_context=context.memory_context,
+            template_instructions=context.template_instructions,
+        )
     if progress_cb:
         progress_cb(70)
     minutes = minutes_repository.create(

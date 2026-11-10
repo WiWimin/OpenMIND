@@ -115,7 +115,7 @@ class LLMClient:
 
 ### 3.4 记录与可观测
 
-- 每次调用记录：模型名、`usage`、`latency_ms`、成功/失败（日志或后续 `ai_call_logs`）。
+- 每次调用记录：模型名、`usage`、`latency_ms`、成功/失败——经 `ai_audit_service`（3.11）落 `ai_call_logs` 表，另有 `ai_call_*` 进程内指标（3.6/3.11）与结构化日志。
 
 ### 3.5 模型配置来源（LLM 用户自带 BYOK，Embedding 服务端统一）
 
@@ -182,6 +182,17 @@ class LLMClient:
 - `SceneSpec(name, purpose, temperature, max_tokens, timeout_s, input_token_limit)`；`get_scene()` 未登记/空名回退默认场景（0.2/60s/无上限）。
 - `purpose` 供 `resolve_model_config(purpose=scene_purpose(...))` 做 BYOK 用途路由；`chat(..., scene=...)` 用 `temperature/max_tokens/timeout_s` 填充调用方未显式覆盖的参数（显式传参优先）。
 - 已登记场景与 `run_structured(scene=...)` 同名：`prepare`、`chat`、`chat_build`、`organize*`、`minutes`（timeout 120s）、`extract_*`、`template_draft`（温度 0.4）、`rag_judge`（温度 0 / 16 token / 上限 4000）。
+
+### 3.11 调用审计与成本估算（`ai/audit.py` + `ai_audit_service` + `ai/pricing.py`，2026-11 B4）
+
+每次 LLM 调用落一行 `ai_call_logs`（`database.md 3.18`，主键 `ail_`），**只存数值与枚举标签，不存提示词/原文/模型输出**：
+
+- **上下文传递**：`ai/audit.py` 用 `ContextVar` 持有可变 `AuditEvent`；服务层 `with ai_audit_service.audit_call(db, user_id=..., scene=...)` 建立/清除上下文，`LLMClient` 在调用点把实际模型、provider、usage 与降级来源记入事件（结构化修复重试与降级切换**累计**进同一行）。上下文不存在时所有 note 为 no-op——probe、RAG Judge 等未纳入审计的调用不受影响；场景不匹配（chat 上下文中的 `rag_judge`）不计入。
+- **接入点**：纯 LLM 调用段（同步问答、整理、纪要生成、会前准备、行动项/问题提取、模板草稿），此时会话内无未提交业务写入，提交审计行不连带提交业务状态。
+- **旁路容错**：落库失败只记 warning 并回滚该会话，绝不影响业务调用；`ai_call_*` 指标与 DB 解耦，即使落库失败也计数。
+- **指标**：`ai_call_total`、`ai_call_total/{scene}`、`ai_call_error_total`（`/{scene}`）、窗口 `ai_call_latency_ms`（见 `api.md 1.8`）。
+- **成本估算**：`ai/pricing.py` 按「模型名片段 → 每 M token 单价」静态价目表估算 `cost_usd`（`Numeric(12,6)`，ROUND_HALF_UP）；**未命中价目为 NULL，估算仅用于量级观测，不作为计费依据**。
+- 流式（SSE）审计：`astream_chat` 的 usage 分片同样记入上下文（`transport=sse` 由接入点声明）；消费端提前关闭按现状落库、不记为失败。
 
 ## 四、Embedding 与文本切分（`ai/embeddings/`）
 

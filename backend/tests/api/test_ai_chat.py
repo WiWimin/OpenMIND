@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.ai.chat import ChatAnswer, Source
 from app.schemas.chat import ChatContextScope, ChatRequest
@@ -45,6 +46,32 @@ def test_chat_insufficient_evidence(client: TestClient) -> None:
     data = response.json()["data"]
     assert data["insufficient_evidence"] is True
     assert data["sources"] == []
+
+
+def test_chat_writes_ai_call_log(
+    client: TestClient, db_session: Session
+) -> None:
+    """同步问答端到端：请求后应有一条 scene=chat 的审计日志。"""
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    response = client.post(
+        f"/api/v1/meetings/{meeting['meeting_id']}/chat",
+        json={"question": "上次会议决定了什么？"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    from sqlalchemy import select
+
+    from app.models.ai_call_log import AICallLog
+
+    rows = list(db_session.execute(select(AICallLog)).scalars())
+    assert len(rows) == 1
+    assert rows[0].scene == "chat"
+    assert rows[0].transport == "sync"
+    # FakeChat 替身不产生真实 LLM 调用 → 无用量，但行与场景必须落库
+    assert rows[0].status == "success"
+    assert rows[0].log_id.startswith("ail_")
 
 
 def test_chat_request_defaults_to_current_meeting() -> None:

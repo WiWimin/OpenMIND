@@ -5,13 +5,19 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.preparation import PreparationDraft, PreparationService
 from app.core.exceptions import resource_not_found
 from app.models.meeting import Meeting
 from app.models.preparation import Preparation
 from app.repositories import material_repository, preparation_repository
 from app.schemas.preparation import PreparationUpdate
-from app.services import meeting_service, meeting_template_service, memory_service
+from app.services import (
+    ai_audit_service,
+    meeting_service,
+    meeting_template_service,
+    memory_service,
+)
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -164,14 +170,21 @@ def run_preparation_generation(
     """
     if progress_cb:
         progress_cb(20)
-    draft = generate_draft(
-        context.meeting,
-        context.snippets,
-        context.user_goal,
-        context.config,
-        memory_context=context.memory_context,
-        template_instructions=context.template_instructions,
-    )
+    with ai_audit_service.audit_call(
+        db,
+        user_id=context.user_id,
+        scene="prepare",
+        model=context.config.llm_model,
+        provider=audit.provider_host(context.config.llm_api_base),
+    ):
+        draft = generate_draft(
+            context.meeting,
+            context.snippets,
+            context.user_goal,
+            context.config,
+            memory_context=context.memory_context,
+            template_instructions=context.template_instructions,
+        )
     if progress_cb:
         progress_cb(80)
     if preparation_id is None:

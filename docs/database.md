@@ -37,6 +37,7 @@
 | meeting_audio | `aud_` | `audio_id` |
 | meeting_templates | `tpl_` | `template_id` |
 | async_jobs | `job_` | `job_id` |
+| ai_call_logs | `ail_` | `log_id` |
 
 - 形如 `mtg_` + 32 位十六进制（如 `mtg_8f3a1c...`）。
 - 外键字段必须与被引用主键类型一致（均 `VARCHAR(40)`）。
@@ -344,6 +345,32 @@
 - 单实例 + `BackgroundTasks`：进程重启丢失 `pending` 任务；启动与读取时按 `ASYNC_JOB_STALE_MINUTES`（默认 30 分钟）回收为 `failed` + `JOB_TIMEOUT`。
 - 任务失败只写 `error_code`/`error_message`，资源状态由各资源自己的状态机决定（统一失败策略，见 §五）。
 
+### 3.18 `ai_call_logs` AI 调用审计日志
+
+AI（LLM）调用的元数据审计（`ai-design.md 3.11`；迁移 `0025_ai_call_logs`）。**只存数值与枚举标签，不存提示词、用户原文或模型输出**（日志红线）。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `log_id` | VARCHAR(40) | PK | `ail_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 归属用户 |
+| `scene` | VARCHAR(40) | NN, IDX | 场景名（`ai/scenes.py` 注册表键，如 `chat`/`minutes`） |
+| `purpose` | VARCHAR(20) | ? | BYOK 用途（`preparation`/`chat`/`minutes`/`extraction`；场景未映射用途时为空） |
+| `model` | VARCHAR(100) | NN | 实际发出请求的模型（降级链切换后为候选模型；LLM 未调用时为配置值或 `-`） |
+| `provider` | VARCHAR(200) | NN | provider 主机名（不含路径与凭证） |
+| `transport` | VARCHAR(10) | NN, default `sync` | `sync` / `sse` |
+| `status` | VARCHAR(10) | NN, default `success` | `success` / `failed` |
+| `error_code` | VARCHAR(40) | ? | 失败错误码（与 `api.md 1.3` 同名） |
+| `input_tokens` | INTEGER | ? | 累计输入 token（结构化修复重试与降级切换累计；未采集到为 NULL） |
+| `output_tokens` | INTEGER | ? | 累计输出 token |
+| `cost_usd` | NUMERIC(12,6) | ? | 估算成本（`ai/pricing.py` 按单价 × token；单价未知为 NULL；**非计费依据**） |
+| `latency_ms` | INTEGER | NN, default `0` | 场景级耗时（含上下文收集，`ai_call_latency_ms` 指标同源） |
+| `fallback_from` | VARCHAR(100) | ? | 降级链切换的起点模型（未切换为 NULL） |
+| `created_at` | TIMESTAMPTZ | NN, default now() | 调用完成时间 |
+
+- 索引：`(user_id, created_at)`、`(scene, created_at)`、`user_id`。
+- **旁路写入**：由 `services/ai_audit_service.audit_call` 在 LLM 调用段退出时提交；落库失败只记 warning 并回滚，绝不影响业务调用（`ai_audit_service` 同时写 `ai_call_*` 指标，与 DB 解耦）。
+- 接入点为纯 LLM 调用段（此时会话内无未提交业务写入，提交审计行不连带提交业务状态）；MVP 不对外暴露查询接口。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
@@ -351,6 +378,7 @@
 - User — UserMemory：一对一（`user_memories.user_id` 主键）
 - User — MeetingTemplate：一对多（仅自定义模板入库）
 - User — KnowledgeDocument：一对多
+- User — AICallLog：一对多（仅本人审计行，MVP 不对外暴露）
 - KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.extraction import IssueCandidate, IssueExtractor
 from app.core.exceptions import AppError, resource_not_found
 from app.models.issue import OpenIssue
 from app.models.record import MeetingRecord
 from app.repositories import issue_repository
 from app.schemas.issue import IssueStatus, IssueUpdate
-from app.services import meeting_service
+from app.services import ai_audit_service, meeting_service
 from app.services.extraction_support import build_transcripts, gather_records
 from app.services.model_config_service import (
     ModelConfig,
@@ -52,7 +53,14 @@ def extract_issues(
     records = gather_records(db, meeting_id, record_ids)
     transcripts = build_transcripts(records)
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.extraction)
-    candidates = extract_candidates(transcripts, config)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=user_id,
+        scene="extract_issues",
+        model=config.llm_model,
+        provider=audit.provider_host(config.llm_api_base),
+    ):
+        candidates = extract_candidates(transcripts, config)
     issues: list[OpenIssue] = []
     for candidate in candidates:
         issues.append(

@@ -4,6 +4,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.extraction import ActionItemCandidate, ActionItemExtractor
 from app.core.exceptions import AppError, resource_not_found
 from app.models.action_item import ActionItem
@@ -11,7 +12,7 @@ from app.models.record import MeetingRecord
 from app.models.task import PersonalTask
 from app.repositories import action_item_repository, task_repository
 from app.schemas.action_item import ActionItemUpdate, ConvertToTaskRequest
-from app.services import meeting_service
+from app.services import ai_audit_service, meeting_service
 from app.services.extraction_support import build_transcripts, gather_records
 from app.services.model_config_service import (
     ModelConfig,
@@ -67,7 +68,14 @@ def extract_action_items(
     records = gather_records(db, meeting_id, record_ids)
     transcripts = build_transcripts(records)
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.extraction)
-    candidates = extract_candidates(transcripts, config)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=user_id,
+        scene="extract_action_items",
+        model=config.llm_model,
+        provider=audit.provider_host(config.llm_api_base),
+    ):
+        candidates = extract_candidates(transcripts, config)
     items: list[ActionItem] = []
     for candidate in candidates:
         source_record_id, source_excerpt = _source_record(records, candidate)

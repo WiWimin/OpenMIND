@@ -5,6 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.parsers import parse_bytes
 from app.ai.prompts import build_template_draft
 from app.ai.structured import run_structured
@@ -12,6 +13,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError, resource_not_found
 from app.models.meeting_template import MeetingTemplate
 from app.repositories import meeting_template_repository
+from app.services import ai_audit_service
 from app.services.model_config_service import (
     ModelPurpose,
     build_llm_client,
@@ -288,13 +290,22 @@ def generate_template_draft(db: Session, user_id: str, description: str) -> dict
     prompt = build_template_draft(text)
     messages = [{"role": "user", "content": prompt}]
     try:
-        draft = run_structured(
-            lambda msgs: client.chat_json(msgs, schema=_GeneratedTemplate, scene="template_draft"),
-            messages,
-            _GeneratedTemplate,
+        with ai_audit_service.audit_call(
+            db,
+            user_id=user_id,
             scene="template_draft",
-            validator=_validate_template_draft,
-        )
+            model=config.llm_model,
+            provider=audit.provider_host(config.llm_api_base),
+        ):
+            draft = run_structured(
+                lambda msgs: client.chat_json(
+                    msgs, schema=_GeneratedTemplate, scene="template_draft"
+                ),
+                messages,
+                _GeneratedTemplate,
+                scene="template_draft",
+                validator=_validate_template_draft,
+            )
     except AppError as exc:
         raise AppError(
             exc.error_code,

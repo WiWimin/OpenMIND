@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.ai import connection, resilience
+from app.ai import audit, connection, resilience
 from app.ai.http_client import (
     BACKOFF_SECONDS,
     ModelHTTPClient,
@@ -128,6 +128,7 @@ class LLMClient(ModelHTTPClient):
                 last_error = exc
                 if index + 1 < len(chain) and should_fall_back(exc):
                     metrics.inc_counter("ai_fallback_total")
+                    audit.note_fallback(candidate, scene=scene)
                     logger.warning(
                         "LLM 降级切换 model=%s → %s error_code=%s scene=%s",
                         candidate,
@@ -138,7 +139,14 @@ class LLMClient(ModelHTTPClient):
                     continue
                 raise
             elapsed_ms = int((time.monotonic() - started) * 1000)
-            return self._parse_result(response, candidate, elapsed_ms)
+            result = self._parse_result(response, candidate, elapsed_ms)
+            audit.note_usage(
+                result.usage,
+                scene=scene,
+                model=result.model,
+                provider=audit.provider_host(self.api_base),
+            )
+            return result
         raise last_error or self._network_error()
 
     async def astream_chat(
@@ -172,6 +180,17 @@ class LLMClient(ModelHTTPClient):
         ensure_input_within_limit(messages, scene_limit=spec.input_token_limit)
 
         chain = configured_chain(model or self.model)
+        # 审计：usage 分片同时记入当前审计事件（无上下文时 no-op）
+        original_on_usage = on_usage
+
+        def _on_usage(value: dict[str, int]) -> None:
+            audit.note_usage(
+                value, scene=scene, provider=audit.provider_host(self.api_base)
+            )
+            if original_on_usage is not None:
+                original_on_usage(value)
+
+        listener = _on_usage
         last_error: AppError | None = None
         for candidate_index, resolved_model in enumerate(chain):
             payload: dict[str, Any] = {
@@ -192,7 +211,7 @@ class LLMClient(ModelHTTPClient):
                     await asyncio.sleep(BACKOFF_SECONDS[attempt - 1])
                 try:
                     async for delta in self._stream_once(
-                        payload, resolved_model, timeout_s, on_usage=on_usage
+                        payload, resolved_model, timeout_s, on_usage=listener
                     ):
                         emitted = True
                         yield delta
@@ -208,6 +227,7 @@ class LLMClient(ModelHTTPClient):
                             and should_fall_back(exc)
                         ):
                             metrics.inc_counter("ai_fallback_total")
+                            audit.note_fallback(resolved_model, scene=scene)
                             logger.warning(
                                 "LLM 流式降级切换 model=%s → %s error_code=%s scene=%s",
                                 resolved_model,
