@@ -6,8 +6,7 @@
         <section class="aside-section">
           <h2 class="aside-section__title">上传资料</h2>
           <template v-if="meetingId">
-            <MaterialUploader :uploading="uploading" @upload="upload" />
-            <ErrorMessage v-if="uploadError" :error="uploadError" />
+            <MaterialUploader :uploading="uploading" :error="uploadError" @upload="upload" />
           </template>
         </section>
 
@@ -66,6 +65,7 @@
           agent-name="杂乱文档，先规整再入库"
           mascot-size="8rem"
           :meeting-id="meetingId"
+          :storage-key="meetingId ? `preprocess:${meetingId}` : ''"
           :show-welcome="false"
           :on-send="handleSend"
           :on-send-stream="handleSend"
@@ -130,10 +130,10 @@ import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
 import type { AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
 import type { ChatMode, ChatPayload, ChatResult, ChatSource } from '@/types/chat'
-import type { MaterialUploadPayload } from '@/types/material'
+import type { MaterialUploadError, MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
 import { preparationStatusMeta } from '@/utils/statusLabels'
-import { resolveErrorMessage } from '@/utils/errors'
+import { resolveErrorMessage, resolveUploadError } from '@/utils/errors'
 
 const route = useRoute()
 const toast = useToast()
@@ -157,7 +157,7 @@ if (routeTemplateId) {
 const chatMode = ref<ChatMode>('build')
 
 const uploading = ref(false)
-const uploadError = ref<unknown>(null)
+const uploadError = ref<MaterialUploadError | null>(null)
 const materialsKey = ref(0)
 
 interface QuickBubble {
@@ -261,17 +261,8 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
   uploading.value = true
   uploadError.value = null
   try {
-    const material = await materialsApi.uploadMaterial(meetingId.value, payload)
-    if (material.processing_status === 'failed') {
-      uploadError.value = {
-        status: 'error',
-        error_code: 'FILE_PARSE_FAILED',
-        message: material.parse_error ?? '文件解析失败',
-        retryable: false,
-      }
-      return
-    }
-    toast.success('资料已上传')
+    await materialsApi.uploadMaterial(meetingId.value, payload)
+    toast.success('资料已上传并解析')
     materialsKey.value += 1
     void mirrorMeetingFile({
       meetingId: meetingId.value,
@@ -279,7 +270,8 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
       content: payload.file,
     })
   } catch (caught) {
-    uploadError.value = caught
+    // 解析失败（422 FILE_PARSE_FAILED）与其他失败都显示在上传框内，可直接重试
+    uploadError.value = resolveUploadError(caught, '上传失败，请检查文件后重试。')
   } finally {
     uploading.value = false
   }

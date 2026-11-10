@@ -10,7 +10,13 @@ from app.core.exceptions import AppError
 class ParseError(AppError):
     def __init__(self, reason: str, message: str) -> None:
         self.reason = reason
-        super().__init__(error_code="FILE_PARSE_FAILED", message=message, retryable=False)
+        super().__init__(
+            error_code="FILE_PARSE_FAILED",
+            message=message,
+            http_status=422,
+            retryable=False,
+            details={"reason": reason},
+        )
 
 
 @dataclass(frozen=True)

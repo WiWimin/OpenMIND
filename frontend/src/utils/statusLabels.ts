@@ -15,7 +15,7 @@ export interface StatusMeta {
 }
 
 export const meetingStatusMeta: Record<MeetingStatus, StatusMeta> = {
-  scheduled: { label: '已安排', tone: 'info' },
+  scheduled: { label: '进行中', tone: 'info' },
   archived: { label: '已归档', tone: 'neutral' },
 }
 

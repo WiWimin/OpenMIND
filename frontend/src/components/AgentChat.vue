@@ -290,6 +290,7 @@ import ChatFileCard from '@/components/ChatFileCard.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
+import { clearChatSession, loadChatSession, saveChatSession } from '@/utils/chatSession'
 import { formatTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
 import type { PolishSuggestion, SummaryStructured } from '@/types/chat'
@@ -332,6 +333,11 @@ const props = withDefaults(
     mascotSrc?: string
     /** 鹦鹉趴在输入框上沿的高度 */
     mascotSize?: string
+    /**
+     * 本地持久化键（如 `preprocess:mtg_1`）：非空时对话与草稿按该键存取 localStorage，
+     * 切页/刷新后恢复；为空则保持纯内存行为。
+     */
+    storageKey?: string
   }>(),
   {
     subtitle: '',
@@ -350,6 +356,7 @@ const props = withDefaults(
     showWelcomeTitle: true,
     mascotSrc: assistantParrotUrl,
     mascotSize: '4.5rem',
+    storageKey: '',
   },
 )
 
@@ -468,6 +475,7 @@ function clear(): void {
   finishTyping()
   errorText.value = ''
   messages.value = []
+  clearChatSession(props.storageKey)
   void nextTick(focusInput)
 }
 
@@ -797,8 +805,78 @@ async function regenerate(index: number): Promise<void> {
   await runTurn(target.regenerateText, previousUser?.context, false, { task: target.task })
 }
 
+/* ---------- 对话持久化（按 storageKey 存取 localStorage，切页/刷新后恢复） ---------- */
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 恢复会话；无存档时清空为新会话，消息 id 计数器抬到已恢复最大值之上，避免 :key 冲突 */
+function restoreSession(): void {
+  const session = props.storageKey ? loadChatSession(props.storageKey) : null
+  if (!session) {
+    messages.value = []
+    draft.value = ''
+    return
+  }
+  messages.value = session.messages
+  draft.value = session.draft
+  const maxId = session.messages.reduce((max, message) => Math.max(max, message.id), 0)
+  if (maxId >= messageId) {
+    messageId = maxId
+  }
+  stickToBottom.value = true
+  void nextTick(() => scrollToBottom(true))
+}
+
+function persistSession(immediate = false): void {
+  if (!props.storageKey) {
+    return
+  }
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  const writeNow = (): void => {
+    saveTimer = null
+    saveChatSession(props.storageKey, { draft: draft.value, messages: messages.value })
+  }
+  if (immediate) {
+    writeNow()
+  } else {
+    saveTimer = setTimeout(writeNow, 300)
+  }
+}
+
+// 换会议/换页面：中断当前流式并切换到目标会话
+watch(
+  () => props.storageKey,
+  () => {
+    if (props.storageKey) {
+      cancelled = true
+      activeController?.abort()
+      finishTyping()
+      pending.value = false
+      errorText.value = ''
+      restoreSession()
+    }
+  },
+)
+
+watch(
+  [messages, draft],
+  () => {
+    persistSession()
+  },
+  { deep: true },
+)
+
 onMounted(() => {
   adjustTextarea()
+  restoreSession()
+})
+
+onBeforeUnmount(() => {
+  // 离开页面前把最后一版对话落盘
+  persistSession(true)
 })
 
 /** 挂载快捷功能标记（供外部快捷按钮调用）：task 模式走 onTask 专用链，否则按设计好的提示词组合发送 */

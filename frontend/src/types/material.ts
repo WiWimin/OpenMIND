@@ -16,3 +16,9 @@ export interface MaterialUploadPayload {
   source?: string
   material_type?: string
 }
+
+/** 上传失败展示信息：parse=解析失败（422 FILE_PARSE_FAILED），upload=上传/网络等其他失败 */
+export interface MaterialUploadError {
+  kind: 'parse' | 'upload'
+  message: string
+}

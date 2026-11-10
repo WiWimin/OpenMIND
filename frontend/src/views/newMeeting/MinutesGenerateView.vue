@@ -66,6 +66,7 @@
           :mascot-src="mascotUrl"
           mascot-size="8rem"
           :meeting-id="meeting.meeting_id"
+          :storage-key="meeting.meeting_id ? `minutes:${meeting.meeting_id}` : ''"
           :on-send="handleSend"
           :on-send-stream="handleSend"
           :on-task="handleAgentTask"

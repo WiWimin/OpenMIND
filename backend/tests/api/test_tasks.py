@@ -80,14 +80,64 @@ def test_update_task_fields(client: TestClient, db_session: Session) -> None:
     assert data["due_date"] == "2026-10-09"
 
 
-def test_todo_cannot_complete_without_in_progress(
-    client: TestClient, db_session: Session
-) -> None:
+def test_create_task(client: TestClient) -> None:
+    headers, _ = _register(client)
+
+    response = client.post(
+        "/api/v1/tasks",
+        json={"title": "买牛奶", "due_date": "2026-11-20"},
+        headers=headers,
+    )
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["title"] == "买牛奶"
+    assert data["status"] == "todo"
+    assert data["due_date"] == "2026-11-20"
+    assert data["meeting_id"] is None
+
+
+def test_create_task_requires_title(client: TestClient) -> None:
+    headers, _ = _register(client)
+
+    response = client.post("/api/v1/tasks", json={"title": ""}, headers=headers)
+    assert response.status_code == 422
+
+
+def test_create_task_requires_auth(client: TestClient) -> None:
+    response = client.post("/api/v1/tasks", json={"title": "无鉴权"})
+    assert response.status_code == 401
+
+
+def test_todo_can_complete_directly(client: TestClient, db_session: Session) -> None:
     headers, user_id = _register(client)
     _seed(db_session, user_id, task_id="tsk_1", status="todo")
 
     response = client.patch(
         "/api/v1/tasks/tsk_1", json={"status": "completed"}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "completed"
+
+
+def test_completed_can_revert_to_todo(client: TestClient, db_session: Session) -> None:
+    headers, user_id = _register(client)
+    _seed(db_session, user_id, task_id="tsk_1", status="completed")
+
+    response = client.patch(
+        "/api/v1/tasks/tsk_1", json={"status": "todo"}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "todo"
+
+
+def test_cancelled_is_terminal(client: TestClient, db_session: Session) -> None:
+    headers, user_id = _register(client)
+    _seed(db_session, user_id, task_id="tsk_1", status="cancelled")
+
+    response = client.patch(
+        "/api/v1/tasks/tsk_1", json={"status": "todo"}, headers=headers
     )
 
     assert response.status_code == 409
@@ -104,9 +154,15 @@ def test_update_task_status_transitions(client: TestClient, db_session: Session)
     assert started.status_code == 200
     assert started.json()["data"]["status"] == "in_progress"
 
-    client.patch("/api/v1/tasks/tsk_1", json={"status": "completed"}, headers=headers)
+    completed = client.patch(
+        "/api/v1/tasks/tsk_1", json={"status": "completed"}, headers=headers
+    )
+    assert completed.status_code == 200
+    assert completed.json()["data"]["status"] == "completed"
+
+    # 终态（completed → cancelled）不允许
     reopened = client.patch(
-        "/api/v1/tasks/tsk_1", json={"status": "in_progress"}, headers=headers
+        "/api/v1/tasks/tsk_1", json={"status": "cancelled"}, headers=headers
     )
     assert reopened.status_code == 409
     assert reopened.json()["error_code"] == "BUSINESS_RULE_VIOLATION"

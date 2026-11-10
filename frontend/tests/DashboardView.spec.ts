@@ -173,18 +173,31 @@ describe('DashboardView', () => {
   })
 
   it('completes a task from the checklist', async () => {
-    mockMeetings([meeting])
-    mockTasks([task])
-    vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, status: 'completed' })
+    vi.useFakeTimers()
+    try {
+      mockMeetings([meeting])
+      mockTasks([task])
+      vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, status: 'completed' })
 
-    const wrapper = mountView()
-    await flushPromises()
+      const wrapper = mountView()
+      await vi.advanceTimersByTimeAsync(0)
 
-    await wrapper.get('.home__task-check').setValue(true)
-    await flushPromises()
+      await wrapper.get('.home__task-check').setValue(true)
+      await vi.advanceTimersByTimeAsync(0)
 
-    expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
-    expect(wrapper.findAll('.home__task')).toHaveLength(0)
+      expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
+      // 完成后先呈现勾选态（绿色√），延迟后才淡出移除
+      expect(wrapper.findAll('.home__task')).toHaveLength(1)
+      expect((wrapper.get('.home__task-check').element as HTMLInputElement).checked).toBe(true)
+      expect(wrapper.find('.home__task-title--done').exists()).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(1300)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(wrapper.findAll('.home__task')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('surfaces a meeting list error and retries', async () => {

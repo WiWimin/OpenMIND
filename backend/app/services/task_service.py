@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, resource_not_found
 from app.models.task import PersonalTask
 from app.repositories import task_repository
 from app.schemas.task import TaskStatus, TaskUpdate
+from app.utils.ids import new_id
 from app.utils.pagination import paginate_by
 
 _TODO = "todo"
@@ -14,9 +17,10 @@ _COMPLETED = "completed"
 _CANCELLED = "cancelled"
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    _TODO: {_IN_PROGRESS, _CANCELLED},
-    _IN_PROGRESS: {_COMPLETED, _CANCELLED},
-    _COMPLETED: set(),
+    _TODO: {_IN_PROGRESS, _COMPLETED, _CANCELLED},
+    _IN_PROGRESS: {_TODO, _COMPLETED, _CANCELLED},
+    # 已完成任务可撤回到待办（归档页「撤回」）；已取消任务保持终态
+    _COMPLETED: {_TODO},
     _CANCELLED: set(),
 }
 
@@ -32,6 +36,20 @@ def list_tasks(
         page=page,
         page_size=page_size,
         status=status,
+    )
+
+
+def create_task(
+    db: Session, *, user_id: str, title: str, due_date: date | None
+) -> PersonalTask:
+    return task_repository.create(
+        db,
+        task_id=new_id("tsk"),
+        user_id=user_id,
+        meeting_id=None,
+        action_id=None,
+        title=title,
+        due_date=due_date,
     )
 
 

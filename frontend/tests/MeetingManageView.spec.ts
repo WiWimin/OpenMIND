@@ -115,11 +115,13 @@ describe('MeetingManageView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('项目启动会')
-    // 会议操作（编辑/归档/删除）已从会议详情页搬进文件列表页
+    // 会议操作（会议工作台/编辑/归档/删除）都在文件列表页
     expect(wrapper.findAll('.meeting-files-view__actions button').map((node) => node.text())).toEqual(
-      ['编辑', '归档', '删除'],
+      ['会议工作台', '编辑', '归档', '删除'],
     )
-    expect(wrapper.text()).toContain('会议资料')
+    // 文件列表为资源管理器式扁平结构，无来源分组
+    expect(wrapper.find('.file-explorer').exists()).toBe(true)
+    expect(wrapper.findAll('.file-group').length).toBe(0)
     expect(wrapper.find('.meeting-files-panel').exists()).toBe(true)
   })
 

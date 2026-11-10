@@ -5,14 +5,48 @@
         <strong>任务列表</strong>
         <span>共 {{ store.pagination.total }} 项</span>
       </div>
-      <FormSelect
-        id="task-status-filter"
-        label="状态"
-        :model-value="store.filters.status"
-        :options="filterOptions"
-        @update:model-value="onFilter"
-      />
+      <div class="task-section__toolbar-actions">
+        <IconButton
+          v-if="!readonly"
+          icon="plus"
+          label="新增任务"
+          tone="primary"
+          large
+          @click="toggleCreate"
+        />
+        <FormSelect
+          id="task-status-filter"
+          label="状态"
+          :model-value="store.filters.status"
+          :options="filterOptions"
+          @update:model-value="onFilter"
+        />
+      </div>
     </div>
+
+    <form v-if="showCreate && !readonly" class="task-create" @submit.prevent="saveNew">
+      <FormField
+        id="task-create-title"
+        v-model="newTitle"
+        label="任务标题"
+        required
+        :error="newFormError"
+        placeholder="要做的一件事…"
+      />
+      <FormField
+        id="task-create-due"
+        v-model="newDue"
+        label="截止日期"
+        type="date"
+      />
+      <ErrorMessage v-if="newError" :error="newError" />
+      <div class="task-create__actions">
+        <AppButton type="button" variant="ghost" :disabled="newSaving" @click="cancelCreate">
+          取消
+        </AppButton>
+        <AppButton type="submit" :loading="newSaving">创建任务</AppButton>
+      </div>
+    </form>
 
     <LoadingSpinner v-if="store.loading && store.items.length === 0" class="task-section__state" />
 
@@ -68,7 +102,14 @@
 
             <template v-else>
               <div class="task-item__head">
-                <span class="task-item__title">{{ task.title }}</span>
+                <button
+                  type="button"
+                  class="task-item__title"
+                  :title="`${task.title}（点击查看任务详情）`"
+                  @click="openDetail(task)"
+                >
+                  {{ task.title }}
+                </button>
               </div>
 
               <div class="task-item__controls">
@@ -99,17 +140,22 @@
               </div>
 
               <div class="task-item__actions">
-                <AppButton size="sm" variant="ghost" @click="openDetail(task)">查看详情</AppButton>
-                <template v-if="!readonly">
-                  <AppButton size="sm" variant="ghost" @click="startEdit(task)">编辑任务</AppButton>
-                  <AppButton
+                <IconButton
+                  v-if="readonly && task.status === 'completed'"
+                  icon="undo"
+                  label="撤回到待办"
+                  :loading="revertingId === task.task_id"
+                  @click="revert(task)"
+                />
+                <template v-else-if="!readonly">
+                  <IconButton icon="edit" label="编辑任务" @click="startEdit(task)" />
+                  <IconButton
                     v-if="task.status !== 'cancelled' && task.status !== 'completed'"
-                    size="sm"
-                    variant="ghost"
+                    icon="trash"
+                    label="删除任务"
+                    tone="danger"
                     @click="askCancel(task.task_id)"
-                  >
-                    取消任务
-                  </AppButton>
+                  />
                 </template>
               </div>
             </template>
@@ -165,9 +211,9 @@
 
     <ConfirmDialog
       :open="showCancel"
-      title="取消任务"
-      message="确定取消该任务吗？"
-      confirm-text="取消任务"
+      title="删除任务"
+      message="确定删除该任务吗？删除后任务将标记为已取消并从当前列表移除。"
+      confirm-text="删除"
       danger
       :loading="cancelling"
       @confirm="confirmCancel"
@@ -188,6 +234,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import FormField from '@/components/FormField.vue'
 import FormSelect from '@/components/FormSelect.vue'
+import IconButton from '@/components/IconButton.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useToast } from '@/composables/useToast'
@@ -239,6 +286,17 @@ const editDue = ref('')
 const editFormError = ref('')
 const editError = ref<unknown>(null)
 const editSaving = ref(false)
+
+// 新增任务
+const showCreate = ref(false)
+const newTitle = ref('')
+const newDue = ref('')
+const newFormError = ref('')
+const newError = ref<unknown>(null)
+const newSaving = ref(false)
+
+// 归档撤回
+const revertingId = ref<string | null>(null)
 
 const hasMore = computed(() => store.pagination.page < store.pagination.total_pages)
 
@@ -315,6 +373,57 @@ async function saveEdit(): Promise<void> {
   }
 }
 
+function toggleCreate(): void {
+  showCreate.value = !showCreate.value
+  if (showCreate.value) {
+    newTitle.value = ''
+    newDue.value = ''
+    newFormError.value = ''
+    newError.value = null
+  }
+}
+
+function cancelCreate(): void {
+  showCreate.value = false
+  newFormError.value = ''
+  newError.value = null
+}
+
+async function saveNew(): Promise<void> {
+  const title = newTitle.value.trim()
+  if (!title) {
+    newFormError.value = '请输入任务标题'
+    return
+  }
+  newFormError.value = ''
+  newSaving.value = true
+  newError.value = null
+  try {
+    await store.createTask({ title, due_date: newDue.value || undefined })
+    showCreate.value = false
+    toast.success('任务已创建')
+  } catch (caught) {
+    newError.value = caught
+  } finally {
+    newSaving.value = false
+  }
+}
+
+async function revert(task: PersonalTask): Promise<void> {
+  if (revertingId.value) {
+    return
+  }
+  revertingId.value = task.task_id
+  try {
+    await store.revertTask(task.task_id)
+    toast.success('已撤回到待办任务')
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, '撤回失败'))
+  } finally {
+    revertingId.value = null
+  }
+}
+
 function goToMeeting(): void {
   const meetingId = detailTask.value?.meeting_id
   if (!meetingId) {
@@ -370,7 +479,7 @@ async function confirmCancel(): Promise<void> {
   try {
     await store.cancelTask(pendingCancelId.value)
     showCancel.value = false
-    toast.success('任务已取消')
+    toast.success('任务已删除')
   } finally {
     cancelling.value = false
   }
@@ -410,6 +519,29 @@ async function confirmCancel(): Promise<void> {
 
 .task-section__toolbar :deep(.form-field) {
   min-width: 11rem;
+}
+
+.task-section__toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.task-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.task-create__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .task-section__state {
@@ -487,10 +619,28 @@ async function confirmCancel(): Promise<void> {
 }
 
 .task-item__title {
+  padding: 0;
   color: var(--color-foreground);
+  font: inherit;
   font-size: 0.875rem;
   font-weight: 650;
+  text-align: left;
   overflow-wrap: anywhere;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.task-item__title:hover {
+  color: var(--color-primary-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.task-item__title:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 2px;
 }
 
 .task-item__controls {

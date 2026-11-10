@@ -41,26 +41,33 @@ describe('MeetingFilesPanel', () => {
     )
   })
 
-  it('renders the four file groups with counts and empty hints', async () => {
+  it('renders one flat explorer list without source group headings', async () => {
     const wrapper = mount(MeetingFilesPanel, { props: { meetingId: 'mtg_1' } })
     await flushPromises()
 
-    const titles = wrapper.findAll('.file-group__title').map((node) => node.text())
-    expect(titles).toEqual(['会议资料', '录音', '纪要', '会议记录'])
-    expect(wrapper.text()).toContain('未上传资料')
-    expect(wrapper.text()).toContain('未上传录音')
-    expect(wrapper.text()).toContain('尚未生成纪要')
-    expect(wrapper.text()).toContain('1 条')
+    // 仿资源管理器：名称 / 修改日期 / 类型 三列表头
+    const headers = wrapper.findAll('.file-explorer__head .file-explorer__col').map((node) =>
+      node.text().trim(),
+    )
+    expect(headers).toEqual(['名称', '修改日期', '类型', '操作'])
+
+    // 不再按来源分组
+    expect(wrapper.findAll('.file-group').length).toBe(0)
+    expect(wrapper.find('.file-explorer').exists()).toBe(true)
+
+    // 保存后的会议记录以 .md 文件条目混排进同一列表
+    expect(wrapper.text()).toContain('会议记录_2026-10-29 09:24:00.md')
   })
 
-  it('previews a meeting record inline', async () => {
+  it('previews a saved record inline', async () => {
     const wrapper = mount(MeetingFilesPanel, { props: { meetingId: 'mtg_1' } })
     await flushPromises()
 
-    const previewButton = wrapper.findAll('button').find((node) => node.text() === '预览')
-    await previewButton?.trigger('click')
+    const row = wrapper
+      .findAll('.file-explorer__row')
+      .find((node) => node.text().includes('会议记录_'))
+    await row?.trigger('click')
 
-    expect(wrapper.text()).toContain('手动记录')
     expect(wrapper.text()).toContain('张三：本周完成登录模块联调。')
   })
 
@@ -83,7 +90,10 @@ describe('MeetingFilesPanel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('产品白皮书.pdf')
+    // 类型列由扩展名生成（PDF 文档），不显示文件大小
+    expect(wrapper.text()).toContain('PDF 文档')
     expect(wrapper.text()).toContain('待开放')
+    expect(wrapper.text()).not.toContain('大小')
   })
 
   it('reloads when the meetingId prop changes', async () => {

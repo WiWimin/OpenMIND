@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 
 import * as meetingsApi from '@/api/meetings'
 import {
+  clearMeetingRoot,
   clearStoredHandle,
   ensureLocalDir,
   isLocalWorkspaceSupported,
@@ -9,14 +10,18 @@ import {
   listSubdirs,
   loadMeetingRoot,
   loadStoredHandle,
+  moveDirPath,
   pickDirectory,
   queryPermission,
+  removeDirPath,
   requestPermission,
   sanitizeFolderName,
   storeHandle,
+  storeMeetingRoot,
   writeBlobToPath,
   type LocalDirHandle,
 } from '@/utils/localFileSystem'
+import { categoryOf, categoryNameOf } from '@/utils/meetingCategories'
 
 export type WorkspaceStatus = 'unsupported' | 'unconfigured' | 'needs-permission' | 'connected'
 
@@ -118,51 +123,62 @@ export interface MirrorMeetingFileOptions {
 /** skipped：未连接本地文件夹（正常降级）；written：写入成功；failed：已连接但写入失败 */
 export type MirrorResult = 'skipped' | 'written' | 'failed'
 
+function connected(): boolean {
+  return status.value === 'connected' && handle.value !== null
+}
+
+function categoryNameFor(categoryId: string | null): string | null {
+  return categoryId ? categoryNameOf(categoryId) : null
+}
+
 /**
- * 解析会议的本地存储根（路径即会议根）：
- * 1) 新建会议时显式选择的路径（IndexedDB 持久化）；
- * 2) 未选择时默认「授权目录/<会议名>/」。
+ * 会议的本地存储路径段：「授权目录/<分类名?>/<会议名>/」。
+ * 分类可选：有分类放分类文件夹下，无分类直接平铺（分类与会议可同级）。
+ * 优先使用创建时持久化的路径（改名后与磁盘保持一致），否则按当前分类/标题推导。
+ * categoryId 显式传入时以它为准（创建/编辑流程刚写入归属，立即可用）。
  */
-async function meetingRootSegments(meetingId: string, title: string): Promise<string[]> {
+function meetingSegmentsOf(
+  meetingId: string,
+  title: string,
+  categoryId?: string | null,
+): string[] {
+  const categoryName =
+    categoryId !== undefined
+      ? categoryNameFor(categoryId)
+      : categoryNameOf(categoryOf(meetingId))
+  const segments = categoryName ? [sanitizeFolderName(categoryName)] : []
+  segments.push(sanitizeFolderName(title))
+  return segments
+}
+
+async function storedMeetingSegments(meetingId: string, title: string): Promise<string[]> {
   try {
     const stored = await loadMeetingRoot(meetingId)
     if (stored && stored.length > 0) {
       return stored
     }
   } catch {
-    /* 读取失败走默认 */
+    /* 读取失败走推导 */
   }
-  return [sanitizeFolderName(title)]
-}
-
-/** 创建会议时的默认落盘：若已连接，在授权目录创建 <会议名>/ 文件夹 */
-async function createDefaultMeetingFolder(title: string): Promise<void> {
-  if (status.value !== 'connected' || !handle.value) {
-    return
-  }
-  try {
-    await ensureLocalDir(handle.value, [sanitizeFolderName(title)])
-  } catch (caught) {
-    console.warn('[local-workspace] 默认会议文件夹创建失败', caught)
-  }
+  return meetingSegmentsOf(meetingId, title)
 }
 
 /**
- * 把会议相关文件镜像写入本地「授权目录/<会议根>/<文件>」。
+ * 把会议相关文件镜像写入本地会议文件夹。
  * 未授权时返回 skipped 静默降级，绝不影响主流程。
  */
 async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<MirrorResult> {
-  if (status.value !== 'connected' || !handle.value) {
+  if (!connected()) {
     return 'skipped'
   }
   try {
     const title = options.meetingTitle ?? (await resolveMeetingTitle(options.meetingId))
-    const segments = await meetingRootSegments(options.meetingId, title)
+    const segments = await storedMeetingSegments(options.meetingId, title)
     const content =
       typeof options.content === 'string'
         ? new Blob([options.content], { type: 'text/plain;charset=utf-8' })
         : options.content
-    await writeBlobToPath(handle.value, segments, sanitizeFolderName(options.fileName), content)
+    await writeBlobToPath(handle.value as LocalDirHandle, segments, sanitizeFolderName(options.fileName), content)
     return 'written'
   } catch (caught) {
     console.warn('[local-workspace] 本地镜像写入失败', caught)
@@ -171,7 +187,7 @@ async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<Mir
 }
 
 /**
- * 把用户确认后的纪要写入本地「授权目录/OpenMIND/<分类>/<会议>/纪要/会议纪要_<会议标题>.md」。
+ * 把用户确认后的纪要写入本地会议文件夹「会议纪要_<会议标题>.md」。
  * 确认版文件名固定：同一版本重复确认覆盖写入，不产生草稿版本残留。
  * 未连接本地文件夹时直接跳过，不发起会议标题解析请求。
  */
@@ -180,7 +196,7 @@ async function mirrorConfirmedMinutes(
   content: string,
   meetingTitle?: string,
 ): Promise<MirrorResult> {
-  if (status.value !== 'connected' || !handle.value) {
+  if (!connected()) {
     return 'skipped'
   }
   const title = meetingTitle || (await resolveMeetingTitle(meetingId))
@@ -190,6 +206,118 @@ async function mirrorConfirmedMinutes(
     fileName: `会议纪要_${title}.md`,
     content,
   })
+}
+
+/* ===== 目录结构同步（项目 ↔ 本地文件夹） ===== */
+
+/** 新建分类 → 本地授权目录创建 <分类名>/ 文件夹 */
+async function syncCategoryFolder(categoryName: string): Promise<void> {
+  if (!connected()) {
+    return
+  }
+  try {
+    await ensureLocalDir(handle.value as LocalDirHandle, [sanitizeFolderName(categoryName)])
+  } catch (caught) {
+    console.warn('[local-workspace] 分类文件夹创建失败', caught)
+  }
+}
+
+/**
+ * 新建会议 → 本地创建 <分类名?>/<会议名>/ 并持久化路径映射。
+ * 分类可选：未选分类时会议文件夹直接位于授权目录下。
+ */
+async function createMeetingLocal(
+  meetingId: string,
+  title: string,
+  categoryId: string | null,
+): Promise<void> {
+  if (!connected()) {
+    return
+  }
+  const segments = meetingSegmentsOf(meetingId, title, categoryId)
+  try {
+    await ensureLocalDir(handle.value as LocalDirHandle, segments)
+    await storeMeetingRoot(meetingId, segments)
+  } catch (caught) {
+    console.warn('[local-workspace] 会议文件夹创建失败', caught)
+  }
+}
+
+/**
+ * 编辑会议（改名/换分类）→ 本地文件夹同步迁移。
+ * FSA 无原生 rename：新目录 + 复制文件 + 删除旧目录；失败保留旧目录降级。
+ */
+async function syncMeetingLocal(
+  meetingId: string,
+  title: string,
+  categoryId: string | null,
+): Promise<void> {
+  if (!connected()) {
+    return
+  }
+  const root = handle.value as LocalDirHandle
+  const target = meetingSegmentsOf(meetingId, title, categoryId)
+  try {
+    const stored = await loadMeetingRoot(meetingId)
+    if (stored && stored.join('/') !== target.join('/')) {
+      // 分类可选：分类变化时会议文件夹在 <分类>/<会议> 与 <会议> 之间迁移
+      const source = stored.length > 0 ? stored : meetingSegmentsOf(meetingId, title, categoryId)
+      await moveDirPath(root, source, target)
+    } else if (!stored) {
+      await ensureLocalDir(root, target)
+    }
+    await storeMeetingRoot(meetingId, target)
+  } catch (caught) {
+    console.warn('[local-workspace] 会议文件夹迁移失败（保留原文件夹）', caught)
+  }
+}
+
+/** 删除会议 → 同步删除本地会议文件夹（含其下文件） */
+async function deleteMeetingLocal(meetingId: string, title: string): Promise<void> {
+  if (!connected()) {
+    return
+  }
+  const root = handle.value as LocalDirHandle
+  try {
+    const segments = await storedMeetingSegments(meetingId, title)
+    await removeDirPath(root, segments)
+  } catch (caught) {
+    console.warn('[local-workspace] 会议文件夹删除失败', caught)
+  }
+  try {
+    await clearMeetingRoot(meetingId)
+  } catch {
+    /* 映射清理失败不影响主流程 */
+  }
+}
+
+/**
+ * 删除分类 → 分类下会议的本地文件夹整体上移一层（<分类>/<会议> → <会议>），
+ * 与「会议归入未分类」的数据变化保持一致。
+ */
+async function demoteCategoryLocal(
+  categoryName: string,
+  meetings: { meetingId: string; title: string }[],
+): Promise<void> {
+  if (!connected()) {
+    return
+  }
+  const root = handle.value as LocalDirHandle
+  const categoryFolder = sanitizeFolderName(categoryName)
+  for (const meeting of meetings) {
+    try {
+      const stored = await loadMeetingRoot(meeting.meetingId)
+      const source = stored && stored.length > 0 ? stored : meetingSegmentsOf(meeting.meetingId, meeting.title)
+      if (source[0] !== categoryFolder || source.length < 2) {
+        continue
+      }
+      const target = source.slice(1)
+      await moveDirPath(root, source, target)
+      await storeMeetingRoot(meeting.meetingId, target)
+    } catch (caught) {
+      console.warn('[local-workspace] 分类降级迁移失败（保留原文件夹）', caught)
+    }
+  }
 }
 
 export function useLocalWorkspace() {
@@ -203,8 +331,13 @@ export function useLocalWorkspace() {
     disconnect,
     mirrorMeetingFile,
     mirrorConfirmedMinutes,
-    meetingRootSegments,
-    createDefaultMeetingFolder,
+    storedMeetingSegments,
+    meetingSegmentsOf,
+    syncCategoryFolder,
+    createMeetingLocal,
+    syncMeetingLocal,
+    deleteMeetingLocal,
+    demoteCategoryLocal,
     listSubdirs,
   }
 }

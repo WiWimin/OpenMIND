@@ -59,7 +59,7 @@ npx playwright test --reporter=line
 
 1. 新建会议对话框：`role=dialog[aria-label=新建会议]`，输入 `#meeting-title`、`#meeting-topic`、`#meeting-time`，提交按钮文本 **“创建”**（编辑态才是“保存”）。
 2. 创建成功后跳转 **`/new-meeting?meetingId=...`**，显示三段式工作区（资料预处理 / 实时录音转写 / 会后智能处理）。
-3. 资料预处理：`input[type=file][accept*=txt]` 选文件后需点击 **“上传资料”**，状态徽标为 **“已解析”**。
+3. 资料预处理：`input[type=file][accept*=txt]` 选文件后**自动上传并解析**（2026-11 起无需点击「上传资料」），状态徽标为 **“已解析”**。
 4. 设置入口：左下角 `<summary aria-label="设置菜单">` 展开后为 `role=menuitem` 的“模型配置 / 记忆中心 / 知识库”。
 5. 模型配置弹窗 `role=dialog[aria-label=模型配置]`：`#model-provider`（含“自定义（OpenAI 兼容）”，value=`custom`）、`#model-api-key`，自定义时 `#model-custom-base`、`#model-custom-model`，按钮“保存配置”。
 6. **Embedding 无用户自备入口**：弹窗仅 LLM 三字段；Embedding 由服务端统一配置（`#embedding-*` 已不存在）。

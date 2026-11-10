@@ -9,7 +9,7 @@
 
     <section class="meeting-panel">
       <header class="meeting-panel__head">
-        <div>
+        <div v-if="view !== 'meeting'">
           <h2 class="meeting-panel__title">会议列表</h2>
           <p class="meeting-panel__hint">共 {{ pagination.total }} 场会议</p>
         </div>
@@ -22,6 +22,7 @@
                 type="button"
                 class="status-chip"
                 :class="{ 'status-chip--active': status === option.value }"
+                :title="statusChipHint(option.value)"
                 @click="setStatus(option.value)"
               >
                 {{ option.label }}
@@ -38,9 +39,46 @@
               />
             </div>
           </template>
-          <AppButton @click="openCreate">新建会议</AppButton>
+          <AppButton v-if="view !== 'meeting'" @click="openCreate">新建会议</AppButton>
         </div>
       </header>
+
+      <!-- 文件列表页：会议名称在上、面包屑在下（列表/分类页保持面包屑在上） -->
+      <div v-if="view === 'meeting'" class="meeting-files-view__head">
+        <h2 class="meeting-files-view__title">{{ activeMeeting?.title }}</h2>
+        <StatusBadge
+          :label="meetingBadgeMeta(activeMeeting?.status).label"
+          :tone="meetingBadgeMeta(activeMeeting?.status).tone"
+        />
+        <div v-if="activeMeeting" class="meeting-files-view__actions">
+          <AppButton
+            variant="ghost"
+            size="sm"
+            @click="goWorkbench"
+          >
+            会议工作台
+          </AppButton>
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="activeMeeting.status === 'archived' || busy"
+            @click="openEdit"
+          >
+            编辑
+          </AppButton>
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="activeMeeting.status === 'archived' || busy"
+            @click="askArchive"
+          >
+            归档
+          </AppButton>
+          <AppButton variant="danger" size="sm" :disabled="busy" @click="askDelete">
+            删除
+          </AppButton>
+        </div>
+      </div>
 
       <AppBreadcrumb v-if="view !== 'root'" class="meeting-panel__breadcrumb" :items="breadcrumbItems" />
 
@@ -114,7 +152,6 @@
             :key="meeting.meeting_id"
             :meeting="meeting"
             @open="enterMeeting"
-            @import="openImport"
             @delete="askDeleteMeeting"
           />
           <p v-if="activeFolderMeetings.length === 0" class="folder-empty-hint">
@@ -124,61 +161,10 @@
 
         <!-- 会议视图：该会议的文件列表 -->
         <div v-else class="meeting-files-view">
-          <div class="meeting-files-view__head">
-            <h2 class="meeting-files-view__title">{{ activeMeeting?.title }}</h2>
-            <StatusBadge
-              :label="meetingBadgeMeta(activeMeeting?.status).label"
-              :tone="meetingBadgeMeta(activeMeeting?.status).tone"
-            />
-            <div v-if="activeMeeting" class="meeting-files-view__actions">
-              <AppButton
-                variant="ghost"
-                size="sm"
-                :disabled="activeMeeting.status === 'archived' || busy"
-                @click="openEdit"
-              >
-                编辑
-              </AppButton>
-              <AppButton
-                variant="ghost"
-                size="sm"
-                :disabled="activeMeeting.status === 'archived' || busy"
-                @click="askArchive"
-              >
-                归档
-              </AppButton>
-              <AppButton variant="danger" size="sm" :disabled="busy" @click="askDelete">
-                删除
-              </AppButton>
-            </div>
-          </div>
           <MeetingFilesPanel v-if="activeMeeting" :meeting-id="activeMeeting.meeting_id" />
         </div>
       </template>
     </section>
-
-    <!-- 从本地文件夹导入资料到指定会议 -->
-    <AppModal
-      :open="importTarget !== null"
-      :label="`导入资料 · ${importTarget?.title ?? ''}`"
-      @close="importTarget = null"
-    >
-      <div v-if="importTarget" class="meeting-import">
-        <p class="meeting-import__hint">
-          从已授权的本地文件夹选择资料导入该会议；未连接时可先在此授权（与会议详情页同一份授权）。
-        </p>
-        <LocalWorkspacePanel
-          :meeting-id="importTarget.meeting_id"
-          :meeting-title="importTarget.title"
-          :readonly="importTarget.status === 'archived'"
-          :show-export="false"
-          @imported="onImported"
-        />
-        <div class="meeting-import__actions">
-          <AppButton variant="ghost" @click="importTarget = null">完成</AppButton>
-        </div>
-      </div>
-    </AppModal>
 
     <!-- 删除会议确认 -->
     <ConfirmDialog
@@ -237,13 +223,11 @@ import { useRoute, useRouter } from 'vue-router'
 import * as meetingsApi from '@/api/meetings'
 import AppBreadcrumb from '@/components/AppBreadcrumb.vue'
 import AppButton from '@/components/AppButton.vue'
-import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
 import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
 import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
@@ -272,7 +256,7 @@ const MeetingRow = defineComponent({
   props: {
     meeting: { type: Object as () => Meeting, required: true },
   },
-  emits: ['open', 'import', 'delete'],
+  emits: ['open', 'delete'],
   setup(rowProps, { emit }) {
     return () =>
       h('div', { class: 'meeting-row' }, [
@@ -307,15 +291,6 @@ const MeetingRow = defineComponent({
               onClick: () => emit('open', rowProps.meeting),
             },
             '查看',
-          ),
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'meeting-row__action',
-              onClick: () => emit('import', rowProps.meeting),
-            },
-            '导入',
           ),
           h(
             'button',
@@ -387,6 +362,17 @@ const newCategoryName = ref('')
 
 function meetingBadgeMeta(status: MeetingStatus | undefined): StatusMeta {
   return meetingStatusMeta[status ?? 'scheduled']
+}
+
+/** 状态筛选说明：进行中 = 可编辑；已归档 = 只读 */
+function statusChipHint(value: StatusFilter): string {
+  if (value === 'archived') {
+    return '已归档的会议为只读：不能导入资料、不能编辑，仅可查看与导出'
+  }
+  if (value === 'scheduled') {
+    return '进行中的会议可正常编辑与导入资料'
+  }
+  return '查看全部会议'
 }
 
 const statusOptions: { value: StatusFilter; label: string }[] = [
@@ -475,6 +461,17 @@ function goCategory(): void {
   view.value = 'category'
 }
 
+/** 会议文件列表 → 会议工作台（资料预处理 / 录音转写 / 会后处理 3 卡片页） */
+function goWorkbench(): void {
+  if (!activeMeeting.value) {
+    return
+  }
+  void router.push({
+    name: ROUTE_NAMES.newMeeting,
+    query: { meetingId: activeMeeting.value.meeting_id },
+  })
+}
+
 /* ===== 会议操作（原会议详情页的编辑/归档/删除） ===== */
 function openEdit(): void {
   if (!activeMeeting.value) {
@@ -504,6 +501,12 @@ async function submitEdit(payload: MeetingFormPayload): Promise<void> {
     showEdit.value = false
     editTarget.value = null
     activeMeeting.value = updated
+    // 本地同步：改名/换分类时，本地会议文件夹随之迁移（未连接本地文件夹时静默跳过）
+    void ws.syncMeetingLocal(
+      updated.meeting_id,
+      updated.title,
+      payload.categoryId ?? categoryOf(updated.meeting_id),
+    )
     toast.success('会议信息已更新')
     await load()
     refreshCategories()
@@ -593,19 +596,6 @@ function askDeleteMeeting(meeting: Meeting): void {
   showDeleteMeeting.value = true
 }
 
-/** 从会议管理页直接把本地文件夹资料导入指定会议 */
-const importTarget = ref<Meeting | null>(null)
-
-function openImport(meeting: Meeting): void {
-  importTarget.value = meeting
-}
-
-function onImported(): void {
-  if (importTarget.value) {
-    toast.success(`已导入资料到「${importTarget.value.title}」`)
-  }
-}
-
 async function confirmDeleteMeeting(): Promise<void> {
   const target = deleteMeetingTarget.value
   if (!target) {
@@ -614,6 +604,8 @@ async function confirmDeleteMeeting(): Promise<void> {
   deletingMeeting.value = true
   try {
     await meetingsApi.deleteMeeting(target.meeting_id)
+    // 本地同步：删除会议文件夹（未连接本地文件夹时静默跳过）
+    void ws.deleteMeetingLocal(target.meeting_id, target.title)
     assignCategory(target.meeting_id, null)
     showDeleteMeeting.value = false
     deleteMeetingTarget.value = null
@@ -640,7 +632,13 @@ function confirmDeleteCategory(): void {
   if (!target) {
     return
   }
+  // 先收集该分类下的会议（删除后归属信息就没了），用于本地文件夹上移同步
+  const meetingsInCategory = visibleMeetings.value
+    .filter((meeting) => categoryOf(meeting.meeting_id) === target.id)
+    .map((meeting) => ({ meetingId: meeting.meeting_id, title: meeting.title }))
   deleteCategory(target.id)
+  // 本地同步：分类下会议文件夹上移一层 <分类>/<会议> → <会议>（与「归入未分类」一致）
+  void ws.demoteCategoryLocal(target.name, meetingsInCategory)
   // 若删除的是当前所在分类，退回根视图
   if (activeCategory.value?.id === target.id) {
     goRoot()
@@ -669,6 +667,8 @@ function submitCategory(): void {
   const created = createCategory(name)
   refreshCategories()
   cancelCreateCategory()
+  // 本地同步：新建分类 → 本地授权目录创建同名文件夹（未连接时静默跳过）
+  void ws.syncCategoryFolder(created.name)
   toast.success(`分类「${created.name}」已创建`)
 }
 
@@ -1104,25 +1104,5 @@ watch(
 
 .meeting-panel__breadcrumb {
   margin-bottom: 0;
-}
-
-/* 会议管理页 · 本地文件夹导入对话框 */
-.meeting-import {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5) var(--space-5);
-  min-width: min(32rem, calc(100vw - 3rem));
-}
-
-.meeting-import__hint {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.85rem;
-}
-
-.meeting-import__actions {
-  display: flex;
-  justify-content: flex-end;
 }
 </style>

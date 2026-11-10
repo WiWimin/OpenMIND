@@ -89,6 +89,7 @@ docker compose -f docker/compose.dev.yml up --build   # 需先启动 Docker Desk
 
 ## 分支与协作
 
+- **评审冻结期（2026-11 起，省赛准备期间）**：不创建/合并 PR、不 `git push` 推送到任何远程；只在本地分支 `git commit` 与优化（`fetch`/`pull` 只读同步允许）。解冻需用户显式指示。强制拦截见 `scripts/git-hooks/pre-push`（已通过 `git config core.hooksPath scripts/git-hooks` 启用），规则来源 `docs/collaboration-rules.md` 文首状态块与 §十。
 - 分支：`main`（稳定、可演示）、`develop`（日常集成分支）、`feature/*`（功能开发）、`fix/*`（缺陷修复）。
 - 提交信息采用 Conventional Commits，scope 使用模块号（如 `m00`）。
 - 详见 `CONTRIBUTING.md`。
