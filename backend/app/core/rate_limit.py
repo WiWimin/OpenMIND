@@ -29,6 +29,9 @@ _AI_PATH_MARKERS = (
     "/issues/extract",
     "/meeting-templates/generate",
 )
+# ASR 触发类接口（POST 才计数）：上传、实时分片、分片重试、整体重试。
+# 单独成组是因为分片间隔短（约 5s/片），套用 LLM 的 20/min 会误杀实时录音。
+_ASR_PATH_MARKER = "/audio"
 # 进程内限流豁免：探针与文档
 _SKIP_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
 
@@ -127,7 +130,7 @@ def enforce_login_rate_limit(request: Request, username: str) -> None:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """全局接口限流：登录组按 IP、AI 组按用户，其余默认按用户（回退 IP）。"""
+    """全局接口限流：登录组按 IP，AI/ASR 组按用户，其余默认按用户（回退 IP）。"""
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -164,6 +167,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         elif any(marker in path for marker in _AI_PATH_MARKERS):
             group = "ai"
             limit = settings.rate_limit_ai_per_minute
+            sub = token_subject(request)
+            key = f"user:{sub}" if sub else f"ip:{client_ip(request)}"
+        elif request.method == "POST" and _ASR_PATH_MARKER in path:
+            group = "asr"
+            limit = settings.rate_limit_asr_per_minute
             sub = token_subject(request)
             key = f"user:{sub}" if sub else f"ip:{client_ip(request)}"
         else:

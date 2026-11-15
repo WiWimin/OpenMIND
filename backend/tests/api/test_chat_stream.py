@@ -15,7 +15,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai import audit as audit_context
 from app.ai.chat import ChatService
+from app.ai.llm import LLMDelta
 from app.core import metrics
 from app.core.config import get_settings
 from app.core.exceptions import AppError
@@ -52,23 +54,29 @@ def _stream(
 
 
 class FakeLLM:
-    """流式 LLM 假实现：按序吐增量，可在第 N 个增量处抛错。"""
+    """流式 LLM 假实现：按序吐增量，可在第 N 个增量处抛错。
+
+    `deltas` 元素可以是正文字符串，或 `(kind, text)` 元组
+    （`kind="reasoning"` 模拟原生推理）。
+    """
 
     def __init__(
         self,
-        deltas: tuple[str, ...] = ("默认", "答案"),
+        deltas: tuple[str | tuple[str, str], ...] = ("默认", "答案"),
         *,
         error: AppError | None = None,
         error_at: int | None = None,
         usage: dict[str, int] | None = None,
     ) -> None:
         self.model = "fake-model"
+        self.api_base = "https://llm.test/v1"
         self.deltas = list(deltas)
         self.error = error
         self.error_at = 0 if (error is not None and error_at is None) else error_at
         self.usage = usage
+        self.thinking_seen: bool | None = None
 
-    async def astream_chat(
+    async def astream_chat_events(
         self,
         messages: list[dict[str, str]],
         *,
@@ -78,14 +86,21 @@ class FakeLLM:
         timeout_s: float | None = None,
         on_usage=None,
         scene: str | None = None,
+        thinking: bool = True,
     ):
-        for index, text in enumerate(self.deltas):
+        self.thinking_seen = thinking
+        for index, item in enumerate(self.deltas):
             if self.error is not None and index >= (self.error_at or 0):
                 raise self.error
-            yield text
+            if isinstance(item, tuple):
+                yield LLMDelta(item[1], item[0])  # type: ignore[arg-type]
+            else:
+                yield LLMDelta(item, "content")
         if self.error is not None and len(self.deltas) <= (self.error_at or 0):
             raise self.error
         if on_usage and self.usage:
+            # 与真实 LLMClient 一致：usage 先记入审计上下文，再回调调用方
+            audit_context.note_usage(self.usage, scene=scene)
             on_usage(self.usage)
 
 
@@ -213,6 +228,67 @@ def test_stream_metrics_recorded(
     assert "chat_stream_first_token_ms" in snapshot["windows"]
     assert snapshot["windows"]["chat_stream_first_token_ms"]["samples"] == 1
     assert snapshot["counters"].get("chat_stream_error_total") in (None, 0)
+
+
+# ============================ 思考过程（推理链） ============================
+
+
+def test_stream_emits_reasoning_and_trace(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reasoning 增量先于正文；done.answer 只含正文，trace 为真实步骤。"""
+    _install(
+        monkeypatch,
+        FakeLLM(deltas=(("reasoning", "先看资料里的排期。"), "结论", "如下")),
+        FakeRetriever([_chunk()]),
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _stream(client, headers, meeting["meeting_id"])
+
+    assert response.status_code == 200, response.text
+    events = _events(response.text)
+    assert [kind for kind, _ in events] == [
+        "meta",
+        "reasoning",
+        "delta",
+        "delta",
+        "done",
+    ]
+
+    meta = json.loads(events[0][1])
+    trace = meta["trace"]
+    assert [stage["id"] for stage in trace["stages"]] == [
+        "intent",
+        "retrieve",
+        "generate",
+    ]
+    assert trace["stages"][1]["detail"] == "命中 1 条相关片段"
+    # fake 模型不具备思考能力 → native_reasoning=false（前端据此提示）
+    assert trace["native_reasoning"] is False
+
+    assert json.loads(events[1][1])["text"] == "先看资料里的排期。"
+
+    done = json.loads(events[-1][1])
+    assert done["answer"] == "结论如下"
+    assert done["reasoning"] == "先看资料里的排期。"
+    assert isinstance(done["reasoning_ms"], int)
+
+
+def test_stream_thinking_off_reaches_llm(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """关闭思考开关：请求级 thinking=false 透传到 LLM。"""
+    llm = FakeLLM(deltas=("好",))
+    _install(monkeypatch, llm, FakeRetriever([_chunk()]))
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _stream(client, headers, meeting["meeting_id"], thinking=False)
+
+    assert response.status_code == 200, response.text
+    assert llm.thinking_seen is False
 
 
 # ============================ 证据不足拒答 ============================
@@ -356,3 +432,94 @@ def test_stream_cross_user_forbidden(client: TestClient) -> None:
     bob = _auth(client, "bob")
     response = _stream(client, bob, meeting["meeting_id"])
     assert response.status_code == 404
+
+
+# ============================ 审计：SSE 调用落库 ============================
+
+
+def _audit_rows(db_session) -> list:
+    from sqlalchemy import select
+
+    from app.models.ai_call_log import AICallLog
+
+    return list(db_session.execute(select(AICallLog)).scalars())
+
+
+def test_stream_success_writes_finalized_log(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session
+) -> None:
+    """成功流：预创建的 running 行被更新为 success（含终态时间与用量）。"""
+    _install(
+        monkeypatch,
+        FakeLLM(deltas=("你", "好"), usage={"input": 9, "output": 3}),
+        FakeRetriever([_chunk()]),
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    assert _stream(client, headers, meeting["meeting_id"]).status_code == 200
+
+    rows = _audit_rows(db_session)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.log_id.startswith("ail_")
+    assert row.scene == "chat"
+    assert row.purpose == "chat"  # scenes 注册表推导
+    assert row.transport == "sse"
+    assert row.status == "success"
+    assert row.error_code is None
+    assert row.finished_at is not None  # 运行态已收尾
+    assert row.input_tokens == 9 and row.output_tokens == 3
+    assert row.job_id is None  # 同步请求无任务关联
+    assert row.latency_ms >= 0
+
+    counters = metrics.snapshot()["counters"]
+    assert counters.get("ai_call_total") == 1
+    assert counters.get("ai_call_error_total") in (None, 0)
+
+
+def test_stream_preflight_error_writes_failed_log(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session
+) -> None:
+    """首增量前失败：普通 JSON 错误体之外，审计行必须落 failed。"""
+    timeout = AppError("MODEL_TIMEOUT", "模型服务超时", http_status=504, retryable=True)
+    _install(
+        monkeypatch,
+        FakeLLM(deltas=("不该出现",), error=timeout, error_at=0),
+        FakeRetriever([_chunk()]),
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _stream(client, headers, meeting["meeting_id"])
+
+    assert response.status_code == 504
+    rows = _audit_rows(db_session)
+    assert len(rows) == 1
+    assert rows[0].status == "failed"
+    assert rows[0].error_code == "MODEL_TIMEOUT"
+    assert rows[0].finished_at is not None
+
+
+def test_stream_midstream_error_writes_failed_log(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_session
+) -> None:
+    """首增量后失败：`event: error` 之外，审计行必须落 failed。"""
+    timeout = AppError("MODEL_TIMEOUT", "模型服务超时", http_status=504, retryable=True)
+    _install(
+        monkeypatch,
+        FakeLLM(deltas=("第一段",), error=timeout, error_at=1),
+        FakeRetriever([_chunk()]),
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _stream(client, headers, meeting["meeting_id"])
+
+    assert response.status_code == 200
+    assert "event: error" in response.text
+    rows = _audit_rows(db_session)
+    assert len(rows) == 1
+    assert rows[0].status == "failed"
+    assert rows[0].error_code == "MODEL_TIMEOUT"
+    assert rows[0].finished_at is not None

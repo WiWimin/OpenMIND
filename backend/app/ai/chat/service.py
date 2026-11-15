@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from app.ai.llm import LLMClient
+from app.ai.llm import LLMClient, LLMDelta
 from app.ai.prompts import build_chat, build_deliverable, build_web_chat
 from app.ai.structured import run_structured
 from app.ai.websearch import WebResult, web_search
@@ -83,6 +83,8 @@ class ChatPreparation:
     contexts: list[str]
     sources: list[Source]
     has_evidence: bool
+    # 多轮上下文：按角色组织的历史消息（{"role","content"}），供 build_chat 注入
+    history: list[dict[str, str]] = field(default_factory=list)
 
 
 class Retriever(Protocol):
@@ -93,8 +95,8 @@ class Retriever(Protocol):
         user_id: str,
         scope: str = "current_meeting",
         current_meeting_id: str | None = None,
-        top_k: int = 5,
-        min_score: float = 0.3,
+        top_k: int | None = None,
+        min_score: float | None = None,
     ) -> list[Any]: ...
 
 
@@ -112,7 +114,9 @@ class ChatService:
         current_meeting_id: str | None = None,
         records: list[RecordContext] | None = None,
         memory_context: str = "",
+        history: list[dict[str, str]] | None = None,
         mode: str = "plan",
+        allow_web: bool = True,
     ) -> ChatAnswer:
         prepared = self.prepare(
             question,
@@ -121,8 +125,15 @@ class ChatService:
             current_meeting_id=current_meeting_id,
             records=records,
             memory_context=memory_context,
+            history=history,
         )
         if not prepared.has_evidence:
+            if not allow_web:
+                return ChatAnswer(
+                    answer="根据现有材料无法确认该问题的答案。",
+                    sources=[],
+                    insufficient_evidence=True,
+                )
             return self._answer_with_web(question)
         contexts = prepared.contexts
         attachment: FileAttachment | None = None
@@ -137,6 +148,7 @@ class ChatService:
                         "question": question,
                         "contexts": contexts,
                         "memory_context": memory_context,
+                        "history": prepared.history,
                     }
                 ),
                 BuildDeliverable,
@@ -154,6 +166,7 @@ class ChatService:
                     "question": question,
                     "contexts": contexts,
                     "memory_context": memory_context,
+                    "history": prepared.history,
                 }
             )
             answer = self.llm.chat(messages, scene="chat").text
@@ -173,6 +186,7 @@ class ChatService:
         current_meeting_id: str | None = None,
         records: list[RecordContext] | None = None,
         memory_context: str = "",
+        history: list[dict[str, str]] | None = None,
     ) -> ChatPreparation:
         """同步完成检索与上下文收集（不含 LLM 调用），供流式回答复用。"""
         chunks = self.retriever.retrieve(
@@ -212,6 +226,7 @@ class ChatService:
             contexts=contexts,
             sources=sources,
             has_evidence=bool(chunks or record_context),
+            history=list(history or []),
         )
 
     async def answer_stream(
@@ -219,12 +234,14 @@ class ChatService:
         prepared: ChatPreparation,
         *,
         on_usage: Callable[[dict[str, int]], None] | None = None,
-    ) -> AsyncIterator[str]:
-        """流式回答：有证据 → `build_chat` 流式增量；错误原样上抛。
+        allow_web: bool = True,
+        thinking: bool = True,
+    ) -> AsyncIterator[LLMDelta]:
+        """流式回答：有证据 → `build_chat` 流式增量（reasoning + content）。
 
-        无证据 → 两段式联网补救：先取首个增量（失败回退拒答文案，
-        不留空气泡），成功后先 yield 联网提示语再续流；web 关闭/无结果
-        直接 yield 拒答文案。
+        无证据 → `allow_web=True` 时两段式联网补救；`allow_web=False`
+        直接 yield 拒答文案（Agent 层先走确认门，再决定是否联网）。
+        `thinking` 透传给 LLM：关闭时按模型能力不请求思考模式。
         """
         if prepared.has_evidence:
             messages = build_chat(
@@ -232,38 +249,54 @@ class ChatService:
                     "question": prepared.question,
                     "contexts": prepared.contexts,
                     "memory_context": prepared.memory_context,
+                    "history": prepared.history,
                 }
             )
-            async for delta in self.llm.astream_chat(
-                messages, on_usage=on_usage, scene="chat"
+            async for chunk in self.llm.astream_chat_events(
+                messages, on_usage=on_usage, scene="chat", thinking=thinking
             ):
-                yield delta
+                yield chunk
             return
 
         refusal = "根据现有材料无法确认该问题的答案。"
+        if not allow_web:
+            yield LLMDelta(refusal, "content")
+            return
         results: list[WebResult] = web_search(prepared.question)
         if not results:
-            yield refusal
+            yield LLMDelta(refusal, "content")
             return
         numbered = [
             {"title": item.title, "url": item.url, "snippet": item.snippet}
             for item in results
         ]
         messages = build_web_chat({"question": prepared.question, "sources": numbered})
-        stream = self.llm.astream_chat(messages, on_usage=on_usage, scene="chat")
+        stream = self.llm.astream_chat_events(
+            messages, on_usage=on_usage, scene="chat", thinking=thinking
+        )
+        notice_sent = False
+        content_seen = False
         try:
-            first = await stream.__anext__()
-        except StopAsyncIteration:
-            yield refusal
-            return
-        except Exception as exc:  # noqa: BLE001 — 首增量前失败回退拒答，绝不裸报错
+            async for chunk in stream:
+                # reasoning 先原样透传；`_WEB_NOTICE` 只拼到首个正文
+                if chunk.kind == "reasoning":
+                    yield chunk
+                    continue
+                content_seen = True
+                if not notice_sent:
+                    notice_sent = True
+                    yield LLMDelta(f"{_WEB_NOTICE}\n\n{chunk.text}", "content")
+                else:
+                    yield chunk
+        except Exception as exc:  # noqa: BLE001 — 正文前失败回退拒答，绝不裸报错
+            if content_seen:
+                raise
             logger.warning("联网流式回答失败，回退拒答：%s", type(exc).__name__)
             await stream.aclose()
-            yield refusal
+            yield LLMDelta(refusal, "content")
             return
-        yield f"{_WEB_NOTICE}\n\n{first}"
-        async for delta in stream:
-            yield delta
+        if not notice_sent:
+            yield LLMDelta(refusal, "content")
 
     def _answer_with_web(self, question: str) -> ChatAnswer:
         """资料无证据 → 两段式联网补救（答案层，不进入检索层）。

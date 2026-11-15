@@ -1,9 +1,12 @@
 """AI 调用审计上下文（`ai-design.md 3.11`）：用量/模型元数据的进程内传递。
 
 `ContextVar` 持有当前请求的可变 `AuditEvent`：服务层用
-`ai_audit_service.audit_call` 建立/清除上下文，`LLMClient` 在调用点把
+`ai_audit_service` 建立/清除上下文，`LLMClient` 在调用点把
 实际模型、降级来源与 usage 记入事件。上下文不存在时所有 note 为 no-op
 （probe、Judge 等未纳入审计的调用不受影响）。
+
+另有任务上下文（`bind_job`/`unbind_job`）：`task_runner.run_job` 绑定
+当前 `job_id`，审计预创建时读取以关联 `async_jobs`。
 
 只传数值与枚举标签，不接触提示词或用户内容（日志红线）。
 """
@@ -37,9 +40,14 @@ class AuditEvent:
     output_tokens: int = 0
     # 降级链切换的起点模型（未切换为 None）
     fallback_from: str | None = None
+    # 降级来源标签（none/global；user/scene/cross_provider 为后续预留）
+    fallback_scope: str = "none"
+    # 关联 async_jobs.job_id（由 task_runner 绑定；同步调用为 None）
+    job_id: str | None = None
     latency_ms: int = 0
     finished: bool = False
-    extra: dict[str, str] = field(default_factory=dict)
+    # 纯标签扩展（如 chain_len）；禁止提示词、用户原文与模型输出
+    meta: dict[str, str] = field(default_factory=dict)
 
 
 def begin(event: AuditEvent) -> Token:
@@ -48,12 +56,40 @@ def begin(event: AuditEvent) -> Token:
 
 
 def end(token: Token) -> None:
-    """恢复上一层上下文（允许嵌套审计）。"""
-    _current.reset(token)
+    """恢复上一层上下文（允许嵌套审计）。
+
+    跨上下文时 token 无法 reset（如 SSE 生成器在 Starlette 的子任务里
+    运行，Context 被复制、Token 仍属于原 Context）——此时退回置 None；
+    审计上下文不跨任务边界嵌套，语义等价。
+    """
+    try:
+        _current.reset(token)
+    except ValueError:
+        _current.set(None)
 
 
 def current() -> AuditEvent | None:
     return _current.get()
+
+
+# ---------------------------------------------------------------- 任务上下文
+
+# 后台任务执行器绑定的 job_id：审计预创建时读取，用于关联 async_jobs
+_job: ContextVar[str | None] = ContextVar("ai_audit_job_id", default=None)
+
+
+def bind_job(job_id: str) -> Token:
+    """绑定当前任务的 job_id（`task_runner.run_job` 调用，返回恢复用 token）。"""
+    return _job.set(job_id)
+
+
+def unbind_job(token: Token) -> None:
+    """解除任务绑定（必须与 `bind_job` 同上下文成对调用）。"""
+    _job.reset(token)
+
+
+def current_job_id() -> str | None:
+    return _job.get()
 
 
 def _matches(event: AuditEvent, scene: str | None) -> bool:
@@ -90,6 +126,15 @@ def note_fallback(from_model: str, *, scene: str | None = None) -> None:
         return
     if event.fallback_from is None and from_model:
         event.fallback_from = from_model
+
+
+def note_chain_len(length: int, *, scene: str | None = None) -> None:
+    """记录本次构造的候选链长度（>1 时写入 meta.chain_len）。"""
+    event = _current.get()
+    if event is None or not _matches(event, scene):
+        return
+    if length > 1:
+        event.meta["chain_len"] = str(length)
 
 
 def note_error(error_code: str, *, scene: str | None = None) -> None:

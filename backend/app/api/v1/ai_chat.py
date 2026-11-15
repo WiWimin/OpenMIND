@@ -11,6 +11,10 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
+from app.ai import audit
+from app.ai.chat.trace import build_chat_trace
+from app.ai.llm import LLMDelta
+from app.ai.llm.reasoning import reasoning_capable
 from app.api.deps import CurrentUser, DbSession
 from app.core import metrics
 from app.core.config import get_settings
@@ -24,7 +28,7 @@ from app.schemas.chat import (
     OrganizeResponse,
 )
 from app.schemas.common import Envelope
-from app.services import ai_chat_service
+from app.services import ai_audit_service, ai_chat_service
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +147,34 @@ async def chat_stream(
     usage: dict[str, int] = {}
     started = time.monotonic()
     stream = session.service.answer_stream(
-        session.prepared, on_usage=lambda value: usage.update(value)
+        session.prepared,
+        on_usage=lambda value: usage.update(value),
+        thinking=payload.thinking,
     )
+    # 审计预创建（running 行）：与同步问答同源，SSE 调用同样落 ai_call_logs。
+    # 上下文必须在事件循环线程建立（流增量的 usage 才能记入事件）；
+    # 写库放线程池，避免阻塞事件循环。
+    handle = ai_audit_service.begin_call(
+        user_id=current_user.user_id,
+        scene="chat",
+        model=session.model or "",
+        provider=audit.provider_host(
+            getattr(session.service.llm, "api_base", "") or ""
+        ),
+        transport="sse",
+    )
+    await run_in_threadpool(ai_audit_service.persist_start, db, handle)
+
+    async def _finish_audit(status: str, error_code: str | None = None) -> None:
+        """收尾（幂等）：结束上下文 + 独立会话写终态。"""
+        ai_audit_service.close_context(handle)
+        await run_in_threadpool(
+            ai_audit_service.finish_in_fresh_session,
+            handle,
+            status=status,
+            error_code=error_code,
+        )
+
     # 预取首增量：失败 → 普通 JSON 错误体（此时还没发响应头）
     try:
         first = await stream.__anext__()
@@ -153,6 +183,7 @@ async def chat_stream(
     except AppError as exc:
         await stream.aclose()
         metrics.inc_counter("chat_stream_error_total")
+        await _finish_audit(ai_audit_service.STATUS_FAILED, exc.error_code)
         return JSONResponse(
             status_code=exc.http_status,
             content=error_body(exc.error_code, exc.message, exc.retryable, exc.details),
@@ -161,12 +192,14 @@ async def chat_stream(
         await stream.aclose()
         logger.exception("流式问答首增量失败 meeting_id=%s", meeting_id)
         metrics.inc_counter("chat_stream_error_total")
+        await _finish_audit(ai_audit_service.STATUS_FAILED, "INTERNAL_ERROR")
         return JSONResponse(
             status_code=500, content=error_body("INTERNAL_ERROR", "未预期的服务端错误")
         )
     if first is None:
         await stream.aclose()
         metrics.inc_counter("chat_stream_error_total")
+        await _finish_audit(ai_audit_service.STATUS_FAILED, "MODEL_OUTPUT_INVALID")
         return JSONResponse(
             status_code=502, content=error_body("MODEL_OUTPUT_INVALID", "模型输出为空")
         )
@@ -176,80 +209,118 @@ async def chat_stream(
         "insufficient_evidence": not session.prepared.has_evidence,
         "sources": sources,
         "model": session.model,
+        # 真实执行步骤（理解 → 检索 → 生成）：供前端展示「推理链」，
+        # 模型原生推理由 event: reasoning 单独下发
+        "trace": build_chat_trace(
+            intent="chat",
+            scope=payload.context_scope.value,
+            hits=len(session.prepared.sources),
+            native=bool(
+                payload.thinking
+                and reasoning_capable(
+                    session.model or "",
+                    getattr(session.service.llm, "api_base", "") or "",
+                )
+            ),
+        ),
     }
 
     async def event_stream() -> AsyncIterator[str]:
-        metrics.inc_counter("chat_stream_total")
-        metrics.observe(
-            "chat_stream_first_token_ms", (time.monotonic() - started) * 1000
-        )
-        # meta 在首增量取得后才下发，字节顺序保持 meta → delta
-        yield _sse("meta", meta)
-        answer_parts = [first]
-        yield _sse("delta", {"text": first})
-        pending: asyncio.Task[str] | None = None
-        disconnected = False
+        # 审计终态初值：客户端断开 / GeneratorExit 都落 cancelled；
+        # 正常完成与失败路径在退出前显式覆盖
+        audit_status = ai_audit_service.STATUS_CANCELLED
+        audit_error = ai_audit_service.ERROR_CLIENT_DISCONNECTED
         try:
-            while True:
-                if await request.is_disconnected():
-                    logger.info("流式问答客户端断开 meeting_id=%s", meeting_id)
-                    disconnected = True
-                    break
-                if pending is None:
-                    pending = asyncio.ensure_future(stream.__anext__())
-                done, _ = await asyncio.wait(
-                    {pending}, timeout=heartbeat_s if heartbeat_s > 0 else None
-                )
-                if not done:  # 空闲超时 → 注释心跳，保持连接
-                    yield ": ping\n\n"
-                    continue
-                task, pending = pending, None
-                try:
-                    delta = task.result()
-                except StopAsyncIteration:
-                    break
-                except AppError as exc:
-                    metrics.inc_counter("chat_stream_error_total")
-                    yield _sse(
-                        "error",
-                        {
-                            "status": "error",
-                            "error_code": exc.error_code,
-                            "message": exc.message,
-                            "retryable": exc.retryable,
-                        },
+            metrics.inc_counter("chat_stream_total")
+            metrics.observe(
+                "chat_stream_first_token_ms", (time.monotonic() - started) * 1000
+            )
+            # meta 在首增量取得后才下发，字节顺序保持 meta → reasoning/delta
+            yield _sse("meta", meta)
+            answer_parts: list[str] = []
+            reasoning_parts: list[str] = []
+
+            def _emit(chunk: LLMDelta) -> str:
+                if chunk.kind == "reasoning":
+                    reasoning_parts.append(chunk.text)
+                    return _sse("reasoning", {"text": chunk.text})
+                answer_parts.append(chunk.text)
+                return _sse("delta", {"text": chunk.text})
+
+            yield _emit(first)
+            pending: asyncio.Task[LLMDelta] | None = None
+            disconnected = False
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        logger.info("流式问答客户端断开 meeting_id=%s", meeting_id)
+                        disconnected = True
+                        break
+                    if pending is None:
+                        pending = asyncio.ensure_future(stream.__anext__())
+                    done, _ = await asyncio.wait(
+                        {pending}, timeout=heartbeat_s if heartbeat_s > 0 else None
                     )
-                    return
-                except Exception:  # noqa: BLE001
-                    logger.exception("流式问答中途失败 meeting_id=%s", meeting_id)
-                    metrics.inc_counter("chat_stream_error_total")
-                    yield _sse(
-                        "error",
-                        {
-                            "status": "error",
-                            "error_code": "INTERNAL_ERROR",
-                            "message": "未预期的服务端错误",
-                            "retryable": True,
-                        },
-                    )
-                    return
-                answer_parts.append(delta)
-                yield _sse("delta", {"text": delta})
+                    if not done:  # 空闲超时 → 注释心跳，保持连接
+                        yield ": ping\n\n"
+                        continue
+                    task, pending = pending, None
+                    try:
+                        chunk = task.result()
+                    except StopAsyncIteration:
+                        audit_status = ai_audit_service.STATUS_SUCCESS
+                        audit_error = None
+                        break
+                    except AppError as exc:
+                        audit_status = ai_audit_service.STATUS_FAILED
+                        audit_error = exc.error_code
+                        metrics.inc_counter("chat_stream_error_total")
+                        yield _sse(
+                            "error",
+                            {
+                                "status": "error",
+                                "error_code": exc.error_code,
+                                "message": exc.message,
+                                "retryable": exc.retryable,
+                            },
+                        )
+                        return
+                    except Exception:  # noqa: BLE001
+                        logger.exception("流式问答中途失败 meeting_id=%s", meeting_id)
+                        audit_status = ai_audit_service.STATUS_FAILED
+                        audit_error = "INTERNAL_ERROR"
+                        metrics.inc_counter("chat_stream_error_total")
+                        yield _sse(
+                            "error",
+                            {
+                                "status": "error",
+                                "error_code": "INTERNAL_ERROR",
+                                "message": "未预期的服务端错误",
+                                "retryable": True,
+                            },
+                        )
+                        return
+                    yield _emit(chunk)
+            finally:
+                if pending is not None:
+                    pending.cancel()
+                    await asyncio.gather(pending, return_exceptions=True)
+                await stream.aclose()
+            if disconnected:
+                return  # 不写半条 assistant 消息
+            yield _sse(
+                "done",
+                {
+                    "answer": "".join(answer_parts),
+                    "reasoning": "".join(reasoning_parts),
+                    "reasoning_ms": int((time.monotonic() - started) * 1000),
+                    "usage": usage or None,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                },
+            )
         finally:
-            if pending is not None:
-                pending.cancel()
-                await asyncio.gather(pending, return_exceptions=True)
-            await stream.aclose()
-        if disconnected:
-            return  # 不写半条 assistant 消息
-        yield _sse(
-            "done",
-            {
-                "answer": "".join(answer_parts),
-                "usage": usage or None,
-                "latency_ms": int((time.monotonic() - started) * 1000),
-            },
-        )
+            # 审计收尾：成功 / 失败 / 断开三条路径统一在此落库（幂等）
+            await _finish_audit(audit_status, audit_error)
 
     return StreamingResponse(
         event_stream(),

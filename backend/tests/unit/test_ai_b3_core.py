@@ -90,6 +90,82 @@ def test_quota_hint_does_not_mask_context_length() -> None:
     assert error.error_code == "MODEL_INPUT_TOO_LONG"
 
 
+# --------------------- 状态码补全（P0） ---------------------
+
+
+def test_408_maps_to_model_timeout() -> None:
+    error = ai_errors.classify_error(_resp(408), service_label=SERVICE)
+    assert error.error_code == "MODEL_TIMEOUT"
+    assert error.http_status == 504
+    assert error.retryable is True
+
+
+def test_425_maps_to_rate_limited() -> None:
+    error = ai_errors.classify_error(_resp(425), service_label=SERVICE)
+    assert error.error_code == "RATE_LIMITED"
+    assert error.http_status == 429
+    assert error.retryable is True
+
+
+def test_409_maps_to_internal_error_with_conflict_reason() -> None:
+    """409 冲突不是配置问题，也不可盲目重传（非幂等调用会重复计费）。"""
+    error = ai_errors.classify_error(_resp(409), service_label=SERVICE)
+    assert error.error_code == "INTERNAL_ERROR"
+    assert error.retryable is False
+    assert error.details == {"reason": "conflict"}
+
+
+def test_404_maps_to_endpoint_not_found() -> None:
+    error = ai_errors.classify_error(_resp(404), service_label=SERVICE)
+    assert error.error_code == "MODEL_CONFIG_INVALID"
+    assert error.details == {"reason": "endpoint_not_found"}
+
+
+def test_404_with_model_not_found_body_keeps_model_reason() -> None:
+    """404 且错误体指名模型不存在时，保留更具体的 model_not_found。"""
+    response = _resp(404, {"error": {"code": "model_not_found"}})
+    error = ai_errors.classify_error(response, service_label=SERVICE)
+    assert error.details == {"reason": "model_not_found"}
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+def test_3xx_maps_to_unexpected_redirect(status: int) -> None:
+    """httpx 默认不跟随重定向：3xx 说明 api_base 指向了错误地址。"""
+    error = ai_errors.classify_error(_resp(status), service_label=SERVICE)
+    assert error.error_code == "MODEL_CONFIG_INVALID"
+    assert error.details == {"reason": "unexpected_redirect"}
+    assert error.retryable is False
+
+
+def test_error_type_field_used_when_code_absent() -> None:
+    """部分服务只在 `error.type` 里给细分原因（`code` 为空）。"""
+    response = _resp(
+        400, {"error": {"type": "context_length_exceeded", "message": "too long"}}
+    )
+    error = ai_errors.classify_error(response, service_label=SERVICE)
+    assert error.error_code == "MODEL_INPUT_TOO_LONG"
+
+
+def test_error_type_insufficient_quota_maps_to_quota() -> None:
+    response = _resp(400, {"error": {"type": "insufficient_quota"}})
+    error = ai_errors.classify_error(response, service_label=SERVICE)
+    assert error.error_code == "MODEL_QUOTA_EXCEEDED"
+    assert error.http_status == 402
+
+
+def test_truncated_and_filtered_error_helpers() -> None:
+    truncated = ai_errors.truncated_output_error()
+    assert truncated.error_code == "MODEL_OUTPUT_TRUNCATED"
+    assert truncated.http_status == 502
+    assert truncated.retryable is False
+    assert truncated.details == {"reason": "max_tokens"}
+
+    filtered = ai_errors.content_filtered_error()
+    assert filtered.error_code == "MODEL_CONTENT_FILTERED"
+    assert filtered.http_status == 422
+    assert filtered.retryable is False
+
+
 # ------------------------------- tokens.py -------------------------------
 
 

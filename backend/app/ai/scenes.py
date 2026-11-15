@@ -65,6 +65,17 @@ SCENES: dict[str, SceneSpec] = {
         timeout_s=30.0,
         input_token_limit=4_000,
     ),
+    # Agent 意图路由：确定性分类，温度 0 + 小输出 + 短超时；
+    # 失败/超时由调用方回退规则层，绝不阻断对话。
+    # `timeout_s` 仅为兜底默认值，实际调用点用 AGENT_INTENT_LLM_TIMEOUT_S 覆盖
+    "intent_router": SceneSpec(
+        "intent_router",
+        purpose=ModelPurpose.chat,
+        temperature=0.0,
+        max_tokens=200,
+        timeout_s=3.0,
+        input_token_limit=4_000,
+    ),
 }
 
 _DEFAULT_SCENE = SceneSpec("default")

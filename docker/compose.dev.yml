@@ -1,7 +1,80 @@
 name: openmind
 
+# 后端 API 与任务 worker 共享的环境变量（worker 只替换启动命令）。
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-development}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-openmind}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-openmind}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  METRICS_ENABLED: ${METRICS_ENABLED:-true}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  RATE_LIMIT_DEFAULT_PER_MINUTE: ${RATE_LIMIT_DEFAULT_PER_MINUTE:-120}
+  RATE_LIMIT_LOGIN_PER_MINUTE: ${RATE_LIMIT_LOGIN_PER_MINUTE:-10}
+  RATE_LIMIT_AI_PER_MINUTE: ${RATE_LIMIT_AI_PER_MINUTE:-20}
+  TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+  ASYNC_JOBS_ENABLED: ${ASYNC_JOBS_ENABLED:-true}
+  ASYNC_JOB_STALE_MINUTES: ${ASYNC_JOB_STALE_MINUTES:-30}
+  SSE_CHAT_ENABLED: ${SSE_CHAT_ENABLED:-true}
+  SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-15}
+  STORAGE_DIR: /storage
+  SECRET_KEY: ${SECRET_KEY:-change-me}
+  SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+  MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-20}
+  LLM_API_BASE: ${LLM_API_BASE:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-}
+  EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+  ASR_API_BASE: ${ASR_API_BASE:-}
+  ASR_API_KEY: ${ASR_API_KEY:-}
+  ASR_MODEL: ${ASR_MODEL:-}
+  ASR_TIMEOUT_S: ${ASR_TIMEOUT_S:-120}
+  ASR_CALL_DEADLINE_S: ${ASR_CALL_DEADLINE_S:-300}
+  ASR_FALLBACK_MODELS: ${ASR_FALLBACK_MODELS:-}
+  ASR_MAX_AUDIO_SECONDS: ${ASR_MAX_AUDIO_SECONDS:-3600}
+  AI_AUDIT_ASR_CHUNKS: ${AI_AUDIT_ASR_CHUNKS:-false}
+  AI_STREAM_INCLUDE_USAGE: ${AI_STREAM_INCLUDE_USAGE:-true}
+  RATE_LIMIT_ASR_PER_MINUTE: ${RATE_LIMIT_ASR_PER_MINUTE:-60}
+  ALLOW_GLOBAL_FALLBACK: ${ALLOW_GLOBAL_FALLBACK:-false}
+  ALLOW_PRIVATE_MODEL_ENDPOINTS: ${ALLOW_PRIVATE_MODEL_ENDPOINTS:-false}
+  RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE:-800}
+  RAG_CHUNK_OVERLAP: ${RAG_CHUNK_OVERLAP:-120}
+  RAG_TOP_K: ${RAG_TOP_K:-5}
+  RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.3}
+  RAG_JUDGE_ENABLED: ${RAG_JUDGE_ENABLED:-true}
+  RAG_JUDGE_MIN_SCORE: ${RAG_JUDGE_MIN_SCORE:-0.6}
+  RAG_JUDGE_TOP_CANDIDATES: ${RAG_JUDGE_TOP_CANDIDATES:-3}
+  RAG_JUDGE_MAX_EXCERPT_CHARS: ${RAG_JUDGE_MAX_EXCERPT_CHARS:-600}
+  RAG_VECTOR_BACKEND: ${RAG_VECTOR_BACKEND:-auto}
+  RAG_ANN_OVERSAMPLE: ${RAG_ANN_OVERSAMPLE:-4}
+  RAG_ANN_MAX_CANDIDATES: ${RAG_ANN_MAX_CANDIDATES:-200}
+  RAG_HNSW_EF_SEARCH: ${RAG_HNSW_EF_SEARCH:-40}
+  RAG_INCREMENTAL_INDEX_ENABLED: ${RAG_INCREMENTAL_INDEX_ENABLED:-true}
+  RAG_INDEX_FINGERPRINT_VERSION: ${RAG_INDEX_FINGERPRINT_VERSION:-1}
+  # Agent 框架（轻量工作流，不引入 LangGraph）
+  AGENT_ENABLED: ${AGENT_ENABLED:-true}
+  AGENT_INTENT_LLM_ENABLED: ${AGENT_INTENT_LLM_ENABLED:-true}
+  AGENT_INTENT_LLM_TIMEOUT_S: ${AGENT_INTENT_LLM_TIMEOUT_S:-3}
+  AGENT_AUTO_MINUTES_ENABLED: ${AGENT_AUTO_MINUTES_ENABLED:-true}
+  AGENT_AUTO_ACTION_ITEMS_ENABLED: ${AGENT_AUTO_ACTION_ITEMS_ENABLED:-false}
+  AGENT_PENDING_ACTION_TTL_MINUTES: ${AGENT_PENDING_ACTION_TTL_MINUTES:-60}
+  AGENT_SESSION_RETENTION_DAYS: ${AGENT_SESSION_RETENTION_DAYS:-90}
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-20}
+  AGENT_MAX_WALL_SECONDS: ${AGENT_MAX_WALL_SECONDS:-600}
+  WEB_SEARCH_REQUIRE_CONFIRMATION: ${WEB_SEARCH_REQUIRE_CONFIRMATION:-true}
+  # 持久化任务队列：worker 认领 DB 队列；API 进程不再用 BackgroundTasks 执行
+  JOB_WORKER_ENABLED: ${JOB_WORKER_ENABLED:-true}
+  JOB_WORKER_POLL_SECONDS: ${JOB_WORKER_POLL_SECONDS:-1}
+  JOB_WORKER_CONCURRENCY: ${JOB_WORKER_CONCURRENCY:-2}
+  JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
+
 services:
   db:
+    # pgvector 需 >= 0.5.0 才支持 HNSW（迁移 0029 建立 hnsw 索引）。
+    # 需要强复现时可 pin 具体版本 tag（如 pgvector/pgvector:0.8.0-pg16），
+    # 但必须先验证该 tag 可拉取，否则构建直接失败。
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
@@ -28,39 +101,39 @@ services:
     # 否则改了 backend/app/** 但进程仍跑启动时的旧代码（容器重启前不生效）
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-openmind}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-openmind}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
-      METRICS_ENABLED: ${METRICS_ENABLED:-true}
-      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
-      RATE_LIMIT_DEFAULT_PER_MINUTE: ${RATE_LIMIT_DEFAULT_PER_MINUTE:-120}
-      RATE_LIMIT_LOGIN_PER_MINUTE: ${RATE_LIMIT_LOGIN_PER_MINUTE:-10}
-      RATE_LIMIT_AI_PER_MINUTE: ${RATE_LIMIT_AI_PER_MINUTE:-20}
-      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
-      ASYNC_JOBS_ENABLED: ${ASYNC_JOBS_ENABLED:-true}
-      ASYNC_JOB_STALE_MINUTES: ${ASYNC_JOB_STALE_MINUTES:-30}
-      SSE_CHAT_ENABLED: ${SSE_CHAT_ENABLED:-true}
-      SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-15}
-      STORAGE_DIR: /storage
-      SECRET_KEY: ${SECRET_KEY:-change-me}
-      SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-20}
-      LLM_API_BASE: ${LLM_API_BASE:-}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-}
-      EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
-      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
-      ASR_API_BASE: ${ASR_API_BASE:-}
-      ASR_API_KEY: ${ASR_API_KEY:-}
-      ASR_MODEL: ${ASR_MODEL:-}
-      ALLOW_GLOBAL_FALLBACK: ${ALLOW_GLOBAL_FALLBACK:-false}
-      ALLOW_PRIVATE_MODEL_ENDPOINTS: ${ALLOW_PRIVATE_MODEL_ENDPOINTS:-false}
+    environment: *backend-env
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - ../backend:/app
+      - ../storage:/storage
+    # 健康检查走 /health（存活探针，不查库），避免数据库抖动拖垮容器状态
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 持久化任务队列 worker：DB 队列 + 线程池，无 Redis/Celery。
+  # 与 API 共享镜像与存储；API 侧 JOB_WORKER_ENABLED=true 时不再用 BackgroundTasks。
+  worker:
+    build:
+      context: ../backend
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment: *backend-env
     volumes:
       - ../backend:/app
       - ../storage:/storage
@@ -101,8 +174,22 @@ services:
     volumes:
       - ../frontend:/app
       - frontend_node_modules:/app/node_modules
+    # Node 22 自带 fetch，无需 curl/wget
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5173').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

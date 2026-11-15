@@ -6,13 +6,14 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.ai import audit, connection, resilience
+from app.ai.errors import content_filtered_error, truncated_output_error
 from app.ai.http_client import (
     BACKOFF_SECONDS,
     ModelHTTPClient,
@@ -21,6 +22,7 @@ from app.ai.http_client import (
     log_transport_warning,
 )
 from app.ai.llm.chain import configured_chain, should_fall_back
+from app.ai.llm.reasoning import extract_reasoning, thinking_payload
 from app.ai.retry import MAX_ATTEMPTS, RetryPolicy
 from app.ai.scenes import get_scene
 from app.ai.structured import normalize_json_text, validation_error_summary
@@ -38,6 +40,17 @@ class LLMResult:
     model: str
     usage: dict[str, int]
     latency_ms: int
+    # 服务商返回的收尾原因：None=未提供；length=输出被 max_tokens 截断；
+    # content_filter=内容被安全策略拦截。供调用方区分「截断」与「普通无效」。
+    finish_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class LLMDelta:
+    """流式增量：`reasoning` 为模型内部推理（思考过程），`content` 为正文。"""
+
+    text: str
+    kind: Literal["reasoning", "content"] = "content"
 
 
 class LLMClient(ModelHTTPClient):
@@ -97,6 +110,7 @@ class LLMClient(ModelHTTPClient):
         ensure_input_within_limit(messages, scene_limit=spec.input_token_limit)
 
         chain = configured_chain(model or self.model)
+        audit.note_chain_len(len(chain), scene=scene)
         last_error: AppError | None = None
         for index, candidate in enumerate(chain):
             payload: dict[str, Any] = {
@@ -149,7 +163,7 @@ class LLMClient(ModelHTTPClient):
             return result
         raise last_error or self._network_error()
 
-    async def astream_chat(
+    async def astream_chat_events(
         self,
         messages: list[dict[str, str]],
         *,
@@ -159,17 +173,19 @@ class LLMClient(ModelHTTPClient):
         timeout_s: float | None = None,
         on_usage: Callable[[dict[str, int]], None] | None = None,
         scene: str | None = None,
-    ) -> AsyncIterator[str]:
-        """流式对话（SSE）：逐段 yield `choices[0].delta.content`。
+        thinking: bool = True,
+    ) -> AsyncIterator[LLMDelta]:
+        """流式对话（SSE）：逐段 yield `LLMDelta`（reasoning / content）。
 
         - **首个增量前**允许 1 次退避重试，但按幂等性分级：`429/5xx/连接失败`
           可重试，`读超时/传输中断`（请求可能已被计费）**不重传**；
-        - **首增量后一律不重试**（已下发部分答案，重试会造成重复内容）；
+        - reasoning 或 content 任一已下发后一律不重试（重试会造成重复内容）；
         - 非 200 先读响应体再按统一错误映射；收到 `[DONE]` 结束；
-        - 无增量且无异常 → `MODEL_OUTPUT_INVALID`；
+        - 无正文且无异常 → `MODEL_OUTPUT_INVALID`（只出推理的流同样判空）；
         - `on_usage` 在收到 usage 分片时回调（终态分片可能无内容增量）；
         - 输入超限发送前拒绝；首增量前的模型级错误按 `LLM_FALLBACK_MODELS`
-          切换候选（同 sync `chat`）。
+          切换候选（同 sync `chat`）；
+        - `thinking=True` 时按模型能力注入思考开关（见 `ai/llm/reasoning.py`）。
         """
         self._ensure_configured()
         spec = get_scene(scene)
@@ -180,6 +196,7 @@ class LLMClient(ModelHTTPClient):
         ensure_input_within_limit(messages, scene_limit=spec.input_token_limit)
 
         chain = configured_chain(model or self.model)
+        audit.note_chain_len(len(chain), scene=scene)
         # 审计：usage 分片同时记入当前审计事件（无上下文时 no-op）
         original_on_usage = on_usage
 
@@ -199,12 +216,19 @@ class LLMClient(ModelHTTPClient):
                 "temperature": temperature,
                 "stream": True,
             }
+            # 思考模式开关：按模型/服务商识别，未识别不注入未知字段
+            payload.update(thinking_payload(resolved_model, self.api_base, thinking))
+            # 终态 usage 分片：OpenAI 兼容服务默认不下发，需显式声明；
+            # 部分兼容层不认 stream_options，可用 AI_STREAM_INCLUDE_USAGE=false 关闭
+            if get_settings().ai_stream_include_usage:
+                payload["stream_options"] = {"include_usage": True}
             if max_tokens is not None:
                 payload["max_tokens"] = max_tokens
             elif spec.max_tokens is not None:
                 payload["max_tokens"] = spec.max_tokens
 
-            emitted = False
+            emitted_any = False
+            yielded_content = False
             for attempt in range(2):
                 if attempt:
                     metrics.inc_counter("ai_retry_total")
@@ -213,16 +237,18 @@ class LLMClient(ModelHTTPClient):
                     async for delta in self._stream_once(
                         payload, resolved_model, timeout_s, on_usage=listener
                     ):
-                        emitted = True
+                        emitted_any = True
+                        if delta.kind == "content":
+                            yielded_content = True
                         yield delta
                 except AppError as exc:
                     last_error = exc
-                    if emitted or not self.retry_policy.allows(
+                    if emitted_any or not self.retry_policy.allows(
                         app_error_kind(exc), retryable=exc.retryable
                     ):
                         # 首增量前的模型级错误 → 尝试降级链下一个候选
                         if (
-                            not emitted
+                            not emitted_any
                             and candidate_index + 1 < len(chain)
                             and should_fall_back(exc)
                         ):
@@ -246,7 +272,7 @@ class LLMClient(ModelHTTPClient):
                         exc,
                     )
                     last_error = self._timeout_error()
-                    if emitted or not self.retry_policy.allows(kind, retryable=True):
+                    if emitted_any or not self.retry_policy.allows(kind, retryable=True):
                         raise last_error from None
                 except httpx.HTTPError as exc:
                     kind = classify_transport_error(exc)
@@ -257,12 +283,21 @@ class LLMClient(ModelHTTPClient):
                         exc,
                     )
                     last_error = self._network_error()
-                    if emitted or not self.retry_policy.allows(kind, retryable=True):
+                    if emitted_any or not self.retry_policy.allows(kind, retryable=True):
                         raise last_error from None
                 else:
-                    if emitted:
+                    if yielded_content:
                         logger.info("LLM 流式调用成功 model=%s", resolved_model)
                         return
+                    if emitted_any:
+                        # 只收到推理、没有任何正文：等同空输出（推理已下发，不重试）
+                        last_error = AppError(
+                            "MODEL_OUTPUT_INVALID",
+                            "模型输出为空",
+                            http_status=502,
+                            retryable=False,
+                        )
+                        raise last_error
                     last_error = AppError(
                         "MODEL_OUTPUT_INVALID",
                         "模型输出为空",
@@ -276,6 +311,35 @@ class LLMClient(ModelHTTPClient):
             # 内层 break（降级切换）落到此处，进入下一个候选
         raise last_error or self._network_error()
 
+    async def astream_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        timeout_s: float | None = None,
+        on_usage: Callable[[dict[str, int]], None] | None = None,
+        scene: str | None = None,
+        thinking: bool = True,
+    ) -> AsyncIterator[str]:
+        """兼容包装：只 yield 正文增量（丢弃 reasoning）。
+
+        需要思考过程的调用方（问答 SSE）使用 `astream_chat_events`。
+        """
+        async for chunk in self.astream_chat_events(
+            messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+            on_usage=on_usage,
+            scene=scene,
+            thinking=thinking,
+        ):
+            if chunk.kind == "content":
+                yield chunk.text
+
     async def _stream_once(
         self,
         payload: dict[str, Any],
@@ -283,8 +347,8 @@ class LLMClient(ModelHTTPClient):
         timeout_s: float,
         *,
         on_usage: Callable[[dict[str, int]], None] | None,
-    ) -> AsyncIterator[str]:
-        """单次流式请求：解析 SSE `data:` 行并 yield 内容增量。
+    ) -> AsyncIterator[LLMDelta]:
+        """单次流式请求：解析 SSE `data:` 行并 yield reasoning / content 增量。
 
         客户端来自 `app/ai/connection.py` 的异步池（按事件循环 + api_base 复用），
         注入 transport（测试）时按次新建并随 `async with` 关闭。
@@ -310,7 +374,7 @@ class LLMClient(ModelHTTPClient):
         timeout_s: float,
         *,
         on_usage: Callable[[dict[str, int]], None] | None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[LLMDelta]:
         """单次流请求体：非 200 先读响应体再按统一错误映射。
 
         与同步路径共用并发闸门与熔断（`app/ai/resilience.py`）：
@@ -340,6 +404,9 @@ class LLMClient(ModelHTTPClient):
                 details={"scope": "concurrency"},
             )
         completed = False
+        yielded_content = False
+        reasoning_chars = 0
+        reasoning_truncated = False
         try:
             async with client.stream(
                 "POST",
@@ -380,9 +447,35 @@ class LLMClient(ModelHTTPClient):
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
-                    delta = (choices[0].get("delta") or {}).get("content")
-                    if delta:
-                        yield delta
+                    finish_reason = choices[0].get("finish_reason")
+                    delta_obj = choices[0].get("delta") or {}
+                    if finish_reason == "content_filter" and not yielded_content:
+                        # 尚未下发正文：可安全中断，避免客户端收到半截答案
+                        raise content_filtered_error()
+                    reasoning = extract_reasoning(delta_obj)
+                    if reasoning:
+                        cap = get_settings().ai_reasoning_max_chars
+                        if cap > 0:
+                            piece = reasoning
+                            if reasoning_chars >= cap:
+                                piece = ""
+                            elif reasoning_chars + len(reasoning) > cap:
+                                piece = reasoning[: cap - reasoning_chars]
+                            if piece:
+                                reasoning_chars += len(piece)
+                                yield LLMDelta(piece, "reasoning")
+                            if len(piece) < len(reasoning) and not reasoning_truncated:
+                                reasoning_truncated = True
+                                yield LLMDelta("\n…（推理内容已按上限截断）", "reasoning")
+                        else:
+                            yield LLMDelta(reasoning, "reasoning")
+                    content = delta_obj.get("content")
+                    if isinstance(content, str) and content:
+                        yielded_content = True
+                        yield LLMDelta(content, "content")
+                    if finish_reason == "length":
+                        # 内容已下发，不能再改写响应；只留告警供排障
+                        logger.warning("LLM 流式输出被 max_tokens 截断 model=%s", model)
                 # 流正常读完但未见 [DONE]：同样视为 provider 正常响应
                 completed = True
         except GeneratorExit:
@@ -478,11 +571,30 @@ class LLMClient(ModelHTTPClient):
     ) -> BaseModel:
         kwargs.setdefault("response_format", {"type": "json_object"})
         result = self.chat(messages, model=model, **kwargs)
-        # 解析预处理：剥离 markdown 围栏、截取括号范围，再做 schema 校验
+        if result.finish_reason == "length":
+            # 截断已被结构补齐救回时仍要留痕，避免「看似完整实则缺尾」被忽略
+            logger.warning(
+                "LLM 结构化输出被 max_tokens 截断 scene=%s",
+                kwargs.get("scene") or "-",
+            )
+        # 解析预处理：剥离 markdown 围栏、截取括号范围、补齐截断结构，再做 schema 校验
         raw = normalize_json_text(result.text)
         try:
             return schema.model_validate_json(raw)
         except ValidationError as exc:
+            # 输出被 max_tokens 截断：结构化内容必然残缺，区分于「格式错误」，
+            # 且不再发起修复重试（同一预算重跑只会再次截断）
+            if result.finish_reason == "length":
+                raise AppError(
+                    "MODEL_OUTPUT_TRUNCATED",
+                    "模型输出被截断，请增大输出上限或精简输入",
+                    http_status=502,
+                    retryable=False,
+                    details={
+                        "reason": "max_tokens",
+                        "validation": validation_error_summary(exc),
+                    },
+                ) from None
             raise AppError(
                 "MODEL_OUTPUT_INVALID",
                 "模型输出无法解析",
@@ -514,8 +626,14 @@ class LLMClient(ModelHTTPClient):
         choices = data.get("choices") or []
         if not choices:
             raise AppError("MODEL_OUTPUT_INVALID", "模型输出为空", http_status=502, retryable=False)
+        finish_reason = choices[0].get("finish_reason")
+        if finish_reason == "content_filter":
+            raise content_filtered_error()
         content = (choices[0].get("message") or {}).get("content")
         if not content:
+            # 有截断标记却没有任何内容：区别于「模型输出为空」，指向 max_tokens 预算
+            if finish_reason == "length":
+                raise truncated_output_error()
             raise AppError("MODEL_OUTPUT_INVALID", "模型输出为空", http_status=502, retryable=False)
         usage = data.get("usage") or {}
         result = LLMResult(
@@ -526,7 +644,14 @@ class LLMClient(ModelHTTPClient):
                 "output": int(usage.get("completion_tokens") or 0),
             },
             latency_ms=elapsed_ms,
+            finish_reason=finish_reason,
         )
+        if finish_reason == "length":
+            logger.warning(
+                "LLM 输出被 max_tokens 截断 model=%s latency_ms=%d",
+                result.model,
+                elapsed_ms,
+            )
         logger.info(
             "LLM 调用成功 model=%s latency_ms=%d usage=%s",
             result.model,

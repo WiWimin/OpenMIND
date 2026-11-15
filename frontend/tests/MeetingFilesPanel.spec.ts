@@ -6,6 +6,7 @@ import * as materialsApi from '@/api/materials'
 import * as minutesApi from '@/api/minutes'
 import * as recordsApi from '@/api/records'
 import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
+import { recordFileName } from '@/utils/meetingFiles'
 
 vi.mock('@/api/materials', () => ({ listMaterials: vi.fn() }))
 vi.mock('@/api/audio', () => ({ listAudio: vi.fn() }))
@@ -55,8 +56,12 @@ describe('MeetingFilesPanel', () => {
     expect(wrapper.findAll('.file-group').length).toBe(0)
     expect(wrapper.find('.file-explorer').exists()).toBe(true)
 
-    // 保存后的会议记录以 .md 文件条目混排进同一列表
-    expect(wrapper.text()).toContain('会议记录_2026-10-29 09:24:00.md')
+    // 保存后的会议记录以 .md 文件条目混排进同一列表。
+    // 文件名由生产侧命名函数生成（本地时区），断言不能写死时刻，否则 CI（UTC）会差 8 小时
+    expect(wrapper.text()).toContain(
+      recordFileName({ record_id: 'rec_1', created_at: '2026-10-29T09:24:00+08:00' }),
+    )
+    expect(wrapper.text()).toMatch(/会议记录_\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.md/)
   })
 
   it('previews a saved record inline', async () => {

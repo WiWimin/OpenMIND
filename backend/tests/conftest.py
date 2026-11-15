@@ -20,6 +20,8 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 # 异步长任务默认关闭：绝大多数用例断言同步语义（201/200）；
 # 异步行为由 tests/api/test_jobs.py 显式开启（monkeypatch + 缓存清理）
 os.environ.setdefault("ASYNC_JOBS_ENABLED", "false")
+# 单测/接口测试不启动独立 worker：任务仍由 TestClient 的 BackgroundTasks 执行
+os.environ.setdefault("JOB_WORKER_ENABLED", "false")
 
 import app.models  # noqa: F401  在 Base.metadata 上注册 ORM 模型
 from app.db.base import Base
@@ -143,14 +145,18 @@ def client(db_engine: Engine) -> Iterator[TestClient]:
 
     app.dependency_overrides[get_db] = override_get_db
     # 后台任务（含启动回收）用独立会话：替换为测试内存库的 sessionmaker，
-    # 必须在进入 TestClient（触发 lifespan）之前设置
-    from app.services import task_runner
+    # 必须在进入 TestClient（触发 lifespan）之前设置；
+    # AI 审计的独立会话（SSE 收尾 / 启动回收）同理
+    from app.services import ai_audit_service, task_runner
 
     original_factory = task_runner.session_factory
     task_runner.session_factory = testing_session
+    original_audit_factory = ai_audit_service.session_factory
+    ai_audit_service.session_factory = testing_session
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         task_runner.session_factory = original_factory
+        ai_audit_service.session_factory = original_audit_factory
         app.dependency_overrides.clear()

@@ -53,6 +53,7 @@ def rate_limited_settings(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
     monkeypatch.setenv("RATE_LIMIT_LOGIN_PER_MINUTE", "3")
     monkeypatch.setenv("RATE_LIMIT_AI_PER_MINUTE", "2")
+    monkeypatch.setenv("RATE_LIMIT_ASR_PER_MINUTE", "1")
     monkeypatch.setenv("RATE_LIMIT_DEFAULT_PER_MINUTE", "4")
     get_settings.cache_clear()
     get_limiter().reset()
@@ -116,3 +117,25 @@ def test_rate_limit_disabled_by_default_config(client) -> None:
     """conftest 默认关闭：密集请求不触发 429。"""
     statuses = [client.get("/api/v1/auth/me").status_code for _ in range(30)]
     assert 429 not in statuses
+
+
+def test_asr_endpoints_use_dedicated_group(client, rate_limited_settings) -> None:
+    """ASR 触发类 POST 单独成组：阈值与 LLM 分开，且带 group 便于排障。"""
+    url = "/api/v1/audio/aud_x/retry"
+
+    first = client.post(url)  # 未鉴权 → 401，但已计入 asr 组
+    assert first.status_code == 401
+
+    blocked = client.post(url)
+    assert blocked.status_code == 429
+    body = blocked.json()
+    assert body["error_code"] == "RATE_LIMITED"
+    assert body["details"]["group"] == "asr"
+
+
+def test_asr_group_not_consumed_by_read_requests(
+    client, rate_limited_settings
+) -> None:
+    """GET 音频详情不触发转写，不应占用 ASR 配额（asr 组阈值为 1）。"""
+    for _ in range(3):
+        assert client.get("/api/v1/audio/aud_x").status_code == 401

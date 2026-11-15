@@ -8,3 +8,5 @@ venv/
 .ruff_cache/
 .env
 storage/
+tests/
+*.log

@@ -2,6 +2,8 @@
 
 四段流程：解析预处理 → schema 校验 + 业务字段校验 → 修复重试 → 统一报错与日志。
 
+- 解析预处理包含**截断修复**（`repair_truncated_json`）：模型因 `max_tokens` 截断而
+  未闭合的字符串/括号，按结构确定性补齐或裁掉末尾残值，不额外发起请求；
 - 修复重试仅 1 次（首次 + 1 次重试），仍失败时按 `on_failure` 抛 `MODEL_OUTPUT_INVALID`
   或返回 `None` 由调用方降级（见 `docs/ai-design.md 3.3`）。
 - 日志只记录场景、尝试次数与校验错误摘要（字段路径 + 规则说明），
@@ -30,15 +32,21 @@ MAX_ATTEMPTS = 2
 _MAX_REPORTED_ERRORS = 5
 # 单条错误摘要长度上限，避免日志与修复提示膨胀
 _MAX_ERROR_CHARS = 160
+# 截断修复的回退步数上限：每步裁到最近的结构边界，防止在碎片上空转
+_MAX_REPAIR_STEPS = 8
+# 结构化管线内「重跑不改变请求语义」的输出错误：
+# 截断要改预算、内容过滤是策略拦截，都不进修复重试
+_FATAL_OUTPUT_CODES = frozenset({"MODEL_OUTPUT_TRUNCATED", "MODEL_CONTENT_FILTERED"})
 
 
-def normalize_json_text(raw: str) -> str:
-    """解析预处理：剥离 markdown 代码块围栏，整体非 JSON 时截取首尾括号范围。"""
-    text = (raw or "").strip()
+def _strip_fence(text: str) -> str:
+    text = text.strip()
     text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
-    text = re.sub(r"\s*```$", "", text).strip()
-    if _is_json(text):
-        return text
+    return re.sub(r"\s*```$", "", text).strip()
+
+
+def _slice_span(text: str) -> str:
+    """整体非 JSON 时截取首尾括号范围；无括号时原样返回。"""
     starts = [index for index in (text.find("{"), text.find("[")) if index != -1]
     ends = [index for index in (text.rfind("}"), text.rfind("]")) if index != -1]
     if starts and ends:
@@ -46,6 +54,80 @@ def normalize_json_text(raw: str) -> str:
         if end > start:
             return text[start : end + 1]
     return text
+
+
+def _scan_state(text: str) -> tuple[list[str], bool, int]:
+    """单趟扫描：返回未闭合的括号栈、是否停在字符串内、该字符串的开引号下标。"""
+    stack: list[str] = []
+    in_string = False
+    escape = False
+    string_start = -1
+    for index, char in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            string_start = index
+        elif char in "{[":
+            stack.append(char)
+        elif char in "}]" and stack:
+            stack.pop()
+    return stack, in_string, string_start
+
+
+def repair_truncated_json(text: str) -> str:
+    """修复被截断的 JSON（未闭合的字符串/括号），返回修复结果或原文。
+
+    只做**确定性**的结构补齐：先裁掉悬空的未闭合字符串与末尾逗号，
+    再按栈补 `]`/`}`；补完仍解析失败则回退到最近的结构边界重试。
+    不猜测缺失的字段值——猜错比失败更危险。修复后仍非法时返回原文，
+    交由常规校验流程报 `MODEL_OUTPUT_INVALID`。
+    """
+    if not text:
+        return text
+    stack, in_string, string_start = _scan_state(text)
+    if not stack and not in_string:
+        return text  # 结构完整，失败与截断无关
+    work = text[:string_start] if in_string and string_start >= 0 else text
+    for _ in range(_MAX_REPAIR_STEPS):
+        candidate = work.rstrip()
+        if candidate.endswith(","):
+            candidate = candidate[:-1].rstrip()
+        stack, in_string, string_start = _scan_state(candidate)
+        if in_string:
+            if string_start < 0:
+                return text
+            work = candidate[:string_start]
+            continue
+        repaired = candidate + "".join(
+            "]" if opener == "[" else "}" for opener in reversed(stack)
+        )
+        if _is_json(repaired):
+            return repaired
+        cut = max(candidate.rfind(","), candidate.rfind("{"), candidate.rfind("["))
+        if cut < 0:
+            break
+        work = candidate[:cut]
+    return text
+
+
+def normalize_json_text(raw: str) -> str:
+    """解析预处理：剥离 markdown 代码块围栏，截取首尾括号范围，必要时修复截断。"""
+    text = _strip_fence(raw or "")
+    if _is_json(text):
+        return text
+    sliced = _slice_span(text)
+    for candidate in (sliced, text):
+        repaired = repair_truncated_json(candidate)
+        if repaired is not candidate and _is_json(repaired):
+            return repaired
+    return sliced
 
 
 def _is_json(text: str) -> bool:
@@ -167,6 +249,17 @@ def run_structured(
         try:
             outcome = fetch(current)
         except AppError as exc:
+            # 截断/内容过滤：同一预算重跑不会改善，不消耗修复重试，
+            # 直接按 on_failure 决定降级还是上抛（错误码原样保留给调用方）
+            if exc.error_code in _FATAL_OUTPUT_CODES:
+                if on_failure == "degrade":
+                    logger.warning(
+                        "结构化输出被截断或过滤，按降级处理 scene=%s error_code=%s",
+                        scene,
+                        exc.error_code,
+                    )
+                    return None
+                raise
             # 仅 schema 校验失败（带 validation 详情）进入修复重试；
             # 配置/超时/传输层错误不重试，直接上抛
             if exc.error_code != "MODEL_OUTPUT_INVALID" or "validation" not in (

@@ -352,3 +352,107 @@ def test_list_models_invalid_json_raises_model_output_invalid() -> None:
         _client(handler).list_models()
 
     assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"
+
+
+# ---------------- finish_reason：截断与内容过滤（P0） ----------------
+
+
+def _finish_response(
+    request: httpx.Request, *, content: str, finish_reason: str | None
+) -> httpx.Response:
+    choice: dict = {"message": {"content": content}}
+    if finish_reason is not None:
+        choice["finish_reason"] = finish_reason
+    body = {
+        "model": "test-model",
+        "choices": [choice],
+        "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+    }
+    return httpx.Response(200, json=body, request=request)
+
+
+def test_chat_exposes_finish_reason() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content="完整", finish_reason="stop")
+
+    result = _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert result.finish_reason == "stop"
+
+
+def test_chat_without_finish_reason_field_is_none() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _ok_response(request)
+
+    result = _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert result.finish_reason is None
+
+
+def test_chat_truncated_empty_content_raises_truncated() -> None:
+    """有截断标记却无内容：区别于「模型输出为空」，指向 max_tokens 预算。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content="", finish_reason="length")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_TRUNCATED"
+    assert exc_info.value.http_status == 502
+    assert exc_info.value.retryable is False
+    assert exc_info.value.details == {"reason": "max_tokens"}
+
+
+def test_chat_content_filter_raises_filtered() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content="", finish_reason="content_filter")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_CONTENT_FILTERED"
+    assert exc_info.value.http_status == 422
+    assert exc_info.value.retryable is False
+
+
+def test_chat_json_salvages_truncated_json_without_error() -> None:
+    """缺右括号的截断输出：结构补齐后正常返回，不误判为失败。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(
+            request, content='{"answer": "部分内容"', finish_reason="length"
+        )
+
+    value = _client(handler).chat_json(
+        [{"role": "user", "content": "x"}], schema=_Echo, scene="unit_salvage"
+    )
+
+    assert value.answer == "部分内容"
+
+
+def test_chat_json_truncated_beyond_repair_raises_truncated() -> None:
+    """截断导致 schema 校验失败 → MODEL_OUTPUT_TRUNCATED，不进修复重试。"""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _finish_response(request, content='{"answer"', finish_reason="length")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat_json(
+            [{"role": "user", "content": "x"}], schema=_Echo, scene="unit_trunc"
+        )
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_TRUNCATED"
+    assert calls["n"] == 1  # 同预算重跑不会改善，不重试
+
+
+def test_chat_json_schema_failure_without_truncation_stays_output_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content='{"answer": 1', finish_reason="stop")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat_json([{"role": "user", "content": "x"}], schema=_Echo)
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"

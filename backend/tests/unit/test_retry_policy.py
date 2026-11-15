@@ -200,15 +200,15 @@ def test_idempotent_client_retries_read_timeout() -> None:
     assert len(calls) == 3
 
 
-def test_default_policy_has_no_deadline_for_asr() -> None:
-    """ASR 单次 120s：不设全局 deadline（否则首轮即被 90s 预算截断）。"""
+def test_asr_policy_uses_own_deadline() -> None:
+    """ASR 单次 120s + 独立 300s 总预算，不借用 LLM 的 90s deadline。"""
     from app.ai.transcription import TranscriptionClient
 
     client = TranscriptionClient(
         api_base=API_BASE, api_key="k", model="asr", transport=httpx.MockTransport(None)
     )
     assert client.idempotent is False
-    assert client.retry_policy.deadline_s is None
+    assert client.retry_policy.deadline_s == 300.0
     assert client.retry_policy.retry_ambiguous is False
 
 
