@@ -35,8 +35,8 @@ OpenMIND 是面向**个人参会者**的「AI 会议个人助理」Web 应用，
 > 详版（分层边界、数据流、关键约定）见 [`docs/architecture.md`](docs/architecture.md)。
 
 - **分层与边界**：Vue 3 SPA（仅展示与交互，不直连数据库）→ FastAPI `/api/v1`（JWT 鉴权、统一错误体、依赖注入）→ `services/`（业务规则与个人数据隔离）→ `app/ai/` 能力层（LLM、Embedding、RAG、Prompt、结构化输出；只产出候选，不决定业务状态）→ PostgreSQL + pgvector（数据）与 `storage/`（文件）。
-- **RAG 写入**：材料解析（PDF/DOCX/TXT）→ 按 800 字符 / 120 重叠切分 → 1024 维向量化 → 写入 `document_chunks` / `knowledge_chunks`（`vector(1024)`，重解析先删旧分块）。
-- **RAG 检索**：SQL 按 `user_id` 权限下推 → 余弦相似度 top5（`min_score=0.3`）→ 低分带相关性 Judge（top1 < 0.6 交 LLM 复核，不可用回退分数判定）→ 组装上下文与 Prompt → LLM 生成回答 + 来源标注；材料与记录全无证据才触发两段式联网补救。
+- **RAG 写入**：材料解析（PDF/DOCX/TXT）→ 按 `RAG_CHUNK_SIZE`/`RAG_CHUNK_OVERLAP`（默认 800 字符 / 120 重叠）切分 → 1024 维向量化 → 写入 `document_chunks` / `knowledge_chunks`（`vector(1024)`，重解析先删旧分块）。**增量索引**：同用户、同库内（会议材料 / 知识库各自独立）命中同内容（`content_hash`）+ 同索引指纹（`index_fingerprint`）的已索引记录时直接复制分块，跳过解析与向量化，零重复 Embedding 消耗。
+- **RAG 检索**：SQL 按 `user_id` 权限下推 → 向量近邻排序（PostgreSQL 走 pgvector **HNSW** 索引，`RAG_VECTOR_BACKEND=auto`；测试/回滚走应用层余弦）→ top5（`min_score=0.3`，`RAG_ANN_OVERSAMPLE` 过采样补偿过滤召回）→ 低分带相关性 Judge（top1 < 0.6 交 LLM 复核，不可用回退分数判定）→ 组装上下文与 Prompt → LLM 生成回答 + 来源标注；材料与记录全无证据才触发两段式联网补救。
 - **质量护栏**：结构化输出统一走「解析预处理 → schema + 业务字段校验 → 1 次修复重试 → 统一报错/降级 + 规范日志」管线；外部模板与用户补充只注入 user 消息段（防提示词注入），用户画像注入 ≤500 字符截断（见 `docs/ai-design.md` 3.3/七）。
 
 ## 4. 项目目录
@@ -125,7 +125,15 @@ cp docker/.env.example docker/.env          # Windows: copy docker\.env.example 
 | `STORAGE_DIR` / `MAX_UPLOAD_MB` | 文件存储目录与上传大小上限 | `./storage` / `20` |
 | `LLM_*` / `EMBEDDING_*` | 服务端全局模型配置；默认仅供显式开启回退时使用 | `https://api.example.com/v1` 等 |
 | `ALLOW_GLOBAL_FALLBACK` | 是否允许未配置 BYOK 的用户回退到服务端全局配置；默认 `false` | `false` |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | 分块大小与重叠；改动后存量分块指纹失效，须 `python scripts/reindex_all.py` 重建 | `800` / `120` |
+| `RAG_TOP_K` / `RAG_MIN_SCORE` | 检索条数与相似度阈值（知识库检索 API 缺省时同此值） | `5` / `0.3` |
 | `RAG_JUDGE_ENABLED` / `RAG_JUDGE_MIN_SCORE` | RAG 低分带相关性 Judge 开关与触发阈值（top1 低于阈值时交 LLM 复核） | `true` / `0.6` |
+| `RAG_JUDGE_TOP_CANDIDATES` / `RAG_JUDGE_MAX_EXCERPT_CHARS` | Judge 复核的候选条数与单条截断长度 | `3` / `600` |
+| `RAG_VECTOR_BACKEND` | 向量检索后端：`auto`（PG→pgvector HNSW / SQLite→应用层）、`python`（强制应用层，回滚开关）、`pgvector`（强制 SQL ANN） | `auto` |
+| `RAG_ANN_OVERSAMPLE` / `RAG_ANN_MAX_CANDIDATES` | ANN 过采样倍数与取回上限（HNSW + 权限过滤会损失召回） | `4` / `200` |
+| `RAG_HNSW_EF_SEARCH` | HNSW 查询期 `ef_search`；`<=0` 不设置 | `40` |
+| `RAG_INCREMENTAL_INDEX_ENABLED` | 增量索引：同用户同库内复用同内容文件的分块，跳过解析与向量化 | `true` |
+| `RAG_INDEX_FINGERPRINT_VERSION` | 索引指纹版本，分块算法变更时递增使存量分块整体失效 | `1` |
 | `RAG_ALERT_TOTAL_MS_P95` / `RAG_ALERT_CANDIDATE_ROWS_P95` / `RAG_ALERT_COOLDOWN_S` | 检索性能 P95 告警阈值与冷却（超阈值打 `logger.error` 告警行；`<=0` 关闭，见 `docs/api.md 1.8`） | `3000` / `5000` / `60` |
 | `WEB_SEARCH_ENABLED` / `WEB_SEARCH_PROVIDER` | 答案层两段式联网补救（仅资料与记录全无证据时触发，不进检索层） | `true` / `bing` |
 | `ASR_*` / `FUNASR_*` | 音频转写：外部 OpenAI 兼容 ASR 与本地 FunASR 参数 | 见 `docker/.env.example` |
@@ -152,6 +160,9 @@ docker compose -f docker/compose.dev.yml up -d --build
 
 # 3) 首次启动或数据库结构变更后执行迁移
 docker compose -f docker/compose.dev.yml exec backend alembic upgrade head
+
+# 4) 调整过 RAG_* 参数（分块/Embedding 模型）后，重建存量向量索引
+docker compose -f docker/compose.dev.yml exec backend python scripts/reindex_all.py
 ```
 
 本地原生开发（不经过容器；数据库仍用 Docker 启动）：
@@ -295,10 +306,10 @@ main（阶段验收通过后）
 - FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
 - 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
 - `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 421 个用例、`ruff check` 均通过。
+- pytest 全量用例（`cd backend && pytest`）与 `ruff check` 均通过。
 
 **数据与基础设施**
-- PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline` 至 `0022_audio_segments`（共 22 个）已在容器内执行并通过校验。
+- PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline` 至 `0029_rag_hnsw` 已在容器内执行并通过校验（含 `0028` 增量索引字段与 `0029` HNSW 向量索引）。
 - `docker/compose.dev.yml` 三服务（`db` / `backend` / `frontend`），含 `db` 健康检查与命名卷持久化。
 - `scripts/verify-db.ps1` / `.sh` 数据库全链路校验（5 项，失败即非零退出）。
 
@@ -319,6 +330,7 @@ main（阶段验收通过后）
 - 会前准备、会中记录与问答、纪要、行动项、个人任务；未解决问题（后端 API 与 AI 提取保留，前端 UI 已按产品决策移除）。
 - 纪要模板与富文本编辑、DOCX 导出、记录重点/决议/疑问标记；会议模板管理（内置/自定义模板、AI 生成草稿，注入会前准备与纪要生成）。
 - 两段式联网补救与 Build 模式文件产出：材料与记录全无证据才联网作答（标注来源与「仅供参考」）；Build 模式直接产出 Markdown 文件（可下载/保存为会议资料）。
+- RAG 检索与索引优化（D-39）：增量索引（同用户同库内复用同内容文件的分块，零重复 Embedding 消耗）、HNSW 向量索引下沉 PostgreSQL（`RAG_VECTOR_BACKEND=auto`，应用层余弦可回滚）、分块/阈值/Judge/ANN 全参数环境变量化（`RAG_*`）。
 - 按用途模型路由、用户记忆中心、个人知识库、本地会议工作区。
 - AI 提示词安全与输出质量（D-28~D-30）：外部模板与用户补充只注入 user 消息段（system 置中立防御句，防提示词注入）；用户画像注入 ≤500 字符截断；结构化输出管线（解析预处理 → schema + 业务字段校验 → 1 次修复重试 → 统一报错/降级 + 规范日志，不记录提示词与模型原文）。
 - RAG 可观测性（D-31）：Judge 判定埋点（true/false/fallback 占比）、检索 sql/embed/similarity/total 分段计时与候选行数窗口、`GET /api/v1/metrics` 暴露 P50/P95、`RAG_ALERT_*` 阈值告警日志。
@@ -326,8 +338,8 @@ main（阶段验收通过后）
 - 后端 API 测试、前端组件测试与 Playwright 浏览器 E2E。
 
 **明确尚未实现 / 待验证（非 MVP 范围）**
-- 会议完整历史记录的语义检索：转写/会议记录不入向量库，问答仅附带当前会议最近 20 条、合计 ≤8000 字符记录上下文（D-23；用户侧能力边界见 `docs/user-guide.md`）。
-- 向量近邻索引与重排序：当前为应用层余弦全算，HNSW/IVFFlat 与 rerank 待数据量确定（`docs/database.md 六`）。
+- 会议完整历史记录的语义检索：转写/会议记录不入向量库，问答先在当前会议**最近 20 条**记录中按问题做词面相关性筛选（取相关 top5、合计 ≤4000 字符）作为辅助上下文（D-23/D-44；用户侧能力边界见 `docs/user-guide.md`）。
+- ~~向量近邻索引与重排序~~：HNSW 近邻索引已实现（D-39，`docs/database.md 六`）；rerank（重排序）仍待数据量确定。
 - 外部 ASR 服务可按原配置接入；本地 FunASR 已在 CPU 上完成真实转写与浏览器 E2E。实时流式 ASR 未纳入。
 - 本地 FunASR 服务无鉴权，只应本地/内网使用；模型权重许可需按模型页面确认。
 - 本地目录授权与真实读写需按人工验收清单执行。
@@ -353,7 +365,7 @@ main（阶段验收通过后）
 > 面向使用者的完整说明见 [docs/user-guide.md](docs/user-guide.md)。以下为必须知晓的三条核心声明：
 
 1. **会议转写记录不进入向量库**：ASR 转写与确认生成的会议记录不参与语义检索（不写入向量库）。
-2. **问答仅提供最近有限条记录上下文**：回答时附带当前会议**最近 20 条、合计 ≤8000 字符**的记录片段，超出部分不参与本次回答；完整历史记录检索尚未实现（见 `docs/design-baseline.md` D-23）。
+2. **问答只提供相关度有限的记录上下文**：回答时先在当前会议**最近 20 条**记录中按问题做相关性筛选（bigram 覆盖率 ≥0.3，取相关 top5、合计 ≤4000 字符）作为辅助上下文，无关记录不参与本次回答；完整历史记录检索尚未实现（见 `docs/design-baseline.md` D-23/D-44）。
 3. **语义检索来源仅为会议材料与个人知识库**（知识库须显式选择范围，不与会议内容混检）；材料不足时明确拒答而非编造，完全无证据才触发联网补救并标注来源。
 
 ## 团队与协作
