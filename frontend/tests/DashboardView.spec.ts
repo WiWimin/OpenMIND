@@ -54,6 +54,7 @@ const task: PersonalTask = {
   action_id: 'act_1',
   title: '整理周会议程',
   status: 'todo',
+  priority: 'medium',
   due_date: null,
   created_at: '2026-10-01T09:00:00+08:00',
   updated_at: '2026-10-01T09:00:00+08:00',
@@ -117,7 +118,7 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('OpenMIND 智能会议助手')
     expect(wrapper.text()).toContain('基于 AI 的会议纪要、日程与任务协作平台')
     expect(wrapper.find('.home__summary').text()).toMatch(/今天有\s+1\s+场会议和\s+4\s+项待办任务/)
-    expect(wrapper.find('img.home__mascot').exists()).toBe(true)
+    expect(wrapper.find('.home__hero-bg').exists()).toBe(true)
 
     const panels = wrapper.findAll('.home__panel')
     expect(panels).toHaveLength(2)

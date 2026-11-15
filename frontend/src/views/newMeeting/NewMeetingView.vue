@@ -129,7 +129,7 @@ const stages = computed<StageCard[]>(() => {
       key: 'minutes',
       label: '会后智能处理',
       description: '基于会议内容自动生成纪要与行动项',
-      features: ['生成会议纪要', '生成会议摘要', '提取待办任务'],
+      features: ['生成会议纪要', '提取待办任务', '梳理未解决问题'],
       tone: 'amber',
       iconPaths: [
         'M6 3.5h12A1.5 1.5 0 0 1 19.5 5v14A1.5 1.5 0 0 1 18 20.5H6A1.5 1.5 0 0 1 4.5 19V5A1.5 1.5 0 0 1 6 3.5Z',

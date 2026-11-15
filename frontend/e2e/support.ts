@@ -186,9 +186,8 @@ export async function openMeeting(page: Page, title: string): Promise<string> {
     await page.goto(`/meetings?meeting=${flowMeetingId}`)
   } else {
     await page.goto('/meetings')
-    // 会议默认按会议名建文件夹：先进同名文件夹，再点会议行
-    await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(title)}`) }).first().click()
-    await page.getByRole('button', { name: title, exact: true }).first().click()
+    // 双栏新布局：右栏会议卡片直接点开（左栏树负责分类导航）
+    await page.locator('.meeting-card').filter({ hasText: title }).first().click()
   }
 
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
@@ -220,9 +219,9 @@ export async function openStage(page: Page, stage: StageName, meetingId: string)
  */
 export async function openImportPanel(page: Page, title: string): Promise<void> {
   await page.goto('/meetings')
-  await page.getByRole('button', { name: new RegExp(`^${escapeRegExp(title)}`) }).first().click()
-  const row = page.locator('.meeting-row').filter({ hasText: title })
-  await row.getByRole('button', { name: '导入', exact: true }).click()
+  await page.locator('.meeting-card').filter({ hasText: title }).first().click()
+  // 注意：「导入资料 · {title}」弹窗在当前代码中已无挂载点（LocalWorkspacePanel 孤立），
+  // 此助手为预存待修项，与本次双栏改版无关。
   await expect(page.getByRole('dialog', { name: `导入资料 · ${title}` })).toBeVisible()
 }
 

@@ -38,8 +38,8 @@ describe('NewMeetingView', () => {
     expect(wrapper.text()).toContain('标记会议重点')
 
     expect(wrapper.text()).toContain('生成会议纪要')
-    expect(wrapper.text()).toContain('生成会议摘要')
     expect(wrapper.text()).toContain('提取待办任务')
+    expect(wrapper.text()).toContain('梳理未解决问题')
 
     // 整张卡片即链接，无独立进入按钮
     expect(wrapper.findAll('a.stage-card')).toHaveLength(3)

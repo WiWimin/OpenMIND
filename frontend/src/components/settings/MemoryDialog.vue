@@ -33,10 +33,18 @@
         <ErrorMessage v-if="formError" :error="formError" />
 
         <div class="memory-form__actions">
-          <AppButton variant="ghost" :disabled="saving" @click="confirmClearOpen = true">
+          <AppButton
+            v-if="!stepper"
+            variant="ghost"
+            :disabled="saving"
+            @click="confirmClearOpen = true"
+          >
             清除记忆
           </AppButton>
           <AppButton type="submit" :loading="saving">保存记忆</AppButton>
+          <AppButton v-if="stepper" type="button" :disabled="saving" @click="emit('next')">
+            下一步
+          </AppButton>
         </div>
 
         <p v-if="updatedAt" class="memory-form__updated">上次更新：{{ updatedAt }}</p>
@@ -72,8 +80,11 @@ import { useToast } from '@/composables/useToast'
 import type { UserMemory } from '@/types/memory'
 import { formatDateTime } from '@/utils/datetime'
 
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const props = withDefaults(
+  defineProps<{ open: boolean; /** 首次引导模式：隐藏清除记忆，追加「下一步」进入下一环节 */ stepper?: boolean }>(),
+  { stepper: false },
+)
+const emit = defineEmits<{ close: []; next: [] }>()
 
 const toast = useToast()
 const loading = ref(false)

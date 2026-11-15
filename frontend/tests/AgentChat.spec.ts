@@ -167,6 +167,31 @@ describe('AgentChat', () => {
     expect(wrapper.text()).toContain('整理结果')
   })
 
+  it('routes quick text tasks through onQuickTask with the selected text', async () => {
+    const onQuickTask = vi.fn().mockResolvedValue({ content: '压缩结果' })
+    const onSend = vi.fn()
+    const { wrapper } = mountChat({
+      onQuickTask,
+      onSend,
+      contextText: '这是一段需要压缩的冗长转写内容。',
+      quickActions: [{ label: '精简选中', prompt: '', quickTask: 'condense' }],
+    })
+    await wrapper.findAll('button').find((button) => button.text().includes('精简选中'))?.trigger('click')
+    expect(wrapper.find('.agent-task-chip').exists()).toBe(true)
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // quickTask 走专用通道，不能退回普通对话
+    expect(onQuickTask).toHaveBeenCalledWith(
+      'condense',
+      '这是一段需要压缩的冗长转写内容。',
+      expect.any(AbortSignal),
+    )
+    expect(onSend).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('压缩结果')
+  })
+
   it('removes the task chip via the remove button', async () => {
     const onTask = vi.fn()
     const { wrapper } = mountChat({
@@ -222,11 +247,11 @@ describe('AgentChat', () => {
     const vm = wrapper.vm as unknown as {
       setPendingQuickAction: (action: { label: string; prompt: string }) => void
     }
-    vm.setPendingQuickAction({ label: '会议摘要', prompt: '请生成会前准备摘要与准备清单。' })
+    vm.setPendingQuickAction({ label: '会前速览', prompt: '请生成会前准备摘要与准备清单。' })
     await flushPromises()
 
     expect(wrapper.find('.agent-task-chip').exists()).toBe(true)
-    expect(wrapper.text()).toContain('#会议摘要')
+    expect(wrapper.text()).toContain('#会前速览')
 
     await wrapper.get('#agent-chat-input').setValue('重点列时间安排')
     await wrapper.get('form').trigger('submit')
@@ -238,7 +263,7 @@ describe('AgentChat', () => {
       expect.any(AbortSignal),
     )
     expect(onTask).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('#会议摘要 重点列时间安排')
+    expect(wrapper.text()).toContain('#会前速览 重点列时间安排')
   })
 
   it('sends the designed prompt alone when the prompt-mode chip has no typed text', async () => {

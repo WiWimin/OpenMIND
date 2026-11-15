@@ -97,3 +97,19 @@ export function categoryNameOf(categoryId: string | null): string | null {
   }
   return loadCategories().find((category) => category.id === categoryId)?.name ?? null
 }
+
+/** 重命名分类（保持 id 不变，已有会议归属映射不受影响） */
+export function renameCategory(categoryId: string, name: string): MeetingCategory | null {
+  const trimmed = name.trim()
+  if (!trimmed) {
+    return null
+  }
+  const list = loadCategories()
+  const target = list.find((category) => category.id === categoryId)
+  if (!target) {
+    return null
+  }
+  target.name = trimmed
+  saveCategories(list)
+  return target
+}

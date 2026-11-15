@@ -61,6 +61,7 @@
       <div class="preprocess__chatwrap">
         <AgentChat
           ref="chatRef"
+          v-model:thinking="thinking"
           class="preprocess__chat"
           agent-name="杂乱文档，先规整再入库"
           mascot-size="8rem"
@@ -69,8 +70,12 @@
           :show-welcome="false"
           :on-send="handleSend"
           :on-send-stream="handleSend"
+          :backend-session="agentEnabled && !!meetingId"
+          agent-scene="preprocess"
+          :agent-options="agentOptions"
           :disabled="!meetingId"
           placeholder="输入补充要求或调整议程…"
+          @agent-result="onAgentResult"
         >
           <!-- 输入框内：模式 / 模型 / 模板选择 -->
           <template #composer-extra>
@@ -92,9 +97,10 @@
           <template #composer-below>
             <button
               v-for="bubble in quickBubbles"
-              :key="bubble.label"
+              :key="bubble.key"
               type="button"
               class="preprocess-bubble"
+              :title="bubble.rationale"
               :disabled="!meetingId"
               @click="applyBubble(bubble)"
             >
@@ -128,7 +134,9 @@ import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
-import type { AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
+import { agentEnabled } from '@/config/flags'
+import { PREPROCESS_QUICK_ACTIONS, type QuickActionSpec } from '@/config/quickActions'
+import type { AgentReply, AgentResultEvent, AgentSource, AgentStreamHandlers, AgentTurnOptions } from '@/types/agent'
 import type { ChatMode, ChatPayload, ChatResult, ChatSource } from '@/types/chat'
 import type { MaterialUploadError, MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
@@ -154,65 +162,27 @@ const routeTemplateId = String(route.query.templateId ?? '')
 if (routeTemplateId) {
   selectedTemplateId.value = routeTemplateId
 }
-const chatMode = ref<ChatMode>('build')
+const chatMode = ref<ChatMode>('plan')
+/** 思考过程（推理链）开关：默认开启，可按次关闭（关闭后不请求思考模式） */
+const thinking = ref(true)
+
+/** 后端 Agent 单轮执行选项：页面选择随消息透传，后端按意图消费 */
+const agentOptions = computed<AgentTurnOptions>(() => ({
+  model: selectedModel.value || undefined,
+  template_id: selectedTemplateId.value || undefined,
+  mode: chatMode.value,
+  context_scope: 'current_meeting',
+  include_sources: true,
+  // 会前速览/清单只读本场资料，不读取用户历史会议资料
+  include_history: false,
+  include_materials: true,
+}))
 
 const uploading = ref(false)
 const uploadError = ref<MaterialUploadError | null>(null)
 const materialsKey = ref(0)
 
-interface QuickBubble {
-  label: string
-  prompt: string
-  icon: string
-}
-
-const ICON_SUMMARY =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none"><path d="M5 5.5h14M5 10h14M5 14.5h9M5 19h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
-const ICON_AGENDA =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none"><path d="M5 5.5h14v15H5zM5 10h14M9 3v4M15 3v4M8.5 14h4M8.5 17h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-const ICON_SPEECH =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none"><path d="M12 3.5a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3ZM6.5 11.5v.5a5.5 5.5 0 0 0 11 0v-.5M12 17.5V21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
-const ICON_SEARCH =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none"><path d="M10.8 17.6a6.8 6.8 0 1 0 0-13.6 6.8 6.8 0 0 0 0 13.6ZM16 16l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
-const ICON_RISK =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none"><path d="M12 3.8 21 19.5H3L12 3.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9.5v4.2M12 16.6v.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
-const ICON_CHECKLIST =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none"><path d="M4.5 4.5h15v15h-15zM8 12l2.2 2.2L16 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-
-const quickBubbles: QuickBubble[] = [
-  {
-    label: '会议摘要',
-    prompt: '请生成会前准备摘要与准备清单。',
-    icon: ICON_SUMMARY,
-  },
-  {
-    label: '会议议程',
-    prompt: '请基于已上传资料，生成一份结构清晰的会议议程，包含时间分配与讨论重点。',
-    icon: ICON_AGENDA,
-  },
-  {
-    label: '发言稿',
-    prompt: '请基于已上传资料，为本次会议写一段开场发言稿，语气自然、重点清晰。',
-    icon: ICON_SPEECH,
-  },
-  {
-    label: '检索资料',
-    prompt: '请检索会议资料，总结其中的关键信息，并给出对应来源。',
-    icon: ICON_SEARCH,
-  },
-  {
-    label: '议题与风险',
-    prompt: '请阅读已上传的会议资料，提炼本次会议的核心议题、风险点和待确认事项。',
-    icon: ICON_RISK,
-  },
-  {
-    label: '准备清单',
-    prompt: '请生成会前准备清单：梳理需要准备的材料、需要确认的信息和参会人需要提前了解的内容。',
-    icon: ICON_CHECKLIST,
-  },
-]
-
-const preparationIntent = /准备稿|准备清单|会前摘要|生成会前准备/
+const quickBubbles: QuickActionSpec[] = PREPROCESS_QUICK_ACTIONS
 
 watch(meetingId, () => {
   lastPreparation.value = null
@@ -244,9 +214,16 @@ function excerpt(text: string, limit = 220): string {
   return normalized.length > limit ? `${normalized.slice(0, limit)}…` : normalized
 }
 
-function applyBubble(bubble: QuickBubble): void {
-  // 挂载快捷功能标记：发送时自动组合设计好的完整提示词与用户补充
-  chatRef.value?.setPendingQuickAction({ label: bubble.label, prompt: bubble.prompt })
+function applyBubble(bubble: QuickActionSpec): void {
+  // 挂载注册表动作：发送时透传 intent/mode/task，由后端按通道执行
+  chatRef.value?.setPendingQuickAction({
+    label: bubble.label,
+    prompt: bubble.prompt,
+    intent: bubble.intent,
+    mode: bubble.mode,
+    task: bubble.task,
+    quickTask: bubble.quickTask,
+  })
 }
 
 function onSelectModel(model: string): void {
@@ -289,6 +266,7 @@ function buildAskReply(result: ChatResult): AgentReply {
     content: result.answer,
     file: result.file ?? undefined,
     sources: mapSources(result.sources),
+    reasoning: result.reasoning,
     note:
       result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
         ? '证据不足，回答仅供参考。'
@@ -306,39 +284,15 @@ async function handleSend(
   }
 
   const model = selectedModel.value || undefined
-  const templateId = selectedTemplateId.value || undefined
 
   try {
-    if (preparationIntent.test(text)) {
-      const preparation = await preparationsApi.generatePreparation(
-        meetingId.value,
-        {
-          include_history: true,
-          user_goal: text,
-          model,
-          template_id: templateId,
-        },
-        signal,
-      )
-      lastPreparation.value = preparation
-      const checklist = preparation.checklist.length
-        ? preparation.checklist.map((item) => `- ${item}`).join('\n')
-        : '- 暂无准备清单'
-      return {
-        content: `## 会前摘要\n\n${preparation.summary}\n\n## 准备清单\n\n${checklist}\n\n> 已生成会前准备草稿，可在左侧确认并保存。`,
-        note:
-          preparation.status === 'confirmed'
-            ? '准备稿已确认。'
-            : '草稿已生成，确认后会作为会中与纪要阶段的上下文。',
-      }
-    }
-
     const payload: ChatPayload = {
       question: text,
       context_scope: 'current_meeting',
       include_sources: true,
       model,
       mode: chatMode.value,
+      thinking: thinking.value,
     }
     // Build 模式走同步（流式端点仅支持 plan，api.md 5.7a）；否则走 SSE 增量
     if (!stream || chatMode.value === 'build') {
@@ -348,8 +302,9 @@ async function handleSend(
       meetingId.value,
       payload,
       {
-        onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources)),
+        onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources), meta.trace),
         onDelta: stream.onDelta,
+        onReasoning: stream.onReasoning,
       },
       signal,
     )
@@ -357,6 +312,14 @@ async function handleSend(
   } catch (caught) {
     throw new Error(resolveErrorMessage(caught, 'Agent 处理失败，请稍后重试。'))
   }
+}
+
+/** 后端 Agent 业务结果：会前准备草稿就地刷新左侧确认卡 */
+function onAgentResult(event: AgentResultEvent): void {
+  if (event.intent.intent !== 'prepare' || !event.result) {
+    return
+  }
+  lastPreparation.value = event.result as Preparation
 }
 
 async function savePreparation(): Promise<void> {

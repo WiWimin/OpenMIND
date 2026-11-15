@@ -1,6 +1,12 @@
 <template>
   <div class="rich-editor">
-    <label class="rich-editor__label" :for="id">{{ label }}</label>
+    <label
+      class="rich-editor__label"
+      :class="{ 'rich-editor__label--hidden': variant === 'document' }"
+      :for="id"
+    >
+      {{ label }}
+    </label>
     <div
       v-if="editor && editable !== false"
       class="rich-editor__toolbar"
@@ -99,18 +105,14 @@
           @input="onColorChange"
         />
       </label>
-      <label class="rich-editor__image" :class="{ 'rich-editor__image--disabled': !editor.isEditable }">
-        <span aria-hidden="true">图片</span>
-        <input
-          type="file"
-          accept="image/*"
-          class="rich-editor__image-input"
-          :disabled="!editor.isEditable"
-          @change="onImageChange"
-        />
-      </label>
+      <div class="rich-editor__end"><slot name="toolbar-end" /></div>
     </div>
-    <EditorContent :id="id" class="rich-editor__content" :editor="editor" />
+    <EditorContent
+      :id="id"
+      class="rich-editor__content"
+      :class="{ 'rich-editor__content--document': variant === 'document' }"
+      :editor="editor"
+    />
   </div>
 </template>
 
@@ -121,7 +123,6 @@ import StarterKit from '@tiptap/starter-kit'
 import Color from '@tiptap/extension-color'
 import FontFamily from '@tiptap/extension-font-family'
 import Highlight from '@tiptap/extension-highlight'
-import Image from '@tiptap/extension-image'
 import { TextStyle } from '@tiptap/extension-text-style'
 
 const props = withDefaults(
@@ -131,8 +132,13 @@ const props = withDefaults(
     label: string
     placeholder?: string
     editable?: boolean
+    /** document：文档纸张样式（隐藏字段标签，正文居中成页，供纪要文档编辑使用） */
+    variant?: 'default' | 'document'
   }>(),
-  { editable: true },
+  {
+    editable: true,
+    variant: 'default',
+  },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -171,7 +177,7 @@ function toHtml(content: string): string {
 }
 
 const editor = new Editor({
-  extensions: [StarterKit, Color, TextStyle, FontFamily, Highlight, Image],
+  extensions: [StarterKit, Color, TextStyle, FontFamily, Highlight],
   content: toHtml(props.modelValue),
   editable: props.editable !== false,
   onUpdate: () => {
@@ -193,23 +199,6 @@ function onColorChange(event: Event): void {
   const value = (event.target as HTMLInputElement).value
   currentColor.value = value
   editor.chain().focus().setColor(value).run()
-}
-
-function onImageChange(event: Event): void {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file || !editor.isEditable) {
-    return
-  }
-  const reader = new FileReader()
-  reader.onload = () => {
-    const src = String(reader.result ?? '')
-    if (src) {
-      editor.chain().focus().setImage({ src, alt: file.name }).run()
-    }
-  }
-  reader.readAsDataURL(file)
 }
 
 watch(
@@ -245,6 +234,19 @@ onBeforeUnmount(() => {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-foreground);
+}
+
+/* document 变体：文件名已在抽屉头部展示，标签仅保留给读屏 */
+.rich-editor__label--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .rich-editor__toolbar {
@@ -297,8 +299,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.rich-editor__color,
-.rich-editor__image {
+.rich-editor__color {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -312,8 +313,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.rich-editor__color:hover,
-.rich-editor__image:hover {
+.rich-editor__color:hover {
   color: var(--color-foreground);
   border-color: var(--color-border-strong);
 }
@@ -327,16 +327,15 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.rich-editor__image-input {
-  display: none;
+/* 工具栏右侧操作位（保存 / 确认 / 导出等） */
+.rich-editor__end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
-.rich-editor__image--disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.rich-editor__content :deep(.rich-editor__content) {
+.rich-editor__content {
   min-height: 12rem;
   padding: var(--space-3);
   background: #ffffff;
@@ -347,9 +346,34 @@ onBeforeUnmount(() => {
   overflow-y: auto;
 }
 
+/* document 变体：灰底工作区 + 居中白纸页（Word 文档风格） */
+.rich-editor__content--document {
+  min-height: 0;
+  padding: var(--space-4) var(--space-3) var(--space-6);
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .rich-editor__content :deep(.ProseMirror) {
   min-height: 10rem;
   outline: none;
+}
+
+.rich-editor__content--document :deep(.ProseMirror) {
+  max-width: 46rem;
+  min-height: 58vh;
+  margin: 0 auto;
+  padding: 2.75rem 3.25rem;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  font-size: 1rem;
+  line-height: 1.8;
 }
 
 .rich-editor__content :deep(.ProseMirror p) {
@@ -370,12 +394,6 @@ onBeforeUnmount(() => {
 .rich-editor__content :deep(.ProseMirror ol) {
   padding-left: 1.25rem;
   margin: 0 0 0.5em;
-}
-
-.rich-editor__content :deep(.ProseMirror img) {
-  max-width: 100%;
-  height: auto;
-  border-radius: var(--radius-sm);
 }
 
 .rich-editor__content :deep(.ProseMirror mark) {

@@ -41,6 +41,10 @@ const meetings: Meeting[] = [
     topic: '里程碑与分工',
     meeting_time: '2026-10-18T10:00:00+08:00',
     status: 'scheduled',
+    has_minutes: true,
+    material_count: 3,
+    record_count: 2,
+    audio_count: 1,
     created_at: '2026-10-01T09:00:00+08:00',
     updated_at: '2026-10-10T09:00:00+08:00',
     archived_at: null,
@@ -68,6 +72,18 @@ function mountView() {
   return mount(MeetingManageView)
 }
 
+/** 预置一个分类「周会」，mtg_1 归入其中 */
+function seedCategory(): void {
+  window.localStorage.setItem(
+    'openmind.meeting.categories',
+    JSON.stringify([{ id: 'cat_1', name: '周会', createdAt: '2026-10-01T00:00:00Z' }]),
+  )
+  window.localStorage.setItem(
+    'openmind.meeting.categoryMap',
+    JSON.stringify({ mtg_1: 'cat_1' }),
+  )
+}
+
 describe('MeetingManageView', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -80,48 +96,42 @@ describe('MeetingManageView', () => {
     vi.mocked(recordsApi.listRecords).mockResolvedValue(listOf([]))
   })
 
-  it('renders category folders with uncategorized meetings hidden until entered', async () => {
+  it('renders the folder tree beside the meeting card list', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('会议列表')
-    const folderNames = wrapper.findAll('.folder-row__name').map((node) => node.text())
-    expect(folderNames).toEqual(['未分类'])
-    // 根视图不直接平铺会议行
-    expect(wrapper.findAll('.meeting-row').length).toBe(0)
-  })
+    // 左栏：文件夹树（全部会议 / 未分类 + 数量角标）
+    expect(wrapper.find('.category-tree').exists()).toBe(true)
+    const treeNames = wrapper.findAll('.tree-row__name').map((node) => node.text())
+    expect(treeNames).toEqual(['全部会议', '未分类'])
+    expect(wrapper.findAll('.tree-row__count').map((node) => node.text())).toEqual(['2', '2'])
 
-  it('enters a folder on click and lists its meetings with a breadcrumb', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    const folderButton = wrapper.findAll('.folder-row__expander')[0]
-    await folderButton.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('未分类')
-    const rows = wrapper.findAll('.meeting-row')
-    expect(rows.length).toBe(2)
-    expect(wrapper.find('.app-breadcrumb').exists()).toBe(true)
-  })
-
-  it('opens the meeting file list view from a meeting row', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.findAll('.folder-row__expander')[0].trigger('click')
-    const nameButton = wrapper.findAll('.meeting-row__name')[0]
-    await nameButton.trigger('click')
-    await flushPromises()
-
+    // 右栏：会议卡片直接平铺，根视图无裸露删除按钮
+    expect(wrapper.findAll('.meeting-card').length).toBe(2)
     expect(wrapper.text()).toContain('项目启动会')
+    expect(wrapper.text()).toContain('里程碑与分工')
+    expect(wrapper.text()).not.toContain('删除分类')
+
+    // 卡片带状态色标 / 时间 / 资料统计 / 纪要标签
+    expect(wrapper.find('.meeting-card__bar').exists()).toBe(true)
+    expect(wrapper.text()).toContain('3 份资料')
+    expect(wrapper.find('.meeting-card__minutes').exists()).toBe(true)
+    expect(wrapper.text()).toContain('暂无资料')
+  })
+
+  it('opens the meeting file list view from a meeting card', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.findAll('.meeting-card')[0].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.meeting-files-view__title').text()).toBe('项目启动会')
     // 会议操作（会议工作台/编辑/归档/删除）都在文件列表页
     expect(wrapper.findAll('.meeting-files-view__actions button').map((node) => node.text())).toEqual(
       ['会议工作台', '编辑', '归档', '删除'],
     )
-    // 文件列表为资源管理器式扁平结构，无来源分组
     expect(wrapper.find('.file-explorer').exists()).toBe(true)
-    expect(wrapper.findAll('.file-group').length).toBe(0)
     expect(wrapper.find('.meeting-files-panel').exists()).toBe(true)
   })
 
@@ -137,12 +147,11 @@ describe('MeetingManageView', () => {
     expect(wrapper.find('.meeting-files-panel').exists()).toBe(true)
   })
 
-  it('navigates back to the folder list via the breadcrumb', async () => {
+  it('navigates back to the card list via the breadcrumb', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.findAll('.folder-row__expander')[0].trigger('click')
-    await wrapper.findAll('.meeting-row__name')[0].trigger('click')
+    await wrapper.findAll('.meeting-card')[0].trigger('click')
     await flushPromises()
 
     const backLink = wrapper
@@ -151,21 +160,110 @@ describe('MeetingManageView', () => {
     await backLink?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.findAll('.folder-row').length).toBeGreaterThan(0)
+    expect(wrapper.find('.meeting-card-grid').exists()).toBe(true)
     expect(wrapper.find('.meeting-files-panel').exists()).toBe(false)
   })
 
-  it('filters meetings client-side by search keyword inside a folder', async () => {
+  it('expands a category to reveal nested meetings with indentation', async () => {
+    seedCategory()
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.findAll('.folder-row__expander')[0].trigger('click')
+    // 分类数量角标：周会 1、未分类 1
+    const names = wrapper.findAll('.tree-row__name').map((node) => node.text())
+    expect(names).toEqual(['全部会议', '周会', '未分类'])
+
+    // 默认折叠：无子节点
+    expect(wrapper.findAll('.tree-meeting').length).toBe(0)
+
+    // 点击展开箭头 → 缩进显示该分类下的会议
+    await wrapper.findAll('.tree-row__chevron')[0].trigger('click')
+    await flushPromises()
+
+    const children = wrapper.findAll('.tree-meeting')
+    expect(children.length).toBe(1)
+    expect(children[0].text()).toBe('项目启动会')
+  })
+
+  it('selects a category to filter the card list', async () => {
+    seedCategory()
+    const wrapper = mountView()
+    await flushPromises()
+
+    const categoryMain = wrapper.findAll('.tree-row__main')[1]
+    await categoryMain.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.meeting-list__title').text()).toBe('周会')
+    expect(wrapper.findAll('.meeting-card').length).toBe(1)
+    expect(wrapper.find('.meeting-card').text()).toContain('项目启动会')
+  })
+
+  it('deletes a category from the hover more menu instead of a naked button', async () => {
+    seedCategory()
+    const wrapper = mountView()
+    await flushPromises()
+
+    // 无裸露删除按钮
+    expect(wrapper.text()).not.toContain('删除分类')
+
+    await wrapper.find('.tree-row__more').trigger('click')
+    await flushPromises()
+
+    const menu = wrapper.find('.tree-row__menu')
+    expect(menu.exists()).toBe(true)
+    expect(menu.text()).toContain('重命名')
+    expect(menu.text()).toContain('删除分类')
+
+    await menu.findAll('button').find((node) => node.text() === '删除分类')?.trigger('click')
+    await flushPromises()
+
+    // 确认弹窗 → 确认删除
+    const confirm = wrapper
+      .get('.modal')
+      .findAll('button')
+      .find((node) => node.text() === '删除分类')
+    await confirm?.trigger('click')
+    await flushPromises()
+
+    const names = wrapper.findAll('.tree-row__name').map((node) => node.text())
+    expect(names).toEqual(['全部会议', '未分类'])
+    // 会议归入未分类，数量角标更新
+    expect(wrapper.findAll('.tree-row__count').map((node) => node.text())).toEqual(['2', '2'])
+  })
+
+  it('renames a category from the more menu', async () => {
+    seedCategory()
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('.tree-row__more').trigger('click')
+    await wrapper
+      .find('.tree-row__menu')
+      .findAll('button')
+      .find((node) => node.text() === '重命名')
+      ?.trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get('.tree-rename__input')
+    await input.setValue('双周会')
+    await wrapper.find('.tree-rename__save').trigger('click')
+    await flushPromises()
+
+    const names = wrapper.findAll('.tree-row__name').map((node) => node.text())
+    expect(names).toEqual(['全部会议', '双周会', '未分类'])
+  })
+
+  it('filters meetings client-side by search keyword', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
     await wrapper.find('.search-box__input').setValue('需求')
     await flushPromises()
 
-    const rows = wrapper.findAll('.meeting-row')
-    expect(rows.length).toBe(1)
+    expect(wrapper.findAll('.meeting-card').length).toBe(1)
     expect(wrapper.text()).toContain('需求评审会')
+    expect(wrapper.text()).not.toContain('项目启动会')
   })
 
   it('filters meetings by status', async () => {

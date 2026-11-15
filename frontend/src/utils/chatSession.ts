@@ -64,6 +64,12 @@ function normalize(messages: unknown): AgentChatMessage[] | null {
         continue
       }
     }
+    if (message.role === 'assistant') {
+      // 恢复的历史消息：思考过程默认折叠并视为已完成
+      message.reasoningOpen = false
+      message.reasoningPinned = false
+      message.reasoningDone = true
+    }
     if (typeof message.id !== 'number' || !Number.isFinite(message.id)) {
       message.id = result.length + 1
     }

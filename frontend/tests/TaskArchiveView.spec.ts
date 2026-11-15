@@ -25,6 +25,7 @@ const task: PersonalTask = {
   action_id: 'act_1',
   title: '完成上线检查清单',
   status: 'completed',
+  priority: 'medium',
   due_date: '2026-10-20',
   created_at: '2026-10-01T09:00:00+08:00',
   updated_at: '2026-10-02T09:00:00+08:00',

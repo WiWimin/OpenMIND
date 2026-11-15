@@ -286,12 +286,24 @@ export function useLiveRecording(options: UseLiveRecordingOptions) {
   }
 
   onBeforeUnmount(() => {
-    if (recording.value) {
-      stopRequested = true
-      recorder?.stop()
-      void uploadChain
-      teardown()
+    if (stoppingRecorder.value) {
+      // 已在停止收尾流程中：由该流程完成分片上传、合并与终态落库
+      return
     }
+    if (!recording.value) {
+      return
+    }
+    // 与点「停止录音」一致的收尾（末片上传 → 合并 → 落终态），避免会话卡在 processing。
+    // 卸载期绝不能抛错：MediaRecorder.stop() 在 inactive 态会抛 InvalidStateError，
+    // 卸载钩子抛错会中断组件卸载，连带卡死路由切换（中间内容区冻结在旧页面）。
+    void stopRecording()
+      .catch(() => undefined)
+      .finally(() => {
+        // stopRecording 因录音器缺失提前返回时的兜底清理
+        if (recording.value) {
+          teardown()
+        }
+      })
   })
 
   return {

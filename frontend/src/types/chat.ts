@@ -33,6 +33,8 @@ export interface ChatPayload {
   model?: string
   /** 对话模式：plan=先讨论；build=产出可交付文件（缺省 plan） */
   mode?: ChatMode
+  /** 是否请求模型思考模式（推理链）；关闭后不展示思考过程 */
+  thinking?: boolean
 }
 
 export interface ChatResult {
@@ -41,6 +43,25 @@ export interface ChatResult {
   insufficient_evidence: boolean
   /** Build 模式产出（plan 或无证据时为 null） */
   file?: ChatFile | null
+  /** 模型原生推理（思考过程）；同步接口不返回 */
+  reasoning?: string
+}
+
+/** 思考过程（推理链）的执行步骤状态 */
+export type ChatTraceStatus = 'running' | 'done' | 'error'
+
+/** 真实执行步骤：只描述服务端真实发生过的阶段，不伪造模型推理 */
+export interface ChatTraceStage {
+  id: string
+  label: string
+  status: ChatTraceStatus
+  detail?: string
+}
+
+/** 问答 trace：执行步骤 + 该模型是否会返回原生推理 */
+export interface ChatTrace {
+  stages: ChatTraceStage[]
+  native_reasoning?: boolean
 }
 
 /** SSE 流式问答首帧 meta（api.md 5.7a）：先于首个 delta 下发 */
@@ -48,6 +69,8 @@ export interface ChatStreamMeta {
   insufficient_evidence: boolean
   sources: ChatSource[]
   model: string | null
+  /** 真实执行步骤（旧后端可能没有，前端需容错） */
+  trace?: ChatTrace
 }
 
 /** SSE 流式问答 done 帧：完整回答与用量 */
@@ -55,6 +78,9 @@ export interface ChatStreamDone {
   answer: string
   usage: { input: number; output: number } | null
   latency_ms: number
+  /** 完整原生推理（与 reasoning 增量一致，供增量丢失时兜底） */
+  reasoning?: string
+  reasoning_ms?: number
 }
 
 export interface OrganizePayload {
@@ -93,7 +119,16 @@ export interface PolishSuggestion {
   confidence: string
 }
 
-export type OrganizeStructured = SummaryStructured | PolishSuggestion[]
+/** 会前速览结构化卡（与后端 `schemas/chat.py::MaterialBrief` 对齐） */
+export interface MaterialBrief {
+  headline: string
+  key_points: string[]
+  decisions_needed: string[]
+  risks: string[]
+  next_step: string
+}
+
+export type OrganizeStructured = SummaryStructured | PolishSuggestion[] | MaterialBrief
 
 export interface OrganizeResult {
   task: OrganizeTask

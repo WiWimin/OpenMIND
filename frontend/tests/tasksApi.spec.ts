@@ -21,6 +21,7 @@ const task: PersonalTask = {
   action_id: 'act_1',
   title: '完成接口联调',
   status: 'todo',
+  priority: 'medium',
   due_date: null,
   created_at: '2026-10-01T10:10:00+08:00',
   updated_at: '2026-10-01T10:10:00+08:00',
