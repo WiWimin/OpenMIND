@@ -16,6 +16,10 @@ def create(
     job_type: str,
     resource_type: str,
     resource_id: str | None,
+    payload: dict | None = None,
+    max_attempts: int = 3,
+    priority: int = 0,
+    next_run_at: datetime | None = None,
 ) -> AsyncJob:
     job = AsyncJob(
         job_id=job_id,
@@ -25,6 +29,10 @@ def create(
         resource_id=resource_id,
         status="pending",
         progress=0,
+        payload=payload,
+        max_attempts=max_attempts,
+        priority=priority,
+        next_run_at=next_run_at,
     )
     db.add(job)
     db.commit()
@@ -128,7 +136,11 @@ def reap(
     running_cutoff: datetime,
     finished_at: datetime,
 ) -> int:
-    """把超时的 pending（进程重启丢失）与 running（执行卡死）任务置为 failed，返回条数。"""
+    """把超时的 pending（进程重启丢失）与 running（执行卡死）任务置为 failed，返回条数。
+
+    running 以 `heartbeat_at` 优先判断（worker 定期心跳），缺失时回退 `started_at`。
+    """
+    heartbeat_or_started = func.coalesce(AsyncJob.heartbeat_at, AsyncJob.started_at)
     statement = (
         update(AsyncJob)
         .where(
@@ -138,7 +150,7 @@ def reap(
             )
             | (
                 (AsyncJob.status == "running")
-                & (AsyncJob.started_at <= running_cutoff)
+                & (heartbeat_or_started <= running_cutoff)
             )
         )
         .values(
@@ -146,6 +158,7 @@ def reap(
             error_code="JOB_TIMEOUT",
             error_message="任务处理超时",
             finished_at=finished_at,
+            locked_by=None,
         )
     )
     result = db.execute(statement)
@@ -155,3 +168,53 @@ def reap(
 
 def delete_by_user(db: Session, user_id: str) -> None:
     db.execute(delete(AsyncJob).where(AsyncJob.user_id == user_id))
+
+
+# ---------------------------------------------------------------- durable queue
+
+
+def claim_next(db: Session, *, worker_id: str, now: datetime) -> AsyncJob | None:
+    """认领一个到期任务：`pending → running`，返回任务或 None。
+
+    PostgreSQL 使用 `FOR UPDATE SKIP LOCKED` 避免多 worker 抢同一行；
+    SQLite（单测）忽略该子句，由调用方串行执行。
+    """
+    statement = (
+        select(AsyncJob)
+        .where(
+            AsyncJob.status == "pending",
+            (AsyncJob.next_run_at.is_(None)) | (AsyncJob.next_run_at <= now),
+        )
+        .order_by(AsyncJob.priority.desc(), AsyncJob.created_at.asc())
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    job = db.execute(statement).scalar_one_or_none()
+    if job is None:
+        return None
+    job.status = "running"
+    job.locked_by = worker_id
+    job.locked_at = now
+    job.heartbeat_at = now
+    job.started_at = now
+    job.attempts = (job.attempts or 0) + 1
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def heartbeat(db: Session, job: AsyncJob, *, now: datetime) -> None:
+    job.heartbeat_at = now
+    db.commit()
+
+
+def release_for_retry(
+    db: Session, job: AsyncJob, *, next_run_at: datetime
+) -> None:
+    job.status = "pending"
+    job.next_run_at = next_run_at
+    job.locked_by = None
+    job.locked_at = None
+    job.heartbeat_at = None
+    db.commit()
+    db.refresh(job)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,10 @@ _segments_type = JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 class MeetingAudio(Base):
     __tablename__ = "meeting_audio"
+    __table_args__ = (
+        # 幂等键：同一 client_op_id 只允许落一条记录（迁移 0027）
+        Index("uq_meeting_audio_client_op_id", "client_op_id", unique=True),
+    )
 
     audio_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(
@@ -26,6 +30,7 @@ class MeetingAudio(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    client_op_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     segments: Mapped[list | None] = mapped_column(_segments_type, nullable=True)
     status: Mapped[str] = mapped_column(

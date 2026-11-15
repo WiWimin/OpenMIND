@@ -69,6 +69,14 @@ def read_bytes(storage_dir: str, relative_key: str) -> bytes:
     return _resolve(storage_dir, relative_key).read_bytes()
 
 
+def stat_size(storage_dir: str, relative_key: str) -> int | None:
+    """原始文件大小；文件不存在或不可访问时返回 None（供列表接口展示）。"""
+    try:
+        return _resolve(storage_dir, relative_key).stat().st_size
+    except OSError:
+        return None
+
+
 def delete_object(storage_dir: str, relative_key: str) -> None:
     try:
         _resolve(storage_dir, relative_key).unlink()

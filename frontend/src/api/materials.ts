@@ -37,9 +37,10 @@ export async function uploadMaterial(
   if (payload.material_type) {
     form.append('material_type', payload.material_type)
   }
-  const { data } = await http.post<
-    ApiSuccess<Material | JobAccepted> | Material | JobAccepted
-  >(
+  if (payload.client_op_id) {
+    form.append('client_op_id', payload.client_op_id)
+  }
+  const { data } = await http.post<ApiSuccess<Material | JobAccepted> | Material | JobAccepted>(
     `/meetings/${meetingId}/materials`,
     form,
     {
@@ -61,4 +62,13 @@ export async function deleteMaterial(materialId: string): Promise<DeletedResult<
     ApiSuccess<DeletedResult<'material_id'>> | DeletedResult<'material_id'>
   >(`/materials/${materialId}`)
   return unwrapData(data)
+}
+
+// 下载原始文件（非信封，Content-Disposition 携带文件名），用于本地工作区同步
+export async function downloadMaterial(materialId: string): Promise<Blob> {
+  const { data } = await http.get<Blob>(`/materials/${materialId}/download`, {
+    responseType: 'blob',
+    timeout: LONG_REQUEST_TIMEOUT_MS,
+  })
+  return data
 }

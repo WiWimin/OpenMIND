@@ -8,8 +8,8 @@ from app.core.exceptions import AppError, resource_not_found
 from app.models.issue import OpenIssue
 from app.models.record import MeetingRecord
 from app.repositories import issue_repository
-from app.schemas.issue import IssueStatus, IssueUpdate
-from app.services import ai_audit_service, meeting_service
+from app.schemas.issue import IssueCreate, IssueStatus, IssueUpdate
+from app.services import ai_audit_service, meeting_service, sync_support
 from app.services.extraction_support import build_transcripts, gather_records
 from app.services.model_config_service import (
     ModelConfig,
@@ -77,6 +77,36 @@ def extract_issues(
     return issues
 
 
+def create_issue(
+    db: Session, *, meeting_id: str, user_id: str, payload: IssueCreate
+) -> OpenIssue:
+    """手工新建问题（本地工作区导入）；来源记录留空，状态固定 open。"""
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    if payload.client_op_id:
+        existing = issue_repository.get_by_client_op_id(db, payload.client_op_id)
+        if existing is not None:
+            if existing.meeting_id != meeting_id:
+                raise resource_not_found("问题")
+            sync_support.ensure_same_payload(
+                {
+                    "description": existing.description,
+                    "follow_up": existing.follow_up,
+                },
+                {"description": payload.description, "follow_up": payload.follow_up},
+            )
+            return existing
+    return issue_repository.create(
+        db,
+        issue_id=new_id("iss"),
+        meeting_id=meeting_id,
+        description=payload.description,
+        follow_up=payload.follow_up,
+        source_record_id=None,
+        status=_STATUS_OPEN,
+        client_op_id=payload.client_op_id,
+    )
+
+
 def list_issues(
     db: Session, *, meeting_id: str, user_id: str, page: int, page_size: int
 ) -> tuple[list[OpenIssue], int]:
@@ -103,7 +133,11 @@ def update_issue(
 ) -> OpenIssue:
     issue = get_owned_issue(db, issue_id, user_id)
     meeting_service.get_mutable_meeting(db, issue.meeting_id, user_id)
-    data = payload.model_dump(exclude_unset=True)
+    # 乐观锁：本地同步回写前校验远端未被修改，避免覆盖他人修改
+    sync_support.ensure_unmodified(
+        issue.updated_at, payload.expected_updated_at, label="问题"
+    )
+    data = payload.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
     if data.get("description") is not None:
         issue.description = data["description"]
     if "follow_up" in data:

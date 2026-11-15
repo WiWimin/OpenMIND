@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import mimetypes
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
@@ -21,6 +23,13 @@ from app.services import audio_service, job_service, job_tasks
 
 router = APIRouter(tags=["audio"])
 
+
+def _read_with_size(audio) -> AudioRead:
+    """读模型 + 原始文件大小（stat 计算），供本地同步估算下载量。"""
+    return AudioRead.model_validate(audio).model_copy(
+        update={"file_size": audio_service.file_size_of(audio)}
+    )
+
 # 异步受理：202 + 任务对象；关闭 ASYNC_JOBS_ENABLED 时走原同步逻辑
 _ACCEPTED = status.HTTP_202_ACCEPTED
 
@@ -38,16 +47,20 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     response: Response,
     file: Annotated[UploadFile, File()],
+    client_op_id: Annotated[str | None, Form(max_length=64)] = None,
 ) -> Envelope[AudioRead] | Envelope[JobAccepted]:
     content = await file.read()
-    if get_settings().async_jobs_enabled:
+    file_name = file.filename or "audio"
+    # 文稿（docx/txt）走同步解析导入（本地解析很快），不入 ASR 任务队列
+    if get_settings().async_jobs_enabled and not audio_service.is_document_file(file_name):
         audio = audio_service.upload_audio(
             db,
             meeting_id=meeting_id,
             user_id=current_user.user_id,
-            file_name=file.filename or "audio",
+            file_name=file_name,
             content=content,
             defer_processing=True,
+            client_op_id=client_op_id,
         )
         job = job_service.enqueue(
             db,
@@ -57,6 +70,7 @@ async def upload_audio(
             resource_type="audio",
             resource_id=audio.audio_id,
             fn=job_tasks.audio_transcribe(audio.audio_id, current_user.user_id),
+            payload={"audio_id": audio.audio_id},
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
@@ -66,10 +80,11 @@ async def upload_audio(
         db,
         meeting_id=meeting_id,
         user_id=current_user.user_id,
-        file_name=file.filename or "audio",
+        file_name=file_name,
         content=content,
+        client_op_id=client_op_id,
     )
-    return Envelope(data=AudioRead.model_validate(audio))
+    return Envelope(data=_read_with_size(audio))
 
 
 @router.get(
@@ -101,7 +116,24 @@ def get_audio(
     audio = audio_service.get_owned_audio(
         db, audio_id, current_user.user_id
     )
-    return Envelope(data=AudioRead.model_validate(audio))
+    return Envelope(data=_read_with_size(audio))
+
+
+@router.get("/audio/{audio_id}/download")
+def download_audio(
+    audio_id: str, db: DbSession, current_user: CurrentUser
+) -> Response:
+    """下载音频原始文件（本地工作区同步用）；只接受 id，不接受路径。"""
+    audio = audio_service.get_owned_audio(db, audio_id, current_user.user_id)
+    content = audio_service.read_audio_file(audio)
+    media_type = mimetypes.guess_type(audio.file_name)[0] or "application/octet-stream"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(audio.file_name)}"
+        },
+    )
 
 
 # ============================ 实时录音：分片边录边转 ============================
@@ -225,6 +257,7 @@ def retry_audio(
             resource_type="audio",
             resource_id=audio.audio_id,
             fn=job_tasks.audio_transcribe(audio.audio_id, current_user.user_id),
+            payload={"audio_id": audio.audio_id},
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
@@ -236,7 +269,10 @@ def retry_audio(
 
 @router.post("/audio/{audio_id}/confirm", response_model=Envelope[AudioRead])
 def confirm_audio(
-    audio_id: str, db: DbSession, current_user: CurrentUser
+    audio_id: str,
+    db: DbSession,
+    current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> Envelope[AudioRead]:
     audio = audio_service.confirm_audio(db, audio_id, current_user.user_id)
     return Envelope(data=AudioRead.model_validate(audio))

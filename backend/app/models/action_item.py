@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -11,6 +11,10 @@ from app.models.user import utc_now
 
 class ActionItem(Base):
     __tablename__ = "action_items"
+    __table_args__ = (
+        # 幂等键：同一 client_op_id 只允许落一条记录（迁移 0027）
+        Index("uq_action_items_client_op_id", "client_op_id", unique=True),
+    )
 
     action_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(
@@ -28,6 +32,7 @@ class ActionItem(Base):
     source_record_id: Mapped[str | None] = mapped_column(
         String(40), ForeignKey("meeting_records.record_id"), nullable=True
     )
+    client_op_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()

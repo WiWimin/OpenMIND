@@ -30,6 +30,8 @@ class MinutesGenerateRequest(BaseModel):
 
 class MinutesUpdate(BaseModel):
     content: str | None = Field(default=None, min_length=1)
+    # 乐观锁：与当前 version 不一致时返回 409 SYNC_CONFLICT
+    expected_version: int | None = None
 
 
 class MinutesRead(BaseModel):

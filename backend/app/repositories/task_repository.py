@@ -18,6 +18,7 @@ def create(
     title: str,
     due_date: date | None,
     status: str = "todo",
+    priority: str = "medium",
 ) -> PersonalTask:
     task = PersonalTask(
         task_id=task_id,
@@ -27,6 +28,7 @@ def create(
         title=title,
         due_date=due_date,
         status=status,
+        priority=priority,
     )
     db.add(task)
     db.commit()

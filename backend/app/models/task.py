@@ -26,6 +26,9 @@ class PersonalTask(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="todo", server_default="todo"
     )
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="medium", server_default="medium"
+    )
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()

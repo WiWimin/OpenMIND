@@ -21,6 +21,7 @@ def create(
     source_record_id: str | None,
     source_excerpt: str | None,
     status: str = "pending_confirmation",
+    client_op_id: str | None = None,
 ) -> ActionItem:
     item = ActionItem(
         action_id=action_id,
@@ -31,6 +32,7 @@ def create(
         source_record_id=source_record_id,
         source_excerpt=source_excerpt,
         status=status,
+        client_op_id=client_op_id,
     )
     db.add(item)
     db.commit()
@@ -45,6 +47,13 @@ def get_owned(db: Session, action_id: str, user_id: str) -> ActionItem | None:
         .where(ActionItem.action_id == action_id, Meeting.user_id == user_id)
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def get_by_client_op_id(db: Session, client_op_id: str) -> ActionItem | None:
+    """幂等键命中查询（迁移 0027）：同键重复提交返回已有记录。"""
+    return db.execute(
+        select(ActionItem).where(ActionItem.client_op_id == client_op_id)
+    ).scalar_one_or_none()
 
 
 def list_by_meeting(
