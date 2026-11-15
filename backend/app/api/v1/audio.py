@@ -275,6 +275,12 @@ def confirm_audio(
     background_tasks: BackgroundTasks,
 ) -> Envelope[AudioRead]:
     audio = audio_service.confirm_audio(db, audio_id, current_user.user_id)
+    # 确认转写后触发「转写 → 纪要草稿」工作流（只落 draft，绝不自动确认）
+    from app.agent import service as agent_service
+
+    agent_service.trigger_auto_minutes(
+        db, background_tasks, user_id=current_user.user_id, audio=audio
+    )
     return Envelope(data=AudioRead.model_validate(audio))
 
 

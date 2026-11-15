@@ -44,6 +44,7 @@ def generate_minutes(
             fn=job_tasks.minutes_generate(
                 meeting_id, current_user.user_id, payload
             ),
+            payload={"meeting_id": meeting_id, "request": payload.model_dump(mode="json")},
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
