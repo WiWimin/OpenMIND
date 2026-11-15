@@ -77,7 +77,11 @@ def _patch_judge_env(
         rag,
         "get_settings",
         lambda: SimpleNamespace(
-            rag_judge_enabled=enabled, rag_judge_min_score=min_score
+            rag_judge_enabled=enabled,
+            rag_judge_min_score=min_score,
+            rag_top_k=5,
+            rag_min_score=0.3,
+            rag_vector_backend="python",
         ),
     )
     monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])

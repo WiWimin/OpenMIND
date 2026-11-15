@@ -37,6 +37,35 @@ def get_owned(db: Session, document_id: str, user_id: str) -> KnowledgeDocument 
     ).scalar_one_or_none()
 
 
+def find_reusable_index(
+    db: Session,
+    *,
+    user_id: str,
+    content_hash: str,
+    fingerprint: str,
+    exclude_document_id: str,
+) -> KnowledgeDocument | None:
+    """增量索引复用源：同用户、同内容、同指纹且已成功建索引的知识库文档。
+
+    仅限本表（知识库）内复用，不跨到会议材料库，避免跨库脏召回；
+    `index_fingerprint` 为空的存量行永不命中（旧向量产出参数未知）。
+    """
+    statement = (
+        select(KnowledgeDocument)
+        .where(
+            KnowledgeDocument.user_id == user_id,
+            KnowledgeDocument.content_hash == content_hash,
+            KnowledgeDocument.index_fingerprint == fingerprint,
+            KnowledgeDocument.processing_status == "processed",
+            KnowledgeDocument.document_id != exclude_document_id,
+            KnowledgeDocument.content.is_not(None),
+        )
+        .order_by(KnowledgeDocument.created_at.asc())
+        .limit(1)
+    )
+    return db.execute(statement).scalar_one_or_none()
+
+
 def list_by_user(
     db: Session, user_id: str, *, limit: int, offset: int
 ) -> list[KnowledgeDocument]:
