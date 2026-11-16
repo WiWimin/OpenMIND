@@ -31,10 +31,13 @@ test.describe('任务业务闭环', () => {
     await openStage(page, 'asr', meetingId)
     await addRecord(page, '决议：周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。')
 
-    // 2) 阶段页「会后智能处理」经 Agent 提取行动项（产出区自动切到「行动项」标签）
+    // 2) 阶段页「会后智能处理」经 Agent 提取行动项：聊天内出现清单卡，右侧打开确认
     await openStage(page, 'minutes', meetingId)
     await page.locator('.agent-composer__input').fill('请提取待办任务与行动项。')
     await page.getByRole('button', { name: '发送消息', exact: true }).click()
+    const itemsCard = page.locator('.items-card').first()
+    await expect(itemsCard).toBeVisible({ timeout: 120_000 })
+    await itemsCard.getByRole('button', { name: '打开确认' }).click()
     const firstItem = page.locator('.action-item').first()
     await expect(firstItem).toBeVisible({ timeout: 120_000 })
     await expect(firstItem).toContainText(TASK_TITLE)
@@ -52,6 +55,10 @@ test.describe('任务业务闭环', () => {
     await convertDialog.getByRole('button', { name: '确定', exact: true }).click()
     await expect(convertDialog).toBeHidden()
     await expect(firstItem.locator('.action-item__done')).toHaveText('已转任务')
+
+    // 关闭右侧抽屉，恢复顶部导航可点
+    await page.locator('.doc-drawer__close').click()
+    await expect(page.locator('.doc-drawer')).toBeHidden()
 
     // 5) 任务列表出现对应任务
     await page.getByRole('link', { name: '任务管理', exact: true }).click()

@@ -88,7 +88,6 @@ describe('MaterialSection', () => {
 
     const file = new File(['x'], 'plan.pdf')
     await selectFile(wrapper, file)
-    await wrapper.get('.material-uploader .app-button').trigger('click')
     await flushPromises()
 
     expect(materialsApi.uploadMaterial).toHaveBeenCalledWith(
@@ -98,27 +97,30 @@ describe('MaterialSection', () => {
     expect(materialsApi.listMaterials).toHaveBeenCalledTimes(2)
   })
 
-  it('shows a parse failure instead of a success toast', async () => {
-    const failed: Material = {
-      ...processed,
-      material_id: 'mat_failed',
-      processing_status: 'failed',
-      parse_error: 'PDF 文件无法读取或已损坏',
-    }
-    vi.mocked(materialsApi.listMaterials)
-      .mockResolvedValueOnce(listOf([]))
-      .mockResolvedValueOnce(listOf([failed]))
-    vi.mocked(materialsApi.uploadMaterial).mockResolvedValue(failed)
+  it('shows a parse failure inside the uploader instead of a success toast', async () => {
+    vi.mocked(materialsApi.listMaterials).mockResolvedValue(listOf([]))
+    vi.mocked(materialsApi.uploadMaterial).mockRejectedValue({
+      status: 'error',
+      error_code: 'FILE_PARSE_FAILED',
+      message: 'PDF 文件无法读取或已损坏：broken.pdf',
+      retryable: false,
+      details: { reason: 'invalid_file' },
+    })
     const wrapper = mountSection()
     await flushPromises()
 
     const file = new File(['bad'], 'broken.pdf')
     await selectFile(wrapper, file)
-    await wrapper.get('.material-uploader .app-button').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.error-message').text()).toContain('PDF 文件无法读取或已损坏')
-    expect(materialsApi.listMaterials).toHaveBeenCalledTimes(2)
+    const uploader = wrapper.get('.material-uploader')
+    expect(uploader.text()).toContain('无法解析')
+    expect(uploader.text()).toContain('PDF 文件无法读取或已损坏')
+    expect(uploader.text()).toContain('broken.pdf')
+    // 失败时列表不刷新，也没有外置错误条
+    expect(materialsApi.listMaterials).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.material-section > .error-message').exists()).toBe(false)
+    expect(wrapper.find('.material-uploader__retry').exists()).toBe(true)
   })
 
   it('deletes a material after confirmation', async () => {

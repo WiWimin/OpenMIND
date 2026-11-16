@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { extractJob, requireResourceId, waitForJob, type JobAccepted } from '@/api/jobs'
 import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type { Material, MaterialUploadPayload } from '@/types/material'
@@ -17,7 +18,13 @@ export async function listMaterials(
   return unwrapData(data)
 }
 
+async function fetchMaterial(materialId: string): Promise<Material> {
+  const { data } = await http.get<ApiSuccess<Material> | Material>(`/materials/${materialId}`)
+  return unwrapData(data)
+}
+
 // multipart 上传；Content-Type 由浏览器附带 boundary，联调时需实测
+// 异步任务（api.md 1.9）：202 受理时轮询到终态后回查材料详情，调用方契约不变
 export async function uploadMaterial(
   meetingId: string,
   payload: MaterialUploadPayload,
@@ -30,7 +37,10 @@ export async function uploadMaterial(
   if (payload.material_type) {
     form.append('material_type', payload.material_type)
   }
-  const { data } = await http.post<ApiSuccess<Material> | Material>(
+  if (payload.client_op_id) {
+    form.append('client_op_id', payload.client_op_id)
+  }
+  const { data } = await http.post<ApiSuccess<Material | JobAccepted> | Material | JobAccepted>(
     `/meetings/${meetingId}/materials`,
     form,
     {
@@ -38,7 +48,13 @@ export async function uploadMaterial(
       timeout: LONG_REQUEST_TIMEOUT_MS,
     },
   )
-  return unwrapData(data)
+  const accepted = unwrapData<Material | JobAccepted>(data)
+  const job = extractJob(accepted)
+  if (!job) {
+    return accepted as Material
+  }
+  const finished = await waitForJob(job.job_id)
+  return fetchMaterial(requireResourceId(finished))
 }
 
 export async function deleteMaterial(materialId: string): Promise<DeletedResult<'material_id'>> {
@@ -46,4 +62,13 @@ export async function deleteMaterial(materialId: string): Promise<DeletedResult<
     ApiSuccess<DeletedResult<'material_id'>> | DeletedResult<'material_id'>
   >(`/materials/${materialId}`)
   return unwrapData(data)
+}
+
+// 下载原始文件（非信封，Content-Disposition 携带文件名），用于本地工作区同步
+export async function downloadMaterial(materialId: string): Promise<Blob> {
+  const { data } = await http.get<Blob>(`/materials/${materialId}/download`, {
+    responseType: 'blob',
+    timeout: LONG_REQUEST_TIMEOUT_MS,
+  })
+  return data
 }

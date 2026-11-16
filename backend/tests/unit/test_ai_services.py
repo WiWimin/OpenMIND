@@ -210,7 +210,7 @@ def test_chat_web_llm_failure_falls_back_to_refusal(
     )
 
     class BoomLLM:
-        def chat(self, messages):  # noqa: ANN001
+        def chat(self, messages, **kwargs):  # noqa: ANN001, ANN003
             raise AppError(
                 "MODEL_CONFIG_REQUIRED", "未配置大模型（LLM）", http_status=400
             )

@@ -1,9 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as authApi from '@/api/auth'
 import * as meetingsApi from '@/api/meetings'
+import * as memoryApi from '@/api/memory'
 import * as tasksApi from '@/api/tasks'
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -41,6 +43,22 @@ vi.mock('@/api/tasks', () => ({
   listTasks: vi.fn(),
 }))
 
+vi.mock('@/api/memory', () => ({
+  getMemory: vi.fn(),
+  saveMemory: vi.fn(),
+  clearMemory: vi.fn(),
+}))
+
+vi.mock('@/composables/useLocalWorkspace', () => ({
+  useLocalWorkspace: () => ({
+    status: ref('unconfigured'),
+    directoryName: ref(''),
+    connect: vi.fn(),
+    restore: vi.fn(),
+    init: vi.fn(),
+  }),
+}))
+
 const user: AuthUser = {
   user_id: 'u1',
   name: 'Alice',
@@ -75,10 +93,19 @@ function mountLayout() {
   }
 }
 
+const emptyMemory = {
+  role: '',
+  work_scenarios: '',
+  communication_style: '',
+  preferred_minutes_template: null,
+  updated_at: null,
+}
+
 describe('WorkspaceLayout', () => {
   beforeEach(() => {
     window.localStorage.clear()
     vi.resetAllMocks()
+    vi.mocked(memoryApi.getMemory).mockResolvedValue(emptyMemory)
     resetRoute()
   })
 
@@ -95,15 +122,45 @@ describe('WorkspaceLayout', () => {
     expect(wrapper.text()).not.toContain('系统设置')
   })
 
-  it('renders the sidebar quick links and the settings menu entries', () => {
+  it('renders the home group sidebar links and the settings menu entries', () => {
     const { wrapper } = mountLayout()
 
     const links = wrapper.findAll('.workspace__quick-link').map((node) => node.text())
-    expect(links).toEqual(['会议', '任务'])
+    expect(links).toEqual(['概览', '我的会议', '待办任务'])
     expect(wrapper.text()).toContain('设置')
     expect(wrapper.text()).toContain('模型配置')
     expect(wrapper.text()).toContain('记忆中心')
     expect(wrapper.text()).toContain('知识库')
+  })
+
+  it('renders the meetings group sidebar links on meeting routes', () => {
+    routeState.name = 'meetings'
+    routeState.fullPath = '/meetings'
+    const { wrapper } = mountLayout()
+
+    const links = wrapper.findAll('.workspace__quick-link').map((node) => node.text())
+    expect(links).toEqual(['会议列表', '模板中心', '会议工作台'])
+  })
+
+  it('renders the tasks group sidebar links on task routes', () => {
+    routeState.name = 'tasks'
+    routeState.fullPath = '/tasks'
+    const { wrapper } = mountLayout()
+
+    const links = wrapper.findAll('.workspace__quick-link').map((node) => node.text())
+    expect(links).toEqual(['全部任务', '待处理', '进行中', '已完成', '已归档任务'])
+  })
+
+  it('highlights only the matching task status sidebar entry', () => {
+    routeState.name = 'tasks'
+    routeState.fullPath = '/tasks?status=todo'
+    routeState.query = { status: 'todo' }
+    const { wrapper } = mountLayout()
+
+    const active = wrapper
+      .findAll('.workspace__quick-link--active')
+      .map((node) => node.text())
+    expect(active).toEqual(['待处理'])
   })
 
   it('shows the notice badge based on todo tasks and scheduled meetings', async () => {
@@ -144,5 +201,37 @@ describe('WorkspaceLayout', () => {
     // 顶部导航的「新建会议」不跳路由，直接弹出创建会议窗口
     expect(wrapper.find('.meeting-form').exists()).toBe(true)
     expect(pushMock).not.toHaveBeenCalled()
+  })
+
+  it('runs the memory then local-folder onboarding once for a new user', async () => {
+    const { wrapper } = mountLayout()
+    await flushPromises()
+
+    // 第一步：记忆中心引导窗（步进模式，含「下一步」）
+    const nextMemory = wrapper.findAll('button').find((node) => node.text() === '下一步')
+    expect(nextMemory).toBeTruthy()
+
+    await nextMemory?.trigger('click')
+    await flushPromises()
+
+    // 第二步：本地文件夹配置窗
+    expect(wrapper.text()).toContain('绑定本地文件夹')
+    const finish = wrapper.findAll('button').find((node) => node.text() === '完成')
+    expect(finish).toBeTruthy()
+
+    await finish?.trigger('click')
+    await flushPromises()
+
+    // 走完后按账号写入完成标记
+    expect(window.localStorage.getItem('openmind.onboardingDone.u1')).toBe('1')
+  })
+
+  it('does not show onboarding dialogs for a returning user', async () => {
+    window.localStorage.setItem('openmind.onboardingDone.u1', '1')
+    const { wrapper } = mountLayout()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('下一步')
+    expect(wrapper.text()).not.toContain('绑定本地文件夹')
   })
 })

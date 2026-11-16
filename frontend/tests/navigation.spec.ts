@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { NAV_MODULES, findModuleByRouteName } from '@/constants/navigation'
+import {
+  NAV_MODULES,
+  SIDE_GROUPS,
+  findModuleByRouteName,
+  sideGroupForRoute,
+} from '@/constants/navigation'
 
 describe('navigation config', () => {
   it('defines the two-level navigation modules', () => {
@@ -29,5 +34,36 @@ describe('navigation config', () => {
     const module = NAV_MODULES.find((item) => item.key === 'meetings')
     expect(module?.match).toEqual(['meetings'])
     expect(findModuleByRouteName('meeting-detail')).toBeUndefined()
+  })
+
+  it('groups sidebar secondary links by top-level module', () => {
+    expect(SIDE_GROUPS.home.map((link) => link.label)).toEqual([
+      '概览',
+      '我的会议',
+      '待办任务',
+    ])
+    expect(SIDE_GROUPS.meetings.map((link) => link.label)).toEqual([
+      '会议列表',
+      '模板中心',
+      '会议工作台',
+    ])
+    expect(SIDE_GROUPS.tasks.map((link) => link.label)).toEqual([
+      '全部任务',
+      '待处理',
+      '进行中',
+      '已完成',
+      '已归档任务',
+    ])
+  })
+
+  it('maps stage and meeting routes to the meetings sidebar group', () => {
+    expect(sideGroupForRoute('dashboard')).toBe('home')
+    expect(sideGroupForRoute('meetings')).toBe('meetings')
+    expect(sideGroupForRoute('meeting-template-manage')).toBe('meetings')
+    expect(sideGroupForRoute('new-meeting-preprocess')).toBe('meetings')
+    expect(sideGroupForRoute('new-meeting-asr')).toBe('meetings')
+    expect(sideGroupForRoute('new-meeting-minutes')).toBe('meetings')
+    expect(sideGroupForRoute('tasks')).toBe('tasks')
+    expect(sideGroupForRoute('task-archive')).toBe('tasks')
   })
 })

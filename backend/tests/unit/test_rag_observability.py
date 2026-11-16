@@ -77,6 +77,9 @@ def _patch_env(
             rag_alert_total_ms_p95=alert_threshold,
             rag_alert_candidate_rows_p95=-1.0,
             rag_alert_cooldown_s=60.0,
+            rag_top_k=5,
+            rag_min_score=0.3,
+            rag_vector_backend="python",
         ),
     )
     monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
@@ -309,7 +312,20 @@ def test_metrics_endpoint_exposes_judge_and_windows(client) -> None:
     for _ in range(30):
         m.observe("retrieval_total_ms", 10.0)
 
-    response = client.get("/api/v1/metrics")
+    # 需登录：无 token 返回 401 统一错误体
+    unauthenticated = client.get("/api/v1/metrics")
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.json()["error_code"] == "AUTH_REQUIRED"
+
+    session = client.post(
+        "/api/v1/auth/register",
+        json={"name": "opsuser", "password": "password123"},
+    ).json()["data"]
+
+    response = client.get(
+        "/api/v1/metrics",
+        headers={"Authorization": f"Bearer {session['access_token']}"},
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -322,3 +338,99 @@ def test_metrics_endpoint_exposes_judge_and_windows(client) -> None:
     assert data["windows"]["retrieval_total_ms"]["p95"] == 10.0
     assert data["windows"]["retrieval_total_ms"]["insufficient"] is False
     assert "alerts" in data
+
+
+def test_metrics_endpoint_hidden_when_disabled(client, monkeypatch) -> None:
+    """METRICS_ENABLED=false 时返回 404，隐藏端点存在性。"""
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("METRICS_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        session = client.post(
+            "/api/v1/auth/register",
+            json={"name": "opsuser2", "password": "password123"},
+        ).json()["data"]
+        response = client.get(
+            "/api/v1/metrics",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        )
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "RESOURCE_NOT_FOUND"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_metrics_endpoint_exposes_ai_call_aggregates(client, db_session) -> None:
+    """持久化统计：`ai_calls` 段来自 ai_call_logs 聚合（重启不丢）。"""
+    from app.models.ai_call_log import AICallLog
+    from app.utils.ids import new_id
+
+    headers = {
+        "Authorization": "Bearer "
+        + client.post(
+            "/api/v1/auth/register",
+            json={"name": "opsuser3", "password": "password123"},
+        ).json()["data"]["access_token"]
+    }
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["data"]["user_id"]
+
+    db_session.add_all(
+        [
+            AICallLog(
+                log_id=new_id("ail"),
+                user_id=user_id,
+                scene="chat",
+                purpose="chat",
+                model="m1",
+                provider="p.test",
+                transport="sync",
+                status="success",
+                input_tokens=10,
+                output_tokens=5,
+                latency_ms=100,
+            ),
+            AICallLog(
+                log_id=new_id("ail"),
+                user_id=user_id,
+                scene="minutes",
+                purpose="minutes",
+                model="m1",
+                provider="p.test",
+                transport="sse",
+                status="failed",
+                error_code="MODEL_TIMEOUT",
+                latency_ms=5000,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/api/v1/metrics?hours=24", headers=headers)
+
+    assert response.status_code == 200
+    ai = response.json()["ai_calls"]
+    assert ai["window_hours"] == 24
+    assert ai["total"] == 2
+    assert ai["by_status"] == {"success": 1, "failed": 1}
+    assert ai["tokens"] == {"input": 10, "output": 5}
+    assert ai["errors"] == {"total": 1, "rate": 0.5}
+    assert ai["running"] == 0
+    assert ai["interrupted"] == 0
+    assert ai["latency_ms"]["max"] == 5000
+    assert ai["cost_usd"] is None  # 未知单价 → NULL（估算非计费依据）
+
+    scenes = {row["scene"]: row for row in ai["by_scene"]}
+    assert scenes["chat"]["count"] == 1
+    assert scenes["chat"]["errors"] == 0
+    assert scenes["minutes"]["errors"] == 1
+    models = {row["model"]: row for row in ai["by_model"]}
+    assert models["m1"]["count"] == 2
+
+    # hours 参数边界：1–168，越界 422
+    assert (
+        client.get("/api/v1/metrics?hours=0", headers=headers).status_code == 422
+    )
+    assert (
+        client.get("/api/v1/metrics?hours=999", headers=headers).status_code == 422
+    )

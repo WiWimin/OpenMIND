@@ -54,6 +54,7 @@ const task: PersonalTask = {
   action_id: 'act_1',
   title: '整理周会议程',
   status: 'todo',
+  priority: 'medium',
   due_date: null,
   created_at: '2026-10-01T09:00:00+08:00',
   updated_at: '2026-10-01T09:00:00+08:00',
@@ -117,7 +118,7 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('OpenMIND 智能会议助手')
     expect(wrapper.text()).toContain('基于 AI 的会议纪要、日程与任务协作平台')
     expect(wrapper.find('.home__summary').text()).toMatch(/今天有\s+1\s+场会议和\s+4\s+项待办任务/)
-    expect(wrapper.find('img.home__mascot').exists()).toBe(true)
+    expect(wrapper.find('.home__hero-bg').exists()).toBe(true)
 
     const panels = wrapper.findAll('.home__panel')
     expect(panels).toHaveLength(2)
@@ -173,18 +174,31 @@ describe('DashboardView', () => {
   })
 
   it('completes a task from the checklist', async () => {
-    mockMeetings([meeting])
-    mockTasks([task])
-    vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, status: 'completed' })
+    vi.useFakeTimers()
+    try {
+      mockMeetings([meeting])
+      mockTasks([task])
+      vi.mocked(tasksApi.updateTask).mockResolvedValue({ ...task, status: 'completed' })
 
-    const wrapper = mountView()
-    await flushPromises()
+      const wrapper = mountView()
+      await vi.advanceTimersByTimeAsync(0)
 
-    await wrapper.get('.home__task-check').setValue(true)
-    await flushPromises()
+      await wrapper.get('.home__task-check').setValue(true)
+      await vi.advanceTimersByTimeAsync(0)
 
-    expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
-    expect(wrapper.findAll('.home__task')).toHaveLength(0)
+      expect(tasksApi.updateTask).toHaveBeenCalledWith('tsk_1', { status: 'completed' })
+      // 完成后先呈现勾选态（绿色√），延迟后才淡出移除
+      expect(wrapper.findAll('.home__task')).toHaveLength(1)
+      expect((wrapper.get('.home__task-check').element as HTMLInputElement).checked).toBe(true)
+      expect(wrapper.find('.home__task-title--done').exists()).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(1300)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(wrapper.findAll('.home__task')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('surfaces a meeting list error and retries', async () => {

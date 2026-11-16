@@ -3,6 +3,7 @@ import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, ListData } from '@/types/api'
 import type {
   ActionItem,
+  ActionItemCreatePayload,
   ConvertToTaskPayload,
   ExtractActionItemsPayload,
   UpdateActionItemPayload,
@@ -36,6 +37,19 @@ export async function listActionItems(
   return unwrapData(data)
 }
 
+// 幂等创建（状态固定 pending_confirmation）：同 client_op_id 重复提交返回已有实体
+export async function createActionItem(
+  meetingId: string,
+  payload: ActionItemCreatePayload,
+): Promise<ActionItem> {
+  const { data } = await http.post<ApiSuccess<ActionItem> | ActionItem>(
+    `/meetings/${meetingId}/action-items`,
+    payload,
+  )
+  return unwrapData(data)
+}
+
+// 乐观锁：带 expected_updated_at 且不一致时返回 409 SYNC_CONFLICT（字段随 payload 透传）
 export async function updateActionItem(
   actionId: string,
   payload: UpdateActionItemPayload,

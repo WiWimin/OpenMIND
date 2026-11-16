@@ -13,7 +13,6 @@
             v-if="module.key === 'new-meeting'"
             type="button"
             class="workspace__topnav-link workspace__topnav-link--button"
-            :class="{ 'workspace__topnav-link--active': activeModule?.key === module.key }"
             @click="openCreate"
           >
             <NavIcon class="workspace__topnav-icon" :name="module.icon" :size="16" />
@@ -22,7 +21,6 @@
           <RouterLink
             v-else
             class="workspace__topnav-link"
-            :class="{ 'workspace__topnav-link--active': activeModule?.key === module.key }"
             :to="{ name: module.routeName }"
           >
             <NavIcon class="workspace__topnav-icon" :name="module.icon" :size="16" />
@@ -132,15 +130,14 @@
           <span v-if="!asideCollapsed">收起导航</span>
         </button>
 
-        <nav class="workspace__quicknav" aria-label="快捷入口">
+        <nav class="workspace__quicknav" aria-label="侧边导航">
           <RouterLink
-            v-for="link in QUICK_LINKS"
-            :key="link.key"
+            v-for="link in sideLinks"
+            :key="link.label"
             class="workspace__quick-link"
-            :class="{ 'workspace__quick-link--active': isQuickActive(link.hash) }"
+            :class="{ 'workspace__quick-link--active': isSideActive(link) }"
             :title="asideCollapsed ? link.label : undefined"
-            :to="{ name: ROUTE_NAMES.dashboard, hash: link.hash }"
-            @click="onQuickLinkClick(link)"
+            :to="{ name: link.routeName, query: link.query }"
           >
             <NavIcon class="workspace__quick-icon" :name="link.icon" :size="17" />
             <span class="workspace__quick-label">{{ link.label }}</span>
@@ -200,10 +197,11 @@
         :class="{ 'workspace__main--fill': route.meta.module === 'new-meeting' }"
       >
         <div class="workspace__content">
+          <!-- 不用 Transition/out-in：离场过渡若未结束（卸载钩子抛错、transitionend 丢失）
+               会永久卡住内容区，表现为“路由与侧栏已切换、中间仍是旧页面”。
+               页面切换改为即时渲染 + 入场纯 CSS 动画，任何情况下都不阻塞路由。 -->
           <RouterView v-slot="{ Component }">
-            <Transition name="page" mode="out-in">
-              <component :is="Component" />
-            </Transition>
+            <component :is="Component" :key="route.path" />
           </RouterView>
         </div>
       </main>
@@ -212,6 +210,21 @@
     <ModelConfigDialog :open="activePanel === 'model'" @close="closePanel()" />
     <MemoryDialog :open="activePanel === 'memory'" @close="closePanel()" />
     <KnowledgeDialog :open="activePanel === 'knowledge'" @close="closePanel()" />
+
+    <!-- 首次登录引导：先设置记忆中心，再绑定本地文件夹；走完一次后不再弹出 -->
+    <MemoryDialog
+      v-if="onboardingStep === 'memory'"
+      :open="true"
+      stepper
+      @next="advanceFromMemory"
+      @close="advanceFromMemory"
+    />
+    <WorkspaceSetupDialog
+      v-if="onboardingStep === 'workspace'"
+      :open="true"
+      @close="finishOnboarding"
+    />
+
     <CreateMeetingDialog ref="createDialog" />
 
     <ToastHost />
@@ -228,27 +241,47 @@ import { listTasks } from '@/api/tasks'
 import KnowledgeDialog from '@/components/settings/KnowledgeDialog.vue'
 import MemoryDialog from '@/components/settings/MemoryDialog.vue'
 import ModelConfigDialog from '@/components/settings/ModelConfigDialog.vue'
+import WorkspaceSetupDialog from '@/components/settings/WorkspaceSetupDialog.vue'
 import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import ToastHost from '@/components/ToastHost.vue'
-import logoUrl from '@/assets/logo.jpeg'
-import { NAV_MODULES, findModuleByRouteName } from '@/constants/navigation'
+import logoUrl from '@/assets/logo-bird.png'
+import {
+  NAV_MODULES,
+  SIDE_GROUPS,
+  sideGroupForRoute,
+  type SideLink,
+} from '@/constants/navigation'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
-
-// 左侧固定快捷入口：跳转到主页对应分区（我的会议 / 待办任务），与一级导航解耦
-const QUICK_LINKS = [
-  { key: 'meetings', label: '会议', icon: 'video', hash: '#my-meetings' },
-  { key: 'tasks', label: '任务', icon: 'tasks', hash: '#todo-tasks' },
-] as const
-
-type QuickLink = (typeof QUICK_LINKS)[number]
+import { isOnboardingDone, markOnboardingDone } from '@/utils/onboarding'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const { activePanel, openPanel, closePanel } = useSettingsPanels()
+
+// 首次登录引导：记忆中心 → 本地文件夹配置，仅对未走完引导的账号弹出一次
+type OnboardingStep = 'idle' | 'memory' | 'workspace'
+const onboardingStep = ref<OnboardingStep>('idle')
+
+function beginOnboardingIfNeeded(userId: string | null | undefined): void {
+  if (userId && !isOnboardingDone(userId)) {
+    onboardingStep.value = 'memory'
+  } else {
+    onboardingStep.value = 'idle'
+  }
+}
+
+function advanceFromMemory(): void {
+  onboardingStep.value = 'workspace'
+}
+
+function finishOnboarding(): void {
+  markOnboardingDone(auth.user?.user_id)
+  onboardingStep.value = 'idle'
+}
 
 function openSettingsPanel(panel: 'model' | 'memory' | 'knowledge'): void {
   closeMenus()
@@ -267,17 +300,17 @@ const menuEl = ref<HTMLDetailsElement | null>(null)
 const settingsEl = ref<HTMLDetailsElement | null>(null)
 const isLoggingOut = ref(false)
 
-// 左侧导航栏折叠：默认隐藏，点击 > 展开；选择记忆在本地（无记录时默认折叠）
+// 左侧导航栏折叠：默认展开，点击收起按钮隐藏；选择记忆在本地（无记录时默认展开）
 const ASIDE_COLLAPSED_KEY = 'openmind.asideCollapsed'
 const asideCollapsed = ref(readAsideCollapsed())
 
 function readAsideCollapsed(): boolean {
   try {
     const stored = window.localStorage.getItem(ASIDE_COLLAPSED_KEY)
-    // 无本地记录（首次访问）或上次为折叠时，一律默认折叠
-    return stored === null ? true : stored === '1'
+    // 无本地记录（首次访问）时默认展开；有记录时按上次选择恢复
+    return stored === null ? false : stored === '1'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -292,18 +325,20 @@ function toggleAside(): void {
 
 const initial = computed(() => (auth.user?.name ?? '?').slice(0, 1).toUpperCase())
 
-const activeModule = computed(() => findModuleByRouteName(String(route.name ?? '')))
+// 侧边栏只展示当前一级归属下的二级菜单
+const sideLinks = computed<SideLink[]>(() =>
+  SIDE_GROUPS[sideGroupForRoute(route.name ? String(route.name) : undefined)],
+)
 
-// 侧边栏入口按主页锚点（我的会议 / 待办任务）高亮
-function isQuickActive(hash: string): boolean {
-  return route.name === ROUTE_NAMES.dashboard && route.hash === hash
-}
-
-// 已停留在目标锚点时路由不会变化，导航不会重新触发，这里手动补一次滚动
-function onQuickLinkClick(link: QuickLink): void {
-  if (isQuickActive(link.hash)) {
-    document.querySelector(link.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+// 侧边栏二级项按路由 + 状态筛选高亮；同一页面只高亮当前一项
+function isSideActive(link: SideLink): boolean {
+  if (!route.name || !link.match.includes(String(route.name))) {
+    return false
   }
+  if (link.matchStatus !== undefined) {
+    return String(route.query.status ?? '') === link.matchStatus
+  }
+  return true
 }
 
 // 系统设置入口收纳进左下角“设置”菜单，顶部一级导航不再展示
@@ -342,6 +377,15 @@ watch(
   },
 )
 
+// 登录账号就绪后，判断是否需要走首次引导；登出/切号时复位
+watch(
+  () => auth.user?.user_id,
+  (userId) => {
+    beginOnboardingIfNeeded(userId)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   void refreshNotices()
 })
@@ -369,7 +413,8 @@ async function handleLogout(): Promise<void> {
   position: sticky;
   top: 0;
   z-index: 60;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--space-5);
   height: 56px;
@@ -385,6 +430,7 @@ async function handleLogout(): Promise<void> {
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
+  justify-self: start;
   text-decoration: none;
 }
 
@@ -408,8 +454,8 @@ async function handleLogout(): Promise<void> {
 .workspace__topnav {
   display: flex;
   align-items: center;
+  justify-self: center;
   gap: var(--space-1);
-  flex: 1;
   min-width: 0;
   height: 100%;
   overflow-x: auto;
@@ -456,21 +502,10 @@ async function handleLogout(): Promise<void> {
   cursor: pointer;
 }
 
-.workspace__topnav-link--active,
-.workspace__topnav-link--active:hover {
-  color: #ffffff;
-  background: var(--color-primary);
-  box-shadow: 0 6px 16px rgba(21, 94, 239, 0.28);
-}
-
-.workspace__topnav-link--active .workspace__topnav-icon {
-  color: #ffffff;
-  opacity: 1;
-}
-
 .workspace__topbar-actions {
   display: flex;
   align-items: center;
+  justify-self: end;
   gap: var(--space-1);
   flex: 0 0 auto;
 }
@@ -749,10 +784,8 @@ async function handleLogout(): Promise<void> {
   width: 232px;
   height: calc(100vh - 56px);
   padding: var(--space-3) var(--space-3) var(--space-4);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--color-surface);
   border-right: 1px solid var(--color-border);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
   transition:
     flex-basis var(--transition) ease,
     width var(--transition) ease,
@@ -830,7 +863,7 @@ async function handleLogout(): Promise<void> {
 .workspace__quicknav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .workspace__quick-link {
@@ -838,21 +871,24 @@ async function handleLogout(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0.62rem 0.8rem;
+  padding: 0.65rem 0.85rem;
   color: var(--color-foreground);
   font-size: 0.875rem;
   font-weight: 550;
   text-decoration: none;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   transition:
     color var(--transition-fast),
     background var(--transition-fast),
-    box-shadow var(--transition-fast);
+    border-color var(--transition-fast);
 }
 
 .workspace__quick-link:hover {
   color: var(--color-primary-strong);
-  background: var(--color-surface-muted);
+  background: var(--color-primary-soft);
+  border-color: transparent;
 }
 
 .workspace__quick-icon {
@@ -868,14 +904,15 @@ async function handleLogout(): Promise<void> {
 .workspace__quick-link--active:hover {
   color: var(--color-primary-strong);
   background: var(--color-primary-soft);
-  box-shadow: 0 6px 16px rgba(21, 94, 239, 0.1);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .workspace__quick-link--active::before {
   content: '';
   position: absolute;
-  top: 22%;
-  bottom: 22%;
+  top: 24%;
+  bottom: 24%;
   left: calc(-1 * var(--space-3));
   width: 3px;
   background: var(--color-primary);
@@ -967,22 +1004,18 @@ async function handleLogout(): Promise<void> {
   }
 }
 
-/* 页面切换动效 */
-.page-enter-active,
-.page-leave-active {
-  transition:
-    opacity var(--transition) ease,
-    transform var(--transition) ease;
+/* 页面入场动效：纯 CSS 动画，元素挂载即播放，不参与路由切换的等待链 */
+.workspace__content > * {
+  animation: page-in var(--transition) ease;
 }
 
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(6px);
-}
-
-.page-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -1021,7 +1054,7 @@ async function handleLogout(): Promise<void> {
     width: 100%;
     height: auto;
     padding: var(--space-2) var(--space-3);
-    background: rgba(255, 255, 255, 0.94);
+    background: var(--color-surface);
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
   }

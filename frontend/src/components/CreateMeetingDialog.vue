@@ -15,17 +15,18 @@ import { useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
 import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import {
   assignCategory,
-  createCategory,
   loadCategories,
   type MeetingCategory,
 } from '@/utils/meetingCategories'
 
 const router = useRouter()
 const toast = useToast()
+const ws = useLocalWorkspace()
 
 const open = ref(false)
 const creating = ref(false)
@@ -52,14 +53,11 @@ async function createMeeting(payload: MeetingFormPayload): Promise<void> {
       topic: payload.topic,
       meeting_time: payload.meeting_time,
     })
-    // 未选择文件夹 → 在会议管理以会议名为名建文件夹（同名已存在则复用）并归入
-    let categoryId = payload.categoryId
-    if (!categoryId) {
-      const existing = categories.value.find((item) => item.name === created.title)
-      categoryId = (existing ?? createCategory(created.title)).id
-      categories.value = loadCategories()
-    }
+    // 未选择分类 → 归入「未分类」；分类是可选项，创建的始终是会议，不自动建分类
+    const categoryId = payload.categoryId || null
     assignCategory(created.meeting_id, categoryId)
+    // 本地同步：有分类建 <分类>/<会议>/，无分类建 <会议>/（未连接本地文件夹时静默跳过）
+    void ws.createMeetingLocal(created.meeting_id, created.title, categoryId)
     open.value = false
     toast.success('会议已创建')
     await router.push({

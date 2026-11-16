@@ -1,5 +1,14 @@
 from app.db.base import Base
 from app.models.action_item import ActionItem
+from app.models.agent import (
+    AgentMessage,
+    AgentPendingAction,
+    AgentRun,
+    AgentRunStep,
+    AgentSession,
+)
+from app.models.ai_call_log import AICallLog
+from app.models.async_job import AsyncJob
 from app.models.audio import MeetingAudio
 from app.models.chunk import DocumentChunk
 from app.models.issue import OpenIssue
@@ -18,6 +27,13 @@ from app.models.user_memory import UserMemory
 
 __all__ = [
     "ActionItem",
+    "AgentMessage",
+    "AgentPendingAction",
+    "AgentRun",
+    "AgentRunStep",
+    "AgentSession",
+    "AICallLog",
+    "AsyncJob",
     "Base",
     "DocumentChunk",
     "KnowledgeChunk",

@@ -367,8 +367,8 @@ async function exportMinutes(): Promise<void> {
       `${props.meetingTitle || '会议'} · 会议纪要`,
       latest.content,
     )
-    // 写入会议根（新建会议时选择的存储位置，默认 <会议名>/）
-    const segments = await ws.meetingRootSegments(
+    // 写入会议根（<分类名?>/<会议名>/，分类可选）
+    const segments = await ws.storedMeetingSegments(
       props.meetingId,
       props.meetingTitle || '会议',
     )

@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.ai.rag import retriever as rag
+from app.core.exceptions import AppError
 from app.models.chunk import DocumentChunk
 from app.models.knowledge_chunk import KnowledgeChunk
 from app.repositories import (
@@ -212,3 +213,181 @@ def test_vector_retriever_knowledge_base_scope(
     assert results[0].meeting_id is None
     assert results[0].material_id is None
     assert results[0].excerpt == "知识库相关内容"
+
+
+# ---------- 检索后端分流与配置化默认值 ----------
+
+
+def test_vector_retriever_backend_auto_is_python_on_sqlite(
+    db_session: Session,
+) -> None:
+    retriever = rag.VectorRetriever(db_session, "usr_none")
+    assert retriever._backend() == "python"
+
+
+def test_vector_retriever_explicit_pgvector_on_sqlite_raises(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import get_settings
+
+    base = get_settings()
+    monkeypatch.setattr(
+        rag,
+        "get_settings",
+        lambda: base.model_copy(update={"rag_vector_backend": "pgvector"}),
+    )
+    retriever = rag.VectorRetriever(db_session, "usr_none")
+    with pytest.raises(AppError) as excinfo:
+        retriever._backend()
+    assert excinfo.value.error_code == "INTERNAL_ERROR"
+
+
+def test_vector_retriever_reads_defaults_from_settings(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """top_k/min_score 缺省时由 RAG_TOP_K / RAG_MIN_SCORE 决定。"""
+    from app.core.config import get_settings
+
+    base = get_settings()
+    monkeypatch.setattr(
+        rag,
+        "get_settings",
+        lambda: base.model_copy(update={"rag_top_k": 1, "rag_min_score": 0.3}),
+    )
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
+    alice_id = _seed_user_meeting_material(
+        db_session,
+        name="alice",
+        meeting_id="mtg_a",
+        material_id="mat_a",
+        chunk_id="chk_a",
+        content="高分片段",
+        embedding=[1.0, 0.0],
+    )
+    db_session.add(
+        DocumentChunk(
+            chunk_id="chk_a2",
+            material_id="mat_a",
+            content="次高分片段",
+            chunk_index=1,
+            embedding=[1.0, 0.0],
+        )
+    )
+    db_session.commit()
+
+    retriever = rag.VectorRetriever(db_session, alice_id)
+    results = retriever.retrieve("问题", user_id=alice_id)
+
+    assert len(results) == 1  # RAG_TOP_K=1 截断
+
+
+def test_vector_retriever_pgvector_scores_and_filters(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PG 路径：距离换算 1-dist、min_score 过滤、top_k 截断、过采样上限下发 SQL。"""
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
+    monkeypatch.setattr(rag.VectorRetriever, "_backend", lambda self: "pgvector")
+    monkeypatch.setattr(rag.VectorRetriever, "_set_hnsw_ef_search", lambda self: None)
+    alice_id = _seed_user_meeting_material(
+        db_session,
+        name="alice",
+        meeting_id="mtg_a",
+        material_id="mat_a",
+        chunk_id="chk_seed",
+        content="占位片段",
+        embedding=[1.0, 0.0],
+    )
+
+    near = DocumentChunk(
+        chunk_id="chk_near",
+        material_id="mat_a",
+        content="近邻片段",
+        chunk_index=0,
+        embedding=[1.0, 0.0],
+    )
+    far = DocumentChunk(
+        chunk_id="chk_far",
+        material_id="mat_a",
+        content="远端片段",
+        chunk_index=1,
+        embedding=[0.0, 1.0],
+    )
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    captured: dict[str, object] = {}
+
+    def fake_execute(statement, *args, **kwargs):
+        captured["statement"] = statement
+        return _FakeResult([(near, "mtg_a", 0.2), (far, "mtg_a", 0.9)])
+
+    retriever = rag.VectorRetriever(db_session, alice_id)
+    monkeypatch.setattr(db_session, "execute", fake_execute)
+    results = retriever.retrieve("问题", user_id=alice_id, top_k=5, min_score=0.3)
+
+    assert [item.excerpt for item in results] == ["近邻片段"]
+    assert results[0].score == pytest.approx(0.8)  # 1 - 0.2
+    assert results[0].meeting_id == "mtg_a"
+    assert results[0].material_id == "mat_a"
+
+    # 过采样上限必须下发到 SQL：top_k(5) * rag_ann_oversample(4) = 20
+    from sqlalchemy.dialects import postgresql
+
+    compiled = str(
+        captured["statement"].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "LIMIT 20" in compiled
+
+
+def test_vector_retriever_pgvector_truncates_to_top_k(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rag, "embed_query", lambda text, config: [1.0, 0.0])
+    monkeypatch.setattr(rag.VectorRetriever, "_backend", lambda self: "pgvector")
+    monkeypatch.setattr(rag.VectorRetriever, "_set_hnsw_ef_search", lambda self: None)
+    alice_id = _seed_user_meeting_material(
+        db_session,
+        name="alice",
+        meeting_id="mtg_a",
+        material_id="mat_a",
+        chunk_id="chk_seed",
+        content="占位片段",
+        embedding=[1.0, 0.0],
+    )
+
+    rows = [
+        (
+            DocumentChunk(
+                chunk_id=f"chk_{index}",
+                material_id="mat_a",
+                content=f"片段{index}",
+                chunk_index=index,
+                embedding=[1.0, 0.0],
+            ),
+            "mtg_a",
+            0.1 * index,
+        )
+        for index in range(5)
+    ]
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    retriever = rag.VectorRetriever(db_session, alice_id)
+    monkeypatch.setattr(
+        db_session, "execute", lambda statement, *args, **kwargs: _FakeResult(rows)
+    )
+    results = retriever.retrieve("问题", user_id=alice_id, top_k=2, min_score=0.0)
+    assert len(results) == 2
+    assert [item.score for item in results] == pytest.approx([1.0, 0.9])

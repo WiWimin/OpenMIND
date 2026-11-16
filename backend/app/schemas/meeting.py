@@ -31,6 +31,11 @@ class MeetingRead(BaseModel):
     topic: str | None
     meeting_time: datetime | None
     status: MeetingStatus
+    # 卡片展示元信息（仅列表接口填充，其余接口为默认值）
+    has_minutes: bool = False
+    material_count: int = 0
+    record_count: int = 0
+    audio_count: int = 0
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None

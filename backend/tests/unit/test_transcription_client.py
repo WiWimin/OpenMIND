@@ -2,6 +2,8 @@ import httpx
 import pytest
 
 from app.ai.transcription import TranscriptionClient
+from app.ai.transcription.client import probe_duration_seconds
+from app.core import metrics
 from app.core.exceptions import AppError
 
 
@@ -119,3 +121,132 @@ def test_webm_transcode_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert exc_info.value.error_code == "FILE_PARSE_FAILED"
     assert "invalid data" in exc_info.value.message
+
+
+# ------------------- 场景参数：超时与全局 deadline（P0） -------------------
+
+
+def test_transcription_uses_configured_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "asr_timeout_s", 7.5)
+    captured: dict = {}
+    client = _client(lambda _: httpx.Response(200, json={"text": "ok"}))
+    original = client._request_with_retry
+
+    def spy(send, **kwargs):  # noqa: ANN001, ANN003
+        captured.update(kwargs)
+        return original(send, **kwargs)
+
+    client._request_with_retry = spy  # type: ignore[method-assign]
+
+    assert client.transcribe(b"audio", "meeting.mp3") == "ok"
+    assert captured["timeout_s"] == 7.5
+
+
+def test_transcription_honours_disabled_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "asr_call_deadline_s", 0)
+    client = _client(lambda _: httpx.Response(200, json={"text": "ok"}))
+
+    assert client.retry_policy.deadline_s is None
+
+
+# ------------------------- 降级链（P0） -------------------------
+
+
+def test_transcription_falls_back_on_quota_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "asr_fallback_models", "backup-model")
+    seen: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.content)
+        if b"backup-model" in request.content:
+            return httpx.Response(200, json={"text": "转写内容"})
+        return httpx.Response(402, json={"error": {"code": "insufficient_quota"}})
+
+    result = _client(handler).transcribe(b"audio", "meeting.mp3")
+
+    assert result == "转写内容"
+    assert len(seen) == 2
+    assert metrics.snapshot()["counters"].get("ai_fallback_total") == 1
+
+
+def test_transcription_no_fall_back_on_config_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """密钥问题对所有模型一致，不浪费备用模型调用。"""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "asr_fallback_models", "backup-model")
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(401, json={"error": {"message": "bad key"}})
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).transcribe(b"audio", "meeting.mp3")
+
+    assert exc_info.value.error_code == "MODEL_CONFIG_INVALID"
+    assert len(calls) == 1
+
+
+# ------------------------- 时长预检（P0） -------------------------
+
+
+def test_probe_duration_parses_ffprobe_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Proc:
+        returncode = 0
+        stdout = b"12.5\n"
+        stderr = b""
+
+    monkeypatch.setattr(
+        "app.ai.transcription.client.subprocess.run", lambda *a, **k: _Proc()
+    )
+
+    assert probe_duration_seconds(b"audio", "meeting.mp3") == 12.5
+
+
+def test_probe_duration_missing_ffprobe_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*args, **kwargs):
+        raise FileNotFoundError("ffprobe")
+
+    monkeypatch.setattr("app.ai.transcription.client.subprocess.run", boom)
+
+    assert probe_duration_seconds(b"audio", "meeting.mp3") is None
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout"),
+    [(1, b""), (0, b""), (0, b"N/A"), (0, b"")],
+)
+def test_probe_duration_unusable_output_returns_none(
+    monkeypatch: pytest.MonkeyPatch, returncode: int, stdout: bytes
+) -> None:
+    class _Proc:
+        pass
+
+    proc = _Proc()
+    proc.returncode = returncode
+    proc.stdout = stdout
+    proc.stderr = b""
+
+    monkeypatch.setattr(
+        "app.ai.transcription.client.subprocess.run", lambda *a, **k: proc
+    )
+
+    assert probe_duration_seconds(b"audio", "meeting.mp3") is None

@@ -42,23 +42,31 @@ test.describe('AI 核心链路（真实模型）', () => {
     await addRecord(page, decisionRecord)
     await addRecord(page, openQuestion)
 
-    // 3) 会前准备：资料预处理页快捷气泡生成，产出显示在左侧「会前准备稿」
+    // 3) 会前准备：资料预处理页「准备清单」气泡生成，产出显示在左侧「会前准备稿」
     await openStage(page, 'preprocess', meetingId)
-    await page.getByRole('button', { name: '会议摘要', exact: true }).click()
+    await page.getByRole('button', { name: '准备清单', exact: true }).click()
     await page.getByRole('button', { name: '发送消息', exact: true }).click()
     await expect(page.locator('.prep-summary__text')).not.toBeEmpty({ timeout: 300_000 })
 
-    // 4) 纪要：会后智能处理页快捷卡片 → 产出区的「纪要」标签（富文本编辑确认）
+    // 4) 纪要：会后智能处理页快捷卡片 → 聊天内文件卡 → 右侧打开查看与编辑
     await openStage(page, 'minutes', meetingId)
     await page.locator('.task-card').filter({ hasText: '帮我生成一篇会议纪要' }).click()
     await page.getByRole('button', { name: '发送消息', exact: true }).click()
+    const docCard = page.locator('.doc-card').first()
+    await expect(docCard).toBeVisible({ timeout: 300_000 })
+    await expect(docCard).toContainText('会议纪要 v1')
+    await docCard.getByRole('button', { name: '打开', exact: true }).click()
     await expect(page.locator('#minutes-content')).toBeVisible({ timeout: 300_000 })
     await expect(page.locator('#minutes-content')).not.toHaveText('', { timeout: 300_000 })
-    await expect(page.getByText('草稿', { exact: true }).first()).toBeVisible()
+    await page.locator('.doc-drawer__close').click()
+    await expect(page.locator('.doc-drawer')).toBeHidden()
 
-    // 5) 行动项：提取 → 确认 → 转为我的个人任务（产出区自动切到「行动项」标签）
+    // 5) 行动项：提取 → 清单卡 → 右侧打开确认 → 转为我的个人任务
     await page.locator('.agent-composer__input').fill('请提取待办任务与行动项。')
     await page.getByRole('button', { name: '发送消息', exact: true }).click()
+    const itemsCard = page.locator('.items-card').first()
+    await expect(itemsCard).toBeVisible({ timeout: 300_000 })
+    await itemsCard.getByRole('button', { name: '打开确认' }).click()
     const firstAction = page.locator('.action-item').first()
     await expect(firstAction).toBeVisible({ timeout: 300_000 })
     await firstAction.getByRole('button', { name: '确认', exact: true }).click()
@@ -70,6 +78,10 @@ test.describe('AI 核心链路（真实模型）', () => {
     await convertDialog.getByRole('button', { name: '确定', exact: true }).click()
     await expect(convertDialog).toBeHidden()
     await expect(firstAction.locator('.action-item__done')).toHaveText('已转任务')
+
+    // 关闭右侧抽屉，恢复顶部导航可点
+    await page.locator('.doc-drawer__close').click()
+    await expect(page.locator('.doc-drawer')).toBeHidden()
 
     // 6) 任务管理：转出的任务出现在个人任务列表
     await page.getByRole('link', { name: '任务管理', exact: true }).click()

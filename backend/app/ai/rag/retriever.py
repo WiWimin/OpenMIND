@@ -4,13 +4,14 @@ import logging
 import time
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.ai.rag.relevance import RelevanceJudge
 from app.ai.rag.similarity import cosine
 from app.core import metrics
 from app.core.config import get_settings
+from app.core.exceptions import AppError
 from app.models.chunk import DocumentChunk
 from app.models.knowledge_chunk import KnowledgeChunk
 from app.models.knowledge_document import KnowledgeDocument
@@ -177,6 +178,71 @@ class VectorRetriever:
         except Exception as exc:  # noqa: BLE001 —— 埋点失败绝不影响检索主链路
             logger.warning("检索埋点失败（不影响结果）type=%s", type(exc).__name__)
 
+    def _backend(self) -> str:
+        """解析生效的检索后端：`auto` 按方言分流，显式值校验方言匹配。
+
+        `python` 为应用层余弦（回滚开关与 SQLite 测试路径）；`pgvector` 走
+        SQL ANN（HNSW + 余弦距离）。显式指定 pgvector 但非 PostgreSQL 时报配置错误。
+        """
+        backend = get_settings().rag_vector_backend
+        try:
+            dialect = self._db.get_bind().dialect.name
+        except Exception:  # noqa: BLE001 —— 方言探测失败按应用层路径兜底
+            dialect = ""
+        if backend == "auto":
+            return "pgvector" if dialect == "postgresql" else "python"
+        if backend == "pgvector" and dialect != "postgresql":
+            raise AppError(
+                "INTERNAL_ERROR",
+                "RAG_VECTOR_BACKEND=pgvector 仅支持 PostgreSQL 运行时",
+                http_status=500,
+                retryable=False,
+            )
+        return backend
+
+    def _set_hnsw_ef_search(self) -> None:
+        """设置 HNSW 查询期 ef_search（事务内局部生效；失败只记 warning）。"""
+        ef_search = get_settings().rag_hnsw_ef_search
+        if ef_search <= 0:
+            return
+        try:
+            self._db.execute(
+                text("SELECT set_config('hnsw.ef_search', :value, true)"),
+                {"value": str(ef_search)},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "设置 hnsw.ef_search 失败（不影响检索）type=%s", type(exc).__name__
+            )
+
+    def _finish(
+        self,
+        query: str,
+        *,
+        scope: str,
+        scored: list[RetrievedChunk],
+        top_k: int,
+        candidate_rows: int,
+        sql_ms: float,
+        embed_ms: float,
+        similarity_ms: float,
+        started: float,
+    ) -> list[RetrievedChunk]:
+        """排序后的候选统一走 Judge 复核与埋点出口（python/pgvector 共用）。"""
+        top1_score = scored[0].score if scored else None
+        results = self._apply_judge(query, scored[:top_k], scene=scope)
+        self._observe_and_alert(
+            scope=scope,
+            candidate_rows=candidate_rows,
+            kept=len(results),
+            sql_ms=sql_ms,
+            embed_ms=embed_ms,
+            similarity_ms=similarity_ms,
+            total_ms=(time.perf_counter() - started) * 1000,
+            top1_score=top1_score,
+        )
+        return results
+
     def retrieve(
         self,
         query: str,
@@ -184,9 +250,12 @@ class VectorRetriever:
         user_id: str,
         scope: str = "current_meeting",
         current_meeting_id: str | None = None,
-        top_k: int = 5,
-        min_score: float = 0.3,
+        top_k: int | None = None,
+        min_score: float | None = None,
     ) -> list[RetrievedChunk]:
+        settings = get_settings()
+        top_k = settings.rag_top_k if top_k is None else top_k
+        min_score = settings.rag_min_score if min_score is None else min_score
         if scope == "knowledge_base":
             return self.retrieve_knowledge(
                 query,
@@ -194,7 +263,34 @@ class VectorRetriever:
                 top_k=top_k,
                 min_score=min_score,
             )
+        if self._backend() == "pgvector":
+            return self._retrieve_meeting_pgvector(
+                query,
+                user_id=user_id,
+                current_meeting_id=current_meeting_id,
+                top_k=top_k,
+                min_score=min_score,
+                scope=scope,
+            )
+        return self._retrieve_meeting_python(
+            query,
+            user_id=user_id,
+            current_meeting_id=current_meeting_id,
+            top_k=top_k,
+            min_score=min_score,
+            scope=scope,
+        )
 
+    def _retrieve_meeting_python(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        current_meeting_id: str | None,
+        top_k: int,
+        min_score: float,
+        scope: str,
+    ) -> list[RetrievedChunk]:
         started = time.perf_counter()
         statement = (
             select(DocumentChunk, MeetingMaterial.meeting_id)
@@ -270,10 +366,35 @@ class VectorRetriever:
         query: str,
         *,
         user_id: str,
-        top_k: int = 5,
-        min_score: float = 0.3,
+        top_k: int | None = None,
+        min_score: float | None = None,
     ) -> list[RetrievedChunk]:
         """知识库范围检索（`knowledge_service.search_documents` 与 RAG 共用）。"""
+        settings = get_settings()
+        top_k = settings.rag_top_k if top_k is None else top_k
+        min_score = settings.rag_min_score if min_score is None else min_score
+        if self._backend() == "pgvector":
+            return self._retrieve_knowledge_pgvector(
+                query,
+                user_id=user_id,
+                top_k=top_k,
+                min_score=min_score,
+            )
+        return self._retrieve_knowledge_python(
+            query,
+            user_id=user_id,
+            top_k=top_k,
+            min_score=min_score,
+        )
+
+    def _retrieve_knowledge_python(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        top_k: int,
+        min_score: float,
+    ) -> list[RetrievedChunk]:
         started = time.perf_counter()
         statement = (
             select(KnowledgeChunk, KnowledgeDocument.file_name)
@@ -348,3 +469,194 @@ class VectorRetriever:
             top1_score=top1_score,
         )
         return results
+
+    def _retrieve_meeting_pgvector(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        current_meeting_id: str | None,
+        top_k: int,
+        min_score: float,
+        scope: str,
+    ) -> list[RetrievedChunk]:
+        """PG 路径：HNSW 余弦距离下沉数据库，权限过滤仍在 SQL 前置。
+
+        HNSW + 过滤条件会损失召回，先取 `top_k * rag_ann_oversample` 候选
+        （上限 `rag_ann_max_candidates`），再按 `min_score` 过滤并截断 top_k。
+        """
+        started = time.perf_counter()
+        embed_started = time.perf_counter()
+        query_vector = embed_query(query, self._config)
+        embed_ms = (time.perf_counter() - embed_started) * 1000
+        if not query_vector:
+            self._observe_and_alert(
+                scope=scope,
+                candidate_rows=0,
+                kept=0,
+                sql_ms=0.0,
+                embed_ms=embed_ms,
+                similarity_ms=0.0,
+                total_ms=(time.perf_counter() - started) * 1000,
+                top1_score=None,
+            )
+            return []
+
+        settings = get_settings()
+        self._set_hnsw_ef_search()
+        distance = DocumentChunk.embedding.cosine_distance(query_vector)
+        statement = (
+            select(DocumentChunk, MeetingMaterial.meeting_id, distance.label("distance"))
+            .join(MeetingMaterial, DocumentChunk.material_id == MeetingMaterial.material_id)
+            .join(Meeting, MeetingMaterial.meeting_id == Meeting.meeting_id)
+            .where(Meeting.user_id == user_id, DocumentChunk.embedding.is_not(None))
+            .order_by(distance)
+            .limit(
+                min(
+                    max(top_k, 1) * settings.rag_ann_oversample,
+                    settings.rag_ann_max_candidates,
+                )
+            )
+        )
+        if scope == "current_meeting" and current_meeting_id is not None:
+            statement = statement.where(MeetingMaterial.meeting_id == current_meeting_id)
+
+        sql_started = time.perf_counter()
+        rows = self._db.execute(statement).all()
+        sql_ms = (time.perf_counter() - sql_started) * 1000
+        if not rows:
+            self._observe_and_alert(
+                scope=scope,
+                candidate_rows=0,
+                kept=0,
+                sql_ms=sql_ms,
+                embed_ms=embed_ms,
+                similarity_ms=0.0,
+                total_ms=(time.perf_counter() - started) * 1000,
+                top1_score=None,
+            )
+            return []
+
+        similarity_started = time.perf_counter()
+        scored: list[RetrievedChunk] = []
+        for chunk, meeting_id, distance_value in rows:
+            # pgvector 余弦距离 `<=>` = 1 - 余弦相似度，换算回相似度保持 score 口径
+            score = 1.0 - float(distance_value)
+            if score >= min_score:
+                scored.append(
+                    RetrievedChunk(
+                        meeting_id=meeting_id,
+                        material_id=chunk.material_id,
+                        record_id=None,
+                        excerpt=chunk.content,
+                        score=score,
+                    )
+                )
+        scored.sort(key=lambda item: item.score, reverse=True)
+        similarity_ms = (time.perf_counter() - similarity_started) * 1000
+        return self._finish(
+            query,
+            scope=scope,
+            scored=scored,
+            top_k=top_k,
+            candidate_rows=len(rows),
+            sql_ms=sql_ms,
+            embed_ms=embed_ms,
+            similarity_ms=similarity_ms,
+            started=started,
+        )
+
+    def _retrieve_knowledge_pgvector(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        top_k: int,
+        min_score: float,
+    ) -> list[RetrievedChunk]:
+        """知识库 PG 路径：与会议材料同构，按 `knowledge_documents.user_id` 前置过滤。"""
+        started = time.perf_counter()
+        embed_started = time.perf_counter()
+        query_vector = embed_query(query, self._config)
+        embed_ms = (time.perf_counter() - embed_started) * 1000
+        if not query_vector:
+            self._observe_and_alert(
+                scope="knowledge_base",
+                candidate_rows=0,
+                kept=0,
+                sql_ms=0.0,
+                embed_ms=embed_ms,
+                similarity_ms=0.0,
+                total_ms=(time.perf_counter() - started) * 1000,
+                top1_score=None,
+            )
+            return []
+
+        settings = get_settings()
+        self._set_hnsw_ef_search()
+        distance = KnowledgeChunk.embedding.cosine_distance(query_vector)
+        statement = (
+            select(
+                KnowledgeChunk, KnowledgeDocument.file_name, distance.label("distance")
+            )
+            .join(
+                KnowledgeDocument,
+                KnowledgeChunk.document_id == KnowledgeDocument.document_id,
+            )
+            .where(
+                KnowledgeDocument.user_id == user_id,
+                KnowledgeChunk.embedding.is_not(None),
+            )
+            .order_by(distance)
+            .limit(
+                min(
+                    max(top_k, 1) * settings.rag_ann_oversample,
+                    settings.rag_ann_max_candidates,
+                )
+            )
+        )
+        sql_started = time.perf_counter()
+        rows = self._db.execute(statement).all()
+        sql_ms = (time.perf_counter() - sql_started) * 1000
+        if not rows:
+            self._observe_and_alert(
+                scope="knowledge_base",
+                candidate_rows=0,
+                kept=0,
+                sql_ms=sql_ms,
+                embed_ms=embed_ms,
+                similarity_ms=0.0,
+                total_ms=(time.perf_counter() - started) * 1000,
+                top1_score=None,
+            )
+            return []
+
+        similarity_started = time.perf_counter()
+        scored: list[RetrievedChunk] = []
+        for chunk, file_name, distance_value in rows:
+            score = 1.0 - float(distance_value)
+            if score >= min_score:
+                scored.append(
+                    RetrievedChunk(
+                        meeting_id=None,
+                        material_id=None,
+                        record_id=None,
+                        excerpt=chunk.content,
+                        score=score,
+                        document_id=chunk.document_id,
+                        document_name=file_name,
+                    )
+                )
+        scored.sort(key=lambda item: item.score, reverse=True)
+        similarity_ms = (time.perf_counter() - similarity_started) * 1000
+        return self._finish(
+            query,
+            scope="knowledge_base",
+            scored=scored,
+            top_k=top_k,
+            candidate_rows=len(rows),
+            sql_ms=sql_ms,
+            embed_ms=embed_ms,
+            similarity_ms=similarity_ms,
+            started=started,
+        )

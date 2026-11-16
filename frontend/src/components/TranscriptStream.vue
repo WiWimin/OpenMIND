@@ -40,7 +40,7 @@
           </button>
         </p>
         <div
-          v-if="entry.kind === 'record' && $slots['record-actions']"
+          v-if="$slots['record-actions']"
           class="stream__record-actions"
           @click.stop
           @keydown.enter.stop
@@ -262,6 +262,8 @@ function markerClass(marker: TranscriptEntry['marker']): string {
 
 .stream__record-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
 }
 </style>

@@ -7,123 +7,30 @@
       </template>
     </PageHeader>
 
-    <section class="meeting-panel">
-      <header class="meeting-panel__head">
-        <div>
-          <h2 class="meeting-panel__title">会议列表</h2>
-          <p class="meeting-panel__hint">共 {{ pagination.total }} 场会议</p>
-        </div>
-        <div class="meeting-panel__tools">
-          <template v-if="view !== 'meeting'">
-            <div class="status-chip-row" role="group" aria-label="会议状态筛选">
-              <button
-                v-for="option in statusOptions"
-                :key="option.value"
-                type="button"
-                class="status-chip"
-                :class="{ 'status-chip--active': status === option.value }"
-                @click="setStatus(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-            <div class="search-box">
-              <span class="search-box__icon" aria-hidden="true"><NavIcon name="search" :size="15" /></span>
-              <input
-                v-model="searchQuery"
-                class="search-box__input"
-                type="search"
-                placeholder="搜索会议名称或主题"
-                aria-label="搜索会议"
-              />
-            </div>
-          </template>
-          <AppButton @click="openCreate">新建会议</AppButton>
-        </div>
-      </header>
+    <!-- 左右双栏：左＝文件夹树，右＝会议卡片列表 / 会议文件 -->
+    <div class="meeting-split">
+      <aside class="meeting-split__side">
+        <CategoryTree
+          :categories="treeCategories"
+          :uncategorized="uncategorized"
+          :total-count="items.length"
+          :selected-key="selectedKey"
+          :active-meeting-id="activeMeeting?.meeting_id ?? null"
+          :expanded-ids="expandedIds"
+          :search-active="searchActive"
+          @select-all="goRoot"
+          @select-category="enterCategory"
+          @select-meeting="enterMeeting"
+          @toggle="toggleCategory"
+          @rename="renameTreeCategory"
+          @remove="askDeleteCategory"
+          @create="createTreeCategory"
+        />
+      </aside>
 
-      <AppBreadcrumb v-if="view !== 'root'" class="meeting-panel__breadcrumb" :items="breadcrumbItems" />
-
-      <LoadingSpinner v-if="loading && items.length === 0" class="meeting-panel__state" />
-      <ErrorMessage v-else-if="error" :error="error" retryable @retry="load()" />
-      <EmptyState
-        v-else-if="items.length === 0 && view === 'root'"
-        title="还没有符合条件的会议"
-        description="创建一场会议，开始资料预处理、录音转写与纪要生成。"
-      >
-        <AppButton @click="openCreate">新建会议</AppButton>
-      </EmptyState>
-
-      <template v-else>
-        <p v-if="view === 'root' && pagination.total > items.length" class="meeting-panel__cap-hint">
-          当前展示前 {{ items.length }} 场会议（共 {{ pagination.total }} 场）。
-        </p>
-
-        <!-- 根视图：分类文件夹 + 未分类文件夹 -->
-        <div v-if="view === 'root'" class="folder-tree">
-          <div v-for="folder in categoryFolders" :key="folder.id" class="folder-row">
-            <button type="button" class="folder-row__expander" @click="enterCategory(folder)">
-              <span class="folder-row__icon" aria-hidden="true"><NavIcon name="folder" :size="16" /></span>
-              <span class="folder-row__name">{{ folder.name }}</span>
-              <span class="folder-row__count">{{ folder.meetings.length }}</span>
-            </button>
-            <button
-              type="button"
-              class="folder-row__remove"
-              :title="`删除分类「${folder.name}」，会议将归入未分类`"
-              @click="askDeleteCategory(folder)"
-            >
-              删除分类
-            </button>
-          </div>
-
-          <div class="folder-row">
-            <button type="button" class="folder-row__expander" @click="enterCategory(null)">
-              <span class="folder-row__icon" aria-hidden="true"><NavIcon name="folder" :size="16" /></span>
-              <span class="folder-row__name">未分类</span>
-              <span class="folder-row__count">{{ uncategorized.length }}</span>
-            </button>
-          </div>
-
-          <!-- 新建分类 -->
-          <div class="category-create">
-            <template v-if="creatingCategory">
-              <input
-                v-model="newCategoryName"
-                class="category-create__input"
-                type="text"
-                placeholder="输入分类名称，如：周会"
-                maxlength="40"
-                @keyup.enter="submitCategory"
-              />
-              <AppButton size="sm" :disabled="!newCategoryName.trim()" @click="submitCategory">
-                创建
-              </AppButton>
-              <AppButton size="sm" variant="ghost" @click="cancelCreateCategory">取消</AppButton>
-            </template>
-            <button v-else type="button" class="category-create__toggle" @click="startCreateCategory">
-              ＋ 新建分类
-            </button>
-          </div>
-        </div>
-
-        <!-- 分类视图：该分类下的会议文件夹 -->
-        <div v-else-if="view === 'category'" class="folder-tree">
-          <MeetingRow
-            v-for="meeting in activeFolderMeetings"
-            :key="meeting.meeting_id"
-            :meeting="meeting"
-            @open="enterMeeting"
-            @import="openImport"
-            @delete="askDeleteMeeting"
-          />
-          <p v-if="activeFolderMeetings.length === 0" class="folder-empty-hint">
-            {{ searchActive ? '没有匹配的会议' : '该分类下还没有会议' }}
-          </p>
-        </div>
-
-        <!-- 会议视图：该会议的文件列表 -->
-        <div v-else class="meeting-files-view">
+      <div class="meeting-split__main">
+        <!-- 会议文件视图（点击卡片进入） -->
+        <template v-if="view === 'meeting'">
           <div class="meeting-files-view__head">
             <h2 class="meeting-files-view__title">{{ activeMeeting?.title }}</h2>
             <StatusBadge
@@ -131,6 +38,7 @@
               :tone="meetingBadgeMeta(activeMeeting?.status).tone"
             />
             <div v-if="activeMeeting" class="meeting-files-view__actions">
+              <AppButton variant="ghost" size="sm" @click="goWorkbench">会议工作台</AppButton>
               <AppButton
                 variant="ghost"
                 size="sm"
@@ -152,33 +60,77 @@
               </AppButton>
             </div>
           </div>
-          <MeetingFilesPanel v-if="activeMeeting" :meeting-id="activeMeeting.meeting_id" />
-        </div>
-      </template>
-    </section>
 
-    <!-- 从本地文件夹导入资料到指定会议 -->
-    <AppModal
-      :open="importTarget !== null"
-      :label="`导入资料 · ${importTarget?.title ?? ''}`"
-      @close="importTarget = null"
-    >
-      <div v-if="importTarget" class="meeting-import">
-        <p class="meeting-import__hint">
-          从已授权的本地文件夹选择资料导入该会议；未连接时可先在此授权（与会议详情页同一份授权）。
-        </p>
-        <LocalWorkspacePanel
-          :meeting-id="importTarget.meeting_id"
-          :meeting-title="importTarget.title"
-          :readonly="importTarget.status === 'archived'"
-          :show-export="false"
-          @imported="onImported"
-        />
-        <div class="meeting-import__actions">
-          <AppButton variant="ghost" @click="importTarget = null">完成</AppButton>
-        </div>
+          <AppBreadcrumb class="meeting-panel__breadcrumb" :items="breadcrumbItems" />
+
+          <LoadingSpinner v-if="loading && items.length === 0" class="meeting-panel__state" />
+          <ErrorMessage v-else-if="error" :error="error" retryable @retry="load()" />
+          <div v-else class="meeting-files-view">
+            <MeetingFilesPanel v-if="activeMeeting" :meeting-id="activeMeeting.meeting_id" />
+          </div>
+        </template>
+
+        <!-- 卡片列表视图（全部 / 某分类） -->
+        <template v-else>
+          <header class="meeting-list__head">
+            <div class="meeting-list__heading">
+              <h2 class="meeting-list__title">{{ listTitle }}</h2>
+              <p class="meeting-list__hint">共 {{ pagination.total }} 场会议</p>
+            </div>
+            <div class="meeting-list__tools">
+              <div class="status-chip-row" role="group" aria-label="会议状态筛选">
+                <button
+                  v-for="option in statusOptions"
+                  :key="option.value"
+                  type="button"
+                  class="status-chip"
+                  :class="{ 'status-chip--active': status === option.value }"
+                  :title="statusChipHint(option.value)"
+                  @click="setStatus(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <div class="search-box">
+                <span class="search-box__icon" aria-hidden="true"><NavIcon name="search" :size="15" /></span>
+                <input
+                  v-model="searchQuery"
+                  class="search-box__input"
+                  type="search"
+                  placeholder="搜索会议名称或主题"
+                  aria-label="搜索会议"
+                />
+              </div>
+              <AppButton @click="openCreate">新建会议</AppButton>
+            </div>
+          </header>
+
+          <LoadingSpinner v-if="loading && items.length === 0" class="meeting-panel__state" />
+          <ErrorMessage v-else-if="error" :error="error" retryable @retry="load()" />
+          <EmptyState
+            v-else-if="activeFolderMeetings.length === 0"
+            :title="emptyTitle"
+            :description="emptyDescription"
+          >
+            <AppButton @click="openCreate">新建会议</AppButton>
+          </EmptyState>
+
+          <template v-else>
+            <div class="meeting-card-grid">
+              <MeetingCard
+                v-for="meeting in activeFolderMeetings"
+                :key="meeting.meeting_id"
+                :meeting="meeting"
+                @open="enterMeeting"
+              />
+            </div>
+            <p v-if="pagination.total > items.length" class="meeting-list__cap-hint">
+              当前展示前 {{ items.length }} 场会议（共 {{ pagination.total }} 场）。
+            </p>
+          </template>
+        </template>
       </div>
-    </AppModal>
+    </div>
 
     <!-- 删除会议确认 -->
     <ConfirmDialog
@@ -231,30 +183,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import * as meetingsApi from '@/api/meetings'
 import AppBreadcrumb from '@/components/AppBreadcrumb.vue'
 import AppButton from '@/components/AppButton.vue'
-import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorMessage from '@/components/ErrorMessage.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import LocalWorkspacePanel from '@/components/LocalWorkspacePanel.vue'
 import MeetingFilesPanel from '@/components/MeetingFilesPanel.vue'
 import MeetingFormDialog, { type MeetingFormPayload } from '@/components/MeetingFormDialog.vue'
+import CategoryTree, { type TreeCategory } from '@/components/meetings/CategoryTree.vue'
+import MeetingCard from '@/components/meetings/MeetingCard.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useAsyncList } from '@/composables/useAsyncList'
 import { useToast } from '@/composables/useToast'
+import { resolveErrorMessage } from '@/utils/errors'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import type { Meeting, MeetingStatus } from '@/types/meeting'
-import { formatDateTime } from '@/utils/datetime'
 import { meetingStatusMeta, type StatusMeta } from '@/utils/statusLabels'
 import {
   assignCategory,
@@ -262,73 +214,9 @@ import {
   createCategory,
   deleteCategory,
   loadCategories,
+  renameCategory,
   type MeetingCategory,
 } from '@/utils/meetingCategories'
-
-/** 会议行（本页内部组件）：文件夹图标 + 名称 + 元信息 + 打开/导入/删除 */
-const MeetingRow = defineComponent({
-  name: 'MeetingRow',
-  props: {
-    meeting: { type: Object as () => Meeting, required: true },
-  },
-  emits: ['open', 'import', 'delete'],
-  setup(rowProps, { emit }) {
-    return () =>
-      h('div', { class: 'meeting-row' }, [
-        h('span', { class: 'meeting-row__icon', 'aria-hidden': 'true' }, [
-          h(NavIcon, { name: 'folder', size: 16 }),
-        ]),
-        h('div', { class: 'meeting-row__main' }, [
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'meeting-row__name',
-              onClick: () => emit('open', rowProps.meeting),
-            },
-            rowProps.meeting.title,
-          ),
-          h('p', { class: 'meeting-row__meta' }, [
-            rowProps.meeting.topic || '未填写会议主题',
-            ` · ${rowProps.meeting.meeting_time ? formatDateTime(rowProps.meeting.meeting_time) : '时间未设置'}`,
-          ]),
-        ]),
-        h(StatusBadge, {
-          label: meetingBadgeMeta(rowProps.meeting.status).label,
-          tone: meetingBadgeMeta(rowProps.meeting.status).tone,
-        }),
-        h('div', { class: 'meeting-row__actions' }, [
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'meeting-row__action',
-              onClick: () => emit('open', rowProps.meeting),
-            },
-            '查看',
-          ),
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'meeting-row__action',
-              onClick: () => emit('import', rowProps.meeting),
-            },
-            '导入',
-          ),
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'meeting-row__action meeting-row__action--danger',
-              onClick: () => emit('delete', rowProps.meeting),
-            },
-            '删除',
-          ),
-        ]),
-      ])
-  },
-})
 
 type StatusFilter = MeetingStatus | ''
 type ExplorerView = 'root' | 'category' | 'meeting'
@@ -357,10 +245,13 @@ const {
 })
 
 const categories = ref<MeetingCategory[]>([])
+/** 分类数据版本：增删改后自增，驱动依赖 categoryOf（localStorage，非响应式）的计算属性重算 */
+const categoryVersion = ref(0)
 
 const view = ref<ExplorerView>('root')
 const activeCategory = ref<MeetingCategory | null>(null)
 const activeMeeting = ref<Meeting | null>(null)
+const expandedIds = ref<string[]>([])
 
 const searchQuery = ref('')
 
@@ -381,11 +272,19 @@ const archiving = ref(false)
 
 const busy = computed(() => savingEdit.value || archiving.value || deletingMeeting.value)
 
-const creatingCategory = ref(false)
-const newCategoryName = ref('')
-
 function meetingBadgeMeta(status: MeetingStatus | undefined): StatusMeta {
   return meetingStatusMeta[status ?? 'scheduled']
+}
+
+/** 状态筛选说明：进行中 = 可编辑；已归档 = 只读 */
+function statusChipHint(value: StatusFilter): string {
+  if (value === 'archived') {
+    return '已归档的会议为只读：不能导入资料、不能编辑，仅可查看与导出'
+  }
+  if (value === 'scheduled') {
+    return '进行中的会议可正常编辑与导入资料'
+  }
+  return '查看全部会议'
 }
 
 const statusOptions: { value: StatusFilter; label: string }[] = [
@@ -410,11 +309,12 @@ function matchesSearch(meeting: Meeting): boolean {
 
 const visibleMeetings = computed(() => items.value.filter(matchesSearch))
 
-const uncategorized = computed(() =>
-  visibleMeetings.value.filter((meeting) => !categoryOf(meeting.meeting_id)),
-)
+const uncategorized = computed(() => {
+  void categoryVersion.value
+  return visibleMeetings.value.filter((meeting) => !categoryOf(meeting.meeting_id))
+})
 
-const categoryFolders = computed(() =>
+const treeCategories = computed<TreeCategory[]>(() =>
   categories.value.map((category) => ({
     ...category,
     meetings: visibleMeetings.value.filter(
@@ -423,8 +323,11 @@ const categoryFolders = computed(() =>
   })),
 )
 
-/** 当前所在分类的名称（未分类文件夹为 null） */
+/** 当前所在分类的会议（未分类 = activeCategory 为 null） */
 const activeFolderMeetings = computed(() => {
+  if (view.value === 'root') {
+    return visibleMeetings.value
+  }
   if (!activeCategory.value) {
     return uncategorized.value
   }
@@ -433,14 +336,39 @@ const activeFolderMeetings = computed(() => {
   )
 })
 
+const listTitle = computed(() =>
+  view.value === 'root' ? '全部会议' : activeCategory.value?.name ?? '未分类',
+)
+
 const activeCategoryLabel = computed(() =>
   activeCategory.value?.name ?? '未分类',
 )
 
-const breadcrumbItems = computed(() => {
-  if (view.value === 'category') {
-    return [{ label: '会议管理', onClick: () => goRoot() }, { label: activeCategoryLabel.value }]
+const selectedKey = computed(() => {
+  if (view.value === 'root') {
+    return 'all'
   }
+  return activeCategory.value ? `cat:${activeCategory.value.id}` : 'cat:uncategorized'
+})
+
+const emptyTitle = computed(() => {
+  if (searchActive.value) {
+    return '没有匹配的会议'
+  }
+  return view.value === 'root' ? '还没有符合条件的会议' : '该分类下还没有会议'
+})
+
+const emptyDescription = computed(() => {
+  if (searchActive.value) {
+    return '换个关键词试试，或清空搜索查看全部会议。'
+  }
+  if (view.value === 'root') {
+    return '创建一场会议，开始资料预处理、录音转写与纪要生成。'
+  }
+  return '新建一场会议，或把已有会议归入此分类。'
+})
+
+const breadcrumbItems = computed(() => {
   if (view.value === 'meeting') {
     return [
       { label: '会议管理', onClick: () => goRoot() },
@@ -451,16 +379,38 @@ const breadcrumbItems = computed(() => {
   return []
 })
 
-/* ===== 视图导航 ===== */
-function enterCategory(category: MeetingCategory | null): void {
-  activeCategory.value = category
-  activeMeeting.value = null
-  view.value = 'category'
+/* ===== 树导航 ===== */
+function ensureExpanded(id: string): void {
+  if (!expandedIds.value.includes(id)) {
+    expandedIds.value = [...expandedIds.value, id]
+  }
 }
 
+function toggleCategory(id: string): void {
+  expandedIds.value = expandedIds.value.includes(id)
+    ? expandedIds.value.filter((item) => item !== id)
+    : [...expandedIds.value, id]
+}
+
+/** 选中分类：右栏切换为该分类的会议卡片 */
+function enterCategory(categoryId: string | null): void {
+  activeMeeting.value = null
+  activeCategory.value = categoryId
+    ? (categories.value.find((item) => item.id === categoryId) ?? null)
+    : null
+  view.value = 'category'
+  ensureExpanded(categoryId ?? 'uncategorized')
+}
+
+/** 点击会议（卡片或树子节点）：右栏切换为该会议的文件列表 */
 function enterMeeting(meeting: Meeting): void {
   activeMeeting.value = meeting
+  const categoryId = categoryOf(meeting.meeting_id)
+  activeCategory.value = categoryId
+    ? (categories.value.find((item) => item.id === categoryId) ?? null)
+    : null
   view.value = 'meeting'
+  ensureExpanded(categoryId ?? 'uncategorized')
 }
 
 function goRoot(): void {
@@ -472,6 +422,17 @@ function goRoot(): void {
 function goCategory(): void {
   activeMeeting.value = null
   view.value = 'category'
+}
+
+/** 会议文件列表 → 会议工作台（资料预处理 / 录音转写 / 会后处理 3 卡片页） */
+function goWorkbench(): void {
+  if (!activeMeeting.value) {
+    return
+  }
+  void router.push({
+    name: ROUTE_NAMES.newMeeting,
+    query: { meetingId: activeMeeting.value.meeting_id },
+  })
 }
 
 /* ===== 会议操作（原会议详情页的编辑/归档/删除） ===== */
@@ -503,6 +464,12 @@ async function submitEdit(payload: MeetingFormPayload): Promise<void> {
     showEdit.value = false
     editTarget.value = null
     activeMeeting.value = updated
+    // 本地同步：改名/换分类时，本地会议文件夹随之迁移（未连接本地文件夹时静默跳过）
+    void ws.syncMeetingLocal(
+      updated.meeting_id,
+      updated.title,
+      payload.categoryId ?? categoryOf(updated.meeting_id),
+    )
     toast.success('会议信息已更新')
     await load()
     refreshCategories()
@@ -530,7 +497,7 @@ async function confirmArchive(): Promise<void> {
     toast.success('会议已归档')
     await load()
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '归档失败，请稍后重试')
+    toast.error(resolveErrorMessage(caught, '归档失败，请稍后重试'))
   } finally {
     archiving.value = false
   }
@@ -553,10 +520,6 @@ async function openFromQuery(): Promise<void> {
   }
   try {
     const meeting = await meetingsApi.getMeeting(meetingId)
-    const categoryId = categoryOf(meeting.meeting_id)
-    activeCategory.value = categoryId
-      ? (categories.value.find((item) => item.id === categoryId) ?? null)
-      : null
     enterMeeting(meeting)
   } catch {
     toast.error('会议不存在或无权访问')
@@ -570,6 +533,7 @@ async function load(): Promise<void> {
 
 function refreshCategories(): void {
   categories.value = loadCategories()
+  categoryVersion.value += 1
 }
 
 function setStatus(next: StatusFilter): void {
@@ -592,19 +556,6 @@ function askDeleteMeeting(meeting: Meeting): void {
   showDeleteMeeting.value = true
 }
 
-/** 从会议管理页直接把本地文件夹资料导入指定会议 */
-const importTarget = ref<Meeting | null>(null)
-
-function openImport(meeting: Meeting): void {
-  importTarget.value = meeting
-}
-
-function onImported(): void {
-  if (importTarget.value) {
-    toast.success(`已导入资料到「${importTarget.value.title}」`)
-  }
-}
-
 async function confirmDeleteMeeting(): Promise<void> {
   const target = deleteMeetingTarget.value
   if (!target) {
@@ -613,6 +564,8 @@ async function confirmDeleteMeeting(): Promise<void> {
   deletingMeeting.value = true
   try {
     await meetingsApi.deleteMeeting(target.meeting_id)
+    // 本地同步：删除会议文件夹（未连接本地文件夹时静默跳过）
+    void ws.deleteMeetingLocal(target.meeting_id, target.title)
     assignCategory(target.meeting_id, null)
     showDeleteMeeting.value = false
     deleteMeetingTarget.value = null
@@ -623,7 +576,7 @@ async function confirmDeleteMeeting(): Promise<void> {
     }
     await load()
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '删除失败，请稍后重试')
+    toast.error(resolveErrorMessage(caught, '删除失败，请稍后重试'))
   } finally {
     deletingMeeting.value = false
   }
@@ -639,7 +592,14 @@ function confirmDeleteCategory(): void {
   if (!target) {
     return
   }
+  // 先收集该分类下的会议（删除后归属信息就没了），用于本地文件夹上移同步
+  const meetingsInCategory = visibleMeetings.value
+    .filter((meeting) => categoryOf(meeting.meeting_id) === target.id)
+    .map((meeting) => ({ meetingId: meeting.meeting_id, title: meeting.title }))
   deleteCategory(target.id)
+  // 本地同步：分类下会议文件夹上移一层 <分类>/<会议> → <会议>（与「归入未分类」一致）
+  void ws.demoteCategoryLocal(target.name, meetingsInCategory)
+  expandedIds.value = expandedIds.value.filter((id) => id !== target.id)
   // 若删除的是当前所在分类，退回根视图
   if (activeCategory.value?.id === target.id) {
     goRoot()
@@ -650,24 +610,25 @@ function confirmDeleteCategory(): void {
   toast.success('分类已删除，其中会议已归入未分类')
 }
 
-function startCreateCategory(): void {
-  creatingCategory.value = true
-  newCategoryName.value = ''
-}
-
-function cancelCreateCategory(): void {
-  creatingCategory.value = false
-  newCategoryName.value = ''
-}
-
-function submitCategory(): void {
-  const name = newCategoryName.value.trim()
-  if (!name) {
+/** 树内重命名分类（更多菜单 → 重命名） */
+function renameTreeCategory(categoryId: string, name: string): void {
+  const renamed = renameCategory(categoryId, name)
+  if (!renamed) {
     return
   }
+  refreshCategories()
+  // 本地同步：创建新命名的分类文件夹（FSA 无 rename，旧文件夹保留，下次同步按新名建）
+  void ws.syncCategoryFolder(renamed.name)
+  toast.success(`分类已重命名为「${renamed.name}」`)
+}
+
+/** 树底「＋ 新建分类」 */
+function createTreeCategory(name: string): void {
   const created = createCategory(name)
   refreshCategories()
-  cancelCreateCategory()
+  ensureExpanded(created.id)
+  // 本地同步：新建分类 → 本地授权目录创建同名文件夹（未连接时静默跳过）
+  void ws.syncCategoryFolder(created.name)
   toast.success(`分类「${created.name}」已创建`)
 }
 
@@ -730,11 +691,11 @@ watch(
   gap: var(--space-4);
 }
 
-/* 面板 */
-.meeting-panel {
+/* ===== 左右双栏 ===== */
+.meeting-split {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  align-items: flex-start;
+  gap: var(--space-4);
   padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -742,7 +703,24 @@ watch(
   box-shadow: var(--shadow-sm);
 }
 
-.meeting-panel__head {
+.meeting-split__side {
+  flex: 0 0 15.5rem;
+  max-height: calc(100vh - 13rem);
+  padding-right: var(--space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--color-border);
+}
+
+.meeting-split__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* ===== 卡片列表头部 ===== */
+.meeting-list__head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -750,23 +728,27 @@ watch(
   gap: var(--space-3);
 }
 
-.meeting-panel__tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
+.meeting-list__heading {
+  min-width: 0;
 }
 
-.meeting-panel__title {
+.meeting-list__title {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 650;
 }
 
-.meeting-panel__hint {
+.meeting-list__hint {
   margin: 2px 0 0;
   color: var(--color-muted-foreground);
   font-size: 0.75rem;
+}
+
+.meeting-list__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .meeting-panel__state {
@@ -775,13 +757,13 @@ watch(
   padding: var(--space-6);
 }
 
-.meeting-panel__cap-hint {
+.meeting-list__cap-hint {
   margin: 0;
   color: var(--color-muted-foreground);
   font-size: 0.6875rem;
 }
 
-/* 状态筛选 */
+/* 状态筛选胶囊 */
 .status-chip-row {
   display: flex;
   gap: 2px;
@@ -827,7 +809,7 @@ watch(
 }
 
 .search-box__input {
-  width: 15rem;
+  width: 13rem;
   min-height: 2.1rem;
   padding: 0 var(--space-3) 0 2.2rem;
   color: var(--color-foreground);
@@ -844,234 +826,11 @@ watch(
   box-shadow: var(--focus-ring);
 }
 
-/* 文件夹树 */
-.folder-tree {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.folder-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.folder-row__expander {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  color: var(--color-foreground);
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.folder-row__expander:hover {
-  background: var(--color-surface-muted);
-}
-
-.folder-row__icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--color-checking);
-}
-
-.folder-row__name {
-  flex: 0 1 auto;
-  overflow: hidden;
-  font-size: 0.875rem;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.folder-row__count {
-  flex: 0 0 auto;
-  padding: 1px 8px;
-  color: var(--color-muted-foreground);
-  font-size: 0.6875rem;
-  font-variant-numeric: tabular-nums;
-  background: var(--color-surface-muted);
-  border-radius: var(--radius-pill);
-}
-
-.folder-row__remove {
-  flex: 0 0 auto;
-  padding: 3px 8px;
-  color: var(--color-muted-foreground);
-  font: inherit;
-  font-size: 0.6875rem;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: color var(--transition-fast);
-}
-
-.folder-row__remove:hover {
-  color: var(--color-down);
-}
-
-.folder-empty-hint {
-  margin: 0 0 var(--space-1);
-  padding-left: 3.4rem;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-}
-
-/* 会议行 */
-:deep(.meeting-row) {
-  display: flex;
-  align-items: center;
+/* 卡片网格 */
+.meeting-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-surface-strong);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  transition: border-color var(--transition-fast);
-}
-
-:deep(.meeting-row:hover) {
-  border-color: var(--color-border-strong);
-}
-
-:deep(.meeting-row__name) {
-  padding: 0;
-  font: inherit;
-  text-align: left;
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-:deep(.meeting-row__icon) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 2rem;
-  height: 2rem;
-  color: var(--color-primary-strong);
-  background: var(--color-primary-soft);
-  border-radius: var(--radius-sm);
-}
-
-:deep(.meeting-row__main) {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-:deep(.meeting-row__name) {
-  color: var(--color-foreground);
-  font-size: 0.8125rem;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-:deep(.meeting-row__name:hover) {
-  color: var(--color-primary-strong);
-}
-
-:deep(.meeting-row__meta) {
-  margin: 0;
-  overflow: hidden;
-  color: var(--color-muted-foreground);
-  font-size: 0.6875rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:deep(.meeting-row__actions) {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--space-1);
-}
-
-:deep(.meeting-row__action) {
-  padding: 3px 10px;
-  color: var(--color-muted-foreground);
-  font: inherit;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition:
-    color var(--transition-fast),
-    border-color var(--transition-fast);
-}
-
-:deep(.meeting-row__action:hover) {
-  color: var(--color-primary-strong);
-  border-color: rgba(21, 94, 239, 0.35);
-}
-
-:deep(.meeting-row__action--danger:hover) {
-  color: var(--color-down);
-  border-color: rgba(220, 38, 38, 0.35);
-}
-
-/* 新建分类 */
-.category-create {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px dashed var(--color-border);
-}
-
-.category-create__toggle {
-  padding: 0.3rem 0.8rem;
-  color: var(--color-primary-strong);
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: transparent;
-  border: 1px dashed rgba(21, 94, 239, 0.4);
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.category-create__toggle:hover {
-  background: var(--color-primary-soft);
-}
-
-.category-create__input {
-  flex: 0 1 16rem;
-  min-height: 2rem;
-  padding: 0 var(--space-3);
-  color: var(--color-foreground);
-  font: inherit;
-  font-size: 0.8125rem;
-  background: var(--color-surface-strong);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.category-create__input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: var(--focus-ring);
-}
-
-@media (max-width: 640px) {
-  .search-box__input {
-    width: 100%;
-  }
 }
 
 /* 会议文件视图 */
@@ -1105,23 +864,31 @@ watch(
   margin-bottom: 0;
 }
 
-/* 会议管理页 · 本地文件夹导入对话框 */
-.meeting-import {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5) var(--space-5);
-  min-width: min(32rem, calc(100vw - 3rem));
+/* ===== 响应式 ===== */
+@media (max-width: 900px) {
+  .meeting-split {
+    flex-direction: column;
+  }
+
+  .meeting-split__side {
+    flex: 1 1 auto;
+    width: 100%;
+    max-height: 16rem;
+    padding-right: 0;
+    padding-bottom: var(--space-3);
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
 }
 
-.meeting-import__hint {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.85rem;
-}
+@media (max-width: 640px) {
+  .search-box {
+    flex: 1;
+  }
 
-.meeting-import__actions {
-  display: flex;
-  justify-content: flex-end;
+  .search-box__input {
+    width: 100%;
+  }
 }
 </style>

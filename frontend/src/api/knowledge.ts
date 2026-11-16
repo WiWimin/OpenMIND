@@ -1,4 +1,5 @@
 import http from '@/api/client'
+import { extractJob, requireResourceId, waitForJob, type JobAccepted } from '@/api/jobs'
 import { LONG_REQUEST_TIMEOUT_MS } from '@/api/timeouts'
 import type { ApiSuccess, DeletedResult, ListData } from '@/types/api'
 import type {
@@ -20,10 +21,20 @@ export async function listDocuments(
   return unwrapData(data)
 }
 
+async function fetchDocument(documentId: string): Promise<KnowledgeDocument> {
+  const { data } = await http.get<
+    ApiSuccess<KnowledgeDocument> | KnowledgeDocument
+  >(`${PATH}/documents/${documentId}`)
+  return unwrapData(data)
+}
+
+// 异步任务（api.md 1.9）：202 受理时轮询到终态后回查文档详情，调用方契约不变
 export async function uploadDocument(file: File): Promise<KnowledgeDocument> {
   const form = new FormData()
   form.append('file', file)
-  const { data } = await http.post<ApiSuccess<KnowledgeDocument> | KnowledgeDocument>(
+  const { data } = await http.post<
+    ApiSuccess<KnowledgeDocument | JobAccepted> | KnowledgeDocument | JobAccepted
+  >(
     `${PATH}/documents`,
     form,
     {
@@ -31,7 +42,13 @@ export async function uploadDocument(file: File): Promise<KnowledgeDocument> {
       timeout: LONG_REQUEST_TIMEOUT_MS,
     },
   )
-  return unwrapData(data)
+  const accepted = unwrapData<KnowledgeDocument | JobAccepted>(data)
+  const job = extractJob(accepted)
+  if (!job) {
+    return accepted as KnowledgeDocument
+  }
+  const finished = await waitForJob(job.job_id)
+  return fetchDocument(requireResourceId(finished))
 }
 
 export async function deleteDocument(

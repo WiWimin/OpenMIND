@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.minutes import MinutesService
 from app.core.exceptions import resource_not_found
 from app.models.meeting import Meeting
 from app.models.minutes import MeetingMinutes
 from app.repositories import material_repository, minutes_repository
 from app.schemas.minutes import MinutesGenerateRequest, MinutesTemplate, MinutesUpdate
-from app.services import meeting_service, meeting_template_service, memory_service
+from app.services import (
+    ai_audit_service,
+    meeting_service,
+    meeting_template_service,
+    memory_service,
+    sync_support,
+)
 from app.services.extraction_support import gather_records
 from app.services.model_config_service import (
     ModelConfig,
@@ -82,6 +92,33 @@ def _gather_materials(
 def generate_minutes(
     db: Session, *, meeting_id: str, user_id: str, payload: MinutesGenerateRequest
 ) -> MeetingMinutes:
+    context = prepare_minutes_context(
+        db, meeting_id=meeting_id, user_id=user_id, payload=payload
+    )
+    return run_minutes_generation(db, context)
+
+
+@dataclass
+class MinutesContext:
+    """纪要生成的同步准备结果：归属校验、上下文收集与模型解析（不含 LLM 调用）。"""
+
+    meeting: Meeting
+    transcripts: list[str]
+    record_ids: list[str]
+    marked_records: list[dict[str, str]]
+    material_snippets: list[str]
+    material_ids: list[str]
+    config: ModelConfig
+    template: str
+    memory_context: str
+    template_instructions: str
+    include_action_items: bool
+
+
+def prepare_minutes_context(
+    db: Session, *, meeting_id: str, user_id: str, payload: MinutesGenerateRequest
+) -> MinutesContext:
+    """同步校验与上下文收集：404 归属、400 模型未配置等在受理前同步返回。"""
     meeting = meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     records = gather_records(db, meeting_id, payload.record_ids)
     transcripts = [record.content for record in records]
@@ -115,32 +152,70 @@ def generate_minutes(
         )
         template = "custom"
     memory_context = memory_service.memory_context_for(db, user_id, "minutes")
-    content = generate_text(
-        meeting,
-        transcripts,
-        config,
-        material_snippets=material_snippets,
+    return MinutesContext(
+        meeting=meeting,
+        transcripts=transcripts,
+        record_ids=record_ids,
         marked_records=marked_records,
+        material_snippets=material_snippets,
+        material_ids=material_ids,
+        config=config,
         template=template,
         memory_context=memory_context,
         template_instructions=template_instructions,
+        include_action_items=payload.include_action_items,
     )
+
+
+def run_minutes_generation(
+    db: Session,
+    context: MinutesContext,
+    *,
+    progress_cb: Callable[[int], None] | None = None,
+) -> MeetingMinutes:
+    """LLM 生成 + 落库纪要（+ 可选行动项抽取）；失败以 `AppError` 上抛。"""
+    if progress_cb:
+        progress_cb(20)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=context.meeting.user_id,
+        scene="minutes",
+        model=context.config.llm_model,
+        provider=audit.provider_host(context.config.llm_api_base),
+    ):
+        content = generate_text(
+            context.meeting,
+            context.transcripts,
+            context.config,
+            material_snippets=context.material_snippets,
+            marked_records=context.marked_records,
+            template=context.template,
+            memory_context=context.memory_context,
+            template_instructions=context.template_instructions,
+        )
+    if progress_cb:
+        progress_cb(70)
     minutes = minutes_repository.create(
         db,
         minutes_id=new_id("min"),
-        meeting_id=meeting_id,
+        meeting_id=context.meeting.meeting_id,
         content=content,
-        source_record_ids=record_ids,
-        source_material_ids=material_ids,
-        template=template,
+        source_record_ids=context.record_ids,
+        source_material_ids=context.material_ids,
+        template=context.template,
         status=_STATUS_DRAFT,
     )
-    if payload.include_action_items:
+    if context.include_action_items:
         from app.services import action_item_service
 
         action_item_service.extract_action_items(
-            db, meeting_id=meeting_id, user_id=user_id, record_ids=record_ids
+            db,
+            meeting_id=context.meeting.meeting_id,
+            user_id=context.meeting.user_id,
+            record_ids=context.record_ids,
         )
+    if progress_cb:
+        progress_cb(95)
     return minutes
 
 
@@ -170,7 +245,9 @@ def update_minutes(
 ) -> MeetingMinutes:
     minutes = get_owned_minutes(db, minutes_id, user_id)
     meeting_service.get_mutable_meeting(db, minutes.meeting_id, user_id)
-    data = payload.model_dump(exclude_unset=True)
+    # 乐观锁：本地同步回写前校验纪要版本，避免覆盖他人修改
+    sync_support.ensure_version(minutes.version, payload.expected_version)
+    data = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
     if data.get("content") is not None:
         minutes.content = data["content"]
     minutes.version += 1

@@ -44,8 +44,9 @@ class FakeMediaRecorder {
   }
 
   stop(): void {
+    // 与真实浏览器一致：inactive 态调用 stop() 抛 InvalidStateError
     if (this.state !== 'recording') {
-      return
+      throw new DOMException('inactive', 'InvalidStateError')
     }
     this.state = 'inactive'
     this.emit('dataavailable', { data: new Blob(['tail'], { type: 'audio/webm' }) })
@@ -234,5 +235,57 @@ describe('useLiveRecording', () => {
     expect(startLiveAudio).not.toHaveBeenCalled()
     expect(errors).toEqual(['当前浏览器不支持录音，请上传音频文件'])
     unmount()
+  })
+
+  // 回归：卸载钩子抛错会中断组件卸载，卡死路由切换的离场过渡（内容区冻结在旧页面）
+  it('unmounts while recording without throwing and still finishes the session', async () => {
+    startLiveAudio.mockResolvedValue(liveAudio('processing', null))
+    uploadLiveChunk.mockResolvedValue(liveAudio('processing', segmentOf(1, '第1段')))
+    finishLiveAudio.mockResolvedValue(liveAudio('transcribed', segmentOf(1, '第1段')))
+    const finished: MeetingAudio[] = []
+    const { result, unmount } = withSetup(() =>
+      useLiveRecording({
+        meetingId: () => 'mtg_1',
+        onSessionFinished: (audio) => {
+          finished.push(audio)
+        },
+      }),
+    )
+
+    await result.startRecording()
+    expect(result.recording.value).toBe(true)
+
+    expect(() => unmount()).not.toThrow()
+
+    await vi.waitFor(() => {
+      expect(finishLiveAudio).toHaveBeenCalledTimes(1)
+    })
+    expect(result.recording.value).toBe(false)
+    expect(finished).toHaveLength(1)
+  })
+
+  // 回归：停止收尾进行中卸载（录音器已 inactive）不得抛错，且收尾流程照常完成
+  it('unmounts during the stop flow without throwing', async () => {
+    startLiveAudio.mockResolvedValue(liveAudio('processing', null))
+    uploadLiveChunk.mockImplementation(async () =>
+      liveAudio('processing', segmentOf(1, '第1段')),
+    )
+    finishLiveAudio.mockResolvedValue(liveAudio('transcribed', segmentOf(1, '第1段')))
+    const { result, unmount } = withSetup(() =>
+      useLiveRecording({ meetingId: () => 'mtg_1' }),
+    )
+
+    await result.startRecording()
+    currentRecorder().emit('dataavailable', { data: new Blob(['x']) })
+    // 不 await：此时 stoppingRecorder 已置 true、录音器已进入 inactive，收尾仍挂起
+    const stopping = result.stopRecording()
+    expect(result.recording.value).toBe(true)
+
+    expect(() => unmount()).not.toThrow()
+
+    const done = await stopping
+    expect(done?.status).toBe('transcribed')
+    expect(finishLiveAudio).toHaveBeenCalledTimes(1)
+    expect(result.recording.value).toBe(false)
   })
 })

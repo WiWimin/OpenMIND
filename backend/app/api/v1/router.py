@@ -2,11 +2,13 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     action_items,
+    agent,
     ai_chat,
     audio,
     auth,
     health,
     issues,
+    jobs,
     knowledge,
     materials,
     meeting_templates,
@@ -30,6 +32,7 @@ api_router.include_router(materials.router)
 api_router.include_router(preparations.router)
 api_router.include_router(records.router)
 api_router.include_router(ai_chat.router)
+api_router.include_router(agent.router)
 api_router.include_router(minutes.router)
 api_router.include_router(action_items.router)
 api_router.include_router(tasks.router)
@@ -37,4 +40,5 @@ api_router.include_router(issues.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(memory.router)
 api_router.include_router(settings.router)
+api_router.include_router(jobs.router)
 api_router.include_router(metrics.router)

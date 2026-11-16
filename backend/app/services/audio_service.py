@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.ai import audit
+from app.ai.parsers.parser_service import parse_bytes
 from app.ai.transcription import TranscriptionClient
+from app.ai.transcription.client import (
+    SCENE_ASR,
+    SCENE_ASR_LIVE,
+    probe_duration_seconds,
+)
 from app.core.config import get_settings
 from app.core.exceptions import AppError, resource_not_found
 from app.models.audio import MeetingAudio
 from app.repositories import audio_repository
 from app.schemas.record import RecordCreate, RecordMarkerType, RecordType
-from app.services import meeting_service, record_service
+from app.services import ai_audit_service, meeting_service, record_service, sync_support
 from app.utils import storage
 from app.utils.ids import new_id
 from app.utils.pagination import paginate_by
@@ -21,6 +29,9 @@ from app.utils.storage import ensure_upload_size
 logger = logging.getLogger(__name__)
 
 ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "webm"}
+# 用户已转写好的文稿（Word / 纯文本）：本地解析导入，不走 ASR
+DOCUMENT_EXTENSIONS = {"docx", "txt"}
+ALLOWED_UPLOAD_EXTENSIONS = ALLOWED_AUDIO_EXTENSIONS | DOCUMENT_EXTENSIONS
 _STATUS_UPLOADED = "uploaded"
 _STATUS_PROCESSING = "processing"
 _STATUS_TRANSCRIBED = "transcribed"
@@ -32,38 +43,129 @@ def transcribe_file(content: bytes, file_name: str) -> str:
     return TranscriptionClient().transcribe(content, file_name)
 
 
+def _transcribe_audited(
+    db: Session,
+    *,
+    user_id: str,
+    scene: str,
+    content: bytes,
+    file_name: str,
+    audit_enabled: bool = True,
+) -> str:
+    """转写一段音频并把元数据写入 `ai_call_logs`（`ai-design.md 3.11`）。
+
+    - 审计是旁路：落库失败只告警并回滚该会话，转写结果照常返回；
+    - 调用方须保证此时会话内**没有未提交的业务写入**（审计会提交一次）。
+    """
+    if not audit_enabled:
+        return transcribe_file(content, file_name)
+    settings = get_settings()
+    with ai_audit_service.audit_call(
+        db,
+        user_id=user_id,
+        scene=scene,
+        model=settings.asr_model,
+        provider=audit.provider_host(settings.asr_api_base),
+    ):
+        return transcribe_file(content, file_name)
+
+
+def _ensure_duration_within_limit(content: bytes, file_name: str) -> None:
+    """发送前的音频时长预检：超限直接拒绝，不打到 ASR。
+
+    ffprobe 未安装或探测失败时跳过（回退到只按体积预检），不阻断正常上传。
+    """
+    limit = get_settings().asr_max_audio_seconds
+    if limit <= 0:
+        return
+    duration = probe_duration_seconds(content, file_name)
+    if duration is None or duration <= limit:
+        return
+    raise AppError(
+        "VALIDATION_ERROR",
+        f"音频时长超过上限（{limit // 60} 分钟）",
+        http_status=422,
+        retryable=False,
+        details={"reason": "audio_too_long", "max_seconds": limit},
+    )
+
+
 def _infer_audio_type(file_name: str) -> str:
     candidate = Path(file_name).suffix.lower().lstrip(".")
-    if candidate not in ALLOWED_AUDIO_EXTENSIONS:
+    if candidate not in ALLOWED_UPLOAD_EXTENSIONS:
         raise AppError(
             "FILE_TYPE_NOT_SUPPORTED",
-            "不支持的音频类型，仅支持 MP3、WAV、M4A、WEBM",
+            "不支持的文件类型，仅支持 MP3、WAV、M4A、WEBM 音频或 DOCX、TXT 文稿",
             http_status=415,
         )
     return candidate
 
 
+def is_document_file(file_name: str) -> bool:
+    """是否为已转写好的文稿（docx/txt）——上传后直接解析导入。"""
+    return Path(file_name).suffix.lower().lstrip(".") in DOCUMENT_EXTENSIONS
+
+
+def _parse_document_text(content: bytes, file_name: str) -> str:
+    """解析用户已转写好的文稿为纯文本；解析失败直接拒绝（不落记录）。
+
+    本地解析（python-docx / 纯文本），无模型调用，不写 AI 审计。
+    """
+    parsed = parse_bytes(content, file_name)
+    text = parsed.content.strip()
+    if not text:
+        raise AppError(
+            "VALIDATION_ERROR",
+            f"文稿内容为空：{Path(file_name).name}",
+            http_status=422,
+            retryable=False,
+        )
+    return text
+
+
 def _run_transcription(
-    db: Session, audio: MeetingAudio, content: bytes, file_name: str
-) -> None:
+    db: Session,
+    audio: MeetingAudio,
+    content: bytes,
+    file_name: str,
+    *,
+    progress_cb: Callable[[int], None] | None = None,
+) -> str | None:
+    """转写 + 分段：成功返回 `None`，失败落 `failed` 并返回错误码（供任务判定成败）。"""
     audio.status = _STATUS_PROCESSING
     audio.error = None
     db.commit()
+    if progress_cb:
+        progress_cb(10)
+    error_code: str | None = None
     try:
-        transcript = transcribe_file(content, file_name)
+        transcript = _transcribe_audited(
+            db,
+            user_id=audio.user_id,
+            scene=SCENE_ASR,
+            content=content,
+            file_name=file_name,
+        )
+        if progress_cb:
+            progress_cb(70)
         audio.transcript = transcript
         _resplit_segments(audio, transcript)
         audio.status = _STATUS_TRANSCRIBED
+        if progress_cb:
+            progress_cb(90)
     except AppError as exc:
         audio.status = _STATUS_FAILED
         audio.error = exc.message
+        error_code = exc.error_code
     except Exception:
         logger.exception("音频转写失败 audio_id=%s", audio.audio_id)
         audio.status = _STATUS_FAILED
         audio.error = "音频转写失败"
+        error_code = "INTERNAL_ERROR"
     finally:
         db.commit()
         db.refresh(audio)
+    return error_code
 
 
 def upload_audio(
@@ -73,11 +175,38 @@ def upload_audio(
     user_id: str,
     file_name: str,
     content: bytes,
+    defer_processing: bool = False,
+    client_op_id: str | None = None,
 ) -> MeetingAudio:
+    """上传音频或文稿。
+
+    - 音频：同步或交由异步任务转写；`defer_processing=True` 只落盘建记录；
+    - 文稿（docx/txt）：本地解析后直接写入转写结果，不调 ASR、不建任务。
+    """
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     audio_type = _infer_audio_type(file_name)
     settings = get_settings()
     ensure_upload_size(content, max_mb=settings.max_upload_mb)
+
+    # 文稿先解析再落盘：解析失败直接拒绝，不留孤儿记录
+    document_text: str | None = None
+    if audio_type in DOCUMENT_EXTENSIONS:
+        document_text = _parse_document_text(content, file_name)
+    else:
+        # 发送前预检：超长音频直接拒绝，避免占满 ASR 并发与任务队列
+        _ensure_duration_within_limit(content, file_name)
+
+    # 幂等键：同一 client_op_id 重复提交只落一条，避免同步重试重复转写
+    if client_op_id:
+        existing = audio_repository.get_by_client_op_id(db, client_op_id)
+        if existing is not None:
+            if existing.user_id != user_id or existing.meeting_id != meeting_id:
+                raise resource_not_found("音频")
+            sync_support.ensure_same_payload(
+                {"file_name": existing.file_name, "type": existing.type},
+                {"file_name": file_name, "type": audio_type},
+            )
+            return existing
 
     audio_id = new_id("aud")
     storage_key = f"audio/{audio_id}.{audio_type}"
@@ -93,9 +222,20 @@ def upload_audio(
             file_name=file_name,
             audio_type=audio_type,
             storage_key=storage_key,
+            client_op_id=client_op_id,
         ),
     )
-    _run_transcription(db, audio, content, file_name)
+    if document_text is not None:
+        # 已转写好的文稿：直接作为转写结果入库
+        audio.transcript = document_text
+        audio.status = _STATUS_TRANSCRIBED
+        audio.error = None
+        _resplit_segments(audio, document_text)
+        db.commit()
+        db.refresh(audio)
+        return audio
+    if not defer_processing:
+        _run_transcription(db, audio, content, file_name)
     return audio
 
 
@@ -115,8 +255,23 @@ def _ensure_mutable(db: Session, audio: MeetingAudio, user_id: str) -> None:
     meeting_service.get_mutable_meeting(db, audio.meeting_id, user_id)
 
 
-def _transcribe_chunk(content: bytes, ext: str, seq: int) -> str:
-    return transcribe_file(content, f"chunk-{seq:04d}.{ext}")
+def _transcribe_chunk(
+    db: Session,
+    user_id: str,
+    content: bytes,
+    ext: str,
+    seq: int,
+    *,
+    audit_enabled: bool = True,
+) -> str:
+    return _transcribe_audited(
+        db,
+        user_id=user_id,
+        scene=SCENE_ASR_LIVE,
+        content=content,
+        file_name=f"chunk-{seq:04d}.{ext}",
+        audit_enabled=audit_enabled,
+    )
 
 
 def _rebuild_transcript(audio: MeetingAudio) -> None:
@@ -191,7 +346,14 @@ def append_live_chunk(
         "error": None,
     }
     try:
-        segment["text"] = _transcribe_chunk(content, ext, seq)
+        segment["text"] = _transcribe_chunk(
+            db,
+            user_id,
+            content,
+            ext,
+            seq,
+            audit_enabled=settings.ai_audit_asr_chunks,
+        )
     except AppError as exc:
         segment["error"] = exc.message
     except Exception:
@@ -286,7 +448,14 @@ def retry_live_segment(
             "RESOURCE_NOT_FOUND", "分片文件不存在或不可访问", http_status=404
         ) from None
     try:
-        target["text"] = _transcribe_chunk(content, ext, seq)
+        target["text"] = _transcribe_chunk(
+            db,
+            user_id,
+            content,
+            ext,
+            seq,
+            audit_enabled=settings.ai_audit_asr_chunks,
+        )
         target["error"] = None
     except AppError as exc:
         target["error"] = exc.message
@@ -319,7 +488,27 @@ def get_owned_audio(db: Session, audio_id: str, user_id: str) -> MeetingAudio:
     return audio
 
 
-def retry_transcription(db: Session, audio_id: str, user_id: str) -> MeetingAudio:
+def file_size_of(audio: MeetingAudio) -> int | None:
+    """原始文件大小（stat 计算，非数据库列）；文件丢失返回 None。"""
+    return storage.stat_size(get_settings().storage_dir, audio.storage_key)
+
+
+def read_audio_file(audio: MeetingAudio) -> bytes:
+    """读取原始音频内容（下载接口用）；文件已丢失时抛 404。"""
+    try:
+        return storage.read_bytes(get_settings().storage_dir, audio.storage_key)
+    except OSError:
+        raise AppError(
+            "RESOURCE_NOT_FOUND",
+            "音频文件已丢失，请重新上传",
+            http_status=404,
+        ) from None
+
+
+def retry_transcription(
+    db: Session, audio_id: str, user_id: str, *, defer_processing: bool = False
+) -> MeetingAudio:
+    """重新转写音频；`defer_processing=True` 时只做校验，处理交由后台任务。"""
     audio = get_owned_audio(db, audio_id, user_id)
     if audio.status == _STATUS_CONFIRMED:
         raise AppError(
@@ -332,7 +521,19 @@ def retry_transcription(db: Session, audio_id: str, user_id: str) -> MeetingAudi
         raise AppError(
             "RESOURCE_NOT_FOUND", "音频文件不存在或不可访问", http_status=404
         ) from None
-    _run_transcription(db, audio, content, audio.file_name)
+    if audio.type in DOCUMENT_EXTENSIONS:
+        # 文稿无需 ASR：重新解析原文件并刷新转写结果
+        text = _parse_document_text(content, audio.file_name)
+        audio.transcript = text
+        audio.status = _STATUS_TRANSCRIBED
+        audio.error = None
+        _resplit_segments(audio, text)
+        db.commit()
+        db.refresh(audio)
+        return audio
+    if not defer_processing:
+        _ensure_duration_within_limit(content, audio.file_name)
+        _run_transcription(db, audio, content, audio.file_name)
     return audio
 
 
@@ -404,6 +605,7 @@ def delete_audio(db: Session, audio_id: str, user_id: str) -> None:
             "BUSINESS_RULE_VIOLATION",
             "已确认的音频已生成会议记录，不能删除",
             http_status=409,
+            details={"reason": "audio_confirmed"},
         )
     meeting_service.get_mutable_meeting(db, audio.meeting_id, user_id)
     settings = get_settings()

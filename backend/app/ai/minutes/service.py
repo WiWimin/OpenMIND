@@ -30,4 +30,4 @@ class MinutesService:
                 "template_instructions": template_instructions,
             }
         )
-        return self.llm.chat(messages).text
+        return self.llm.chat(messages, scene="minutes").text

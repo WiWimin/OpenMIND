@@ -5,7 +5,8 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.ai.embeddings import EmbeddingClient
-from app.ai.indexing import CHUNK_OVERLAP, CHUNK_SIZE, split_text
+from app.ai.indexing import split_text
+from app.core.config import get_settings
 from app.models.chunk import DocumentChunk
 from app.models.material import MeetingMaterial
 from app.repositories import chunk_repository
@@ -23,8 +24,11 @@ def index_material(db: Session, material: MeetingMaterial) -> list[DocumentChunk
     config = resolve_model_config(db, material.user_id)
     client = build_embedding_client(config)
     chunk_repository.delete_by_material(db, material.material_id)
+    settings = get_settings()
     texts = split_text(
-        material.content or "", chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP
+        material.content or "",
+        chunk_size=settings.rag_chunk_size,
+        overlap=settings.rag_chunk_overlap,
     )
     if not texts:
         db.commit()

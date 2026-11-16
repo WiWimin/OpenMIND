@@ -16,6 +16,8 @@ export interface MeetingAudio {
   meeting_id: string
   file_name: string
   type: string
+  // 本地工作区同步：文件字节数（后端未返回时为 null）
+  file_size?: number | null
   status: AudioStatus
   transcript: string | null
   segments: AudioSegment[] | null
@@ -35,6 +37,8 @@ export interface TranscriptEntry {
   /** 展示用时间标签（mm:ss 或 HH:MM） */
   time: string
   text: string
+  /** 分段原始正文（展示可能是占位文案；空值表示无可编辑内容） */
+  rawText?: string
   marker: RecordMarkerType | null
   /** record 条目的类型标签（手动记录 / 转写 / 导入） */
   tag?: string

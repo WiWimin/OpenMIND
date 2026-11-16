@@ -16,6 +16,7 @@ def create(
     audio_type: str,
     storage_key: str,
     status: str = "uploaded",
+    client_op_id: str | None = None,
 ) -> MeetingAudio:
     audio = MeetingAudio(
         audio_id=audio_id,
@@ -25,6 +26,7 @@ def create(
         type=audio_type,
         storage_key=storage_key,
         status=status,
+        client_op_id=client_op_id,
     )
     db.add(audio)
     db.commit()
@@ -38,6 +40,13 @@ def get_owned(db: Session, audio_id: str, user_id: str) -> MeetingAudio | None:
             MeetingAudio.audio_id == audio_id,
             MeetingAudio.user_id == user_id,
         )
+    ).scalar_one_or_none()
+
+
+def get_by_client_op_id(db: Session, client_op_id: str) -> MeetingAudio | None:
+    """幂等键命中查询（迁移 0027）：同键重复提交返回已有记录。"""
+    return db.execute(
+        select(MeetingAudio).where(MeetingAudio.client_op_id == client_op_id)
     ).scalar_one_or_none()
 
 

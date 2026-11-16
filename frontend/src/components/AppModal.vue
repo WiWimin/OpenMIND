@@ -2,7 +2,7 @@
   <div v-if="open" class="modal" @click.self="emit('close')">
     <div
       class="modal__panel"
-      :class="{ 'modal__panel--overflow-visible': overflowVisible }"
+      :class="[`modal__panel--${size}`, { 'modal__panel--overflow-visible': overflowVisible }]"
       role="dialog"
       aria-modal="true"
       :aria-label="label || title || undefined"
@@ -37,11 +37,14 @@ const props = withDefaults(
     label?: string
     /** 面板不裁剪溢出内容（用于顶部装饰性内容探出面板的场景） */
     overflowVisible?: boolean
+    /** 面板宽度档位：md 常规对话框，lg 文档/预览类大面板 */
+    size?: 'md' | 'lg'
   }>(),
   {
     title: '',
     label: '',
     overflowVisible: false,
+    size: 'md',
   },
 )
 
@@ -93,6 +96,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   animation: modal-rise var(--transition);
+}
+
+.modal__panel--lg {
+  max-width: 46rem;
 }
 
 .modal__panel--overflow-visible {

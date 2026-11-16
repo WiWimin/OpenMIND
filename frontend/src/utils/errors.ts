@@ -1,15 +1,25 @@
 import type { ApiError } from '@/types/api'
+import type { MaterialUploadError } from '@/types/material'
 
 const DEFAULT_MESSAGE = '操作失败，请稍后重试。'
 
 const ERROR_CODE_FALLBACKS: Record<string, string> = {
   AUTH_REQUIRED: '登录状态已失效，请重新登录',
+  PERMISSION_DENIED: '没有权限执行该操作',
   VALIDATION_ERROR: '输入不合法，请检查后重试',
   RESOURCE_NOT_FOUND: '资源不存在或无权访问',
   BUSINESS_RULE_VIOLATION: '该操作不被允许',
   RATE_LIMITED: '操作过于频繁，请稍后再试',
+  FILE_TOO_LARGE: '文件超过大小限制，请压缩后重试',
+  FILE_TYPE_NOT_SUPPORTED: '不支持的文件类型',
+  FILE_PARSE_FAILED: '文件解析失败，请检查文件是否损坏后重试',
+  JOB_TIMEOUT: '任务处理超时，请重试',
   MODEL_TIMEOUT: '模型响应超时，请稍后重试',
+  MODEL_UPSTREAM_UNAVAILABLE: '模型服务暂时不可用，请稍后重试',
+  MODEL_INPUT_TOO_LONG: '输入内容过长，请精简后重试',
   MODEL_OUTPUT_INVALID: '模型返回异常，请重试',
+  MODEL_OUTPUT_TRUNCATED: '模型输出被截断，请增大输出上限或精简输入',
+  MODEL_CONTENT_FILTERED: '模型输出被内容安全策略拦截，请调整输入后重试',
   MODEL_CONFIG_INVALID: '模型配置校验失败，请检查 API 地址、密钥与模型名',
   MODEL_CONFIG_REQUIRED: '尚未配置模型，请先前往「模型设置」填写你自己的 API 密钥',
   MODEL_QUOTA_EXCEEDED: '模型额度不足，请检查账户余额或更换密钥',
@@ -35,4 +45,13 @@ export function resolveErrorMessage(error: unknown, fallback: string = DEFAULT_M
     return error.message
   }
   return fallback
+}
+
+/** 上传失败 → 上传框内展示结构（parse=422 FILE_PARSE_FAILED，upload=其余失败） */
+export function resolveUploadError(
+  error: unknown,
+  fallback: string = '上传失败，请稍后重试。',
+): MaterialUploadError {
+  const kind = isApiError(error) && error.error_code === 'FILE_PARSE_FAILED' ? 'parse' : 'upload'
+  return { kind, message: resolveErrorMessage(error, fallback) }
 }

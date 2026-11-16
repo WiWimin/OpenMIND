@@ -17,6 +17,7 @@ def create(
     follow_up: str | None,
     source_record_id: str | None,
     status: str = "open",
+    client_op_id: str | None = None,
 ) -> OpenIssue:
     issue = OpenIssue(
         issue_id=issue_id,
@@ -25,6 +26,7 @@ def create(
         follow_up=follow_up,
         source_record_id=source_record_id,
         status=status,
+        client_op_id=client_op_id,
     )
     db.add(issue)
     db.commit()
@@ -39,6 +41,13 @@ def get_owned(db: Session, issue_id: str, user_id: str) -> OpenIssue | None:
         .where(OpenIssue.issue_id == issue_id, Meeting.user_id == user_id)
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def get_by_client_op_id(db: Session, client_op_id: str) -> OpenIssue | None:
+    """幂等键命中查询（迁移 0027）：同键重复提交返回已有记录。"""
+    return db.execute(
+        select(OpenIssue).where(OpenIssue.client_op_id == client_op_id)
+    ).scalar_one_or_none()
 
 
 def list_by_meeting(

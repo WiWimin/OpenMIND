@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Response, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, UploadSizeCheck
 from app.api.page import PageParams, list_envelope
+from app.core.config import get_settings
 from app.schemas.common import Envelope, ListData
+from app.schemas.job import JobAccepted, JobRead
 from app.schemas.knowledge import (
     KnowledgeDeleteResult,
     KnowledgeDocumentRead,
@@ -14,23 +17,50 @@ from app.schemas.knowledge import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
 )
-from app.services import knowledge_service
+from app.services import job_service, job_tasks, knowledge_service
 
 router = APIRouter(tags=["knowledge"])
+
+# 异步受理：202 + 任务对象；关闭 ASYNC_JOBS_ENABLED 时走原同步逻辑
+_ACCEPTED = status.HTTP_202_ACCEPTED
 
 
 @router.post(
     "/knowledge/documents",
     status_code=status.HTTP_201_CREATED,
-    response_model=Envelope[KnowledgeDocumentRead],
+    response_model=Envelope[KnowledgeDocumentRead] | Envelope[JobAccepted],
 )
 async def upload_document(
     db: DbSession,
     current_user: CurrentUser,
+    _size_check: UploadSizeCheck,
+    background_tasks: BackgroundTasks,
+    response: Response,
     file: Annotated[UploadFile, File()],
-) -> Envelope[KnowledgeDocumentRead]:
+) -> Envelope[KnowledgeDocumentRead] | Envelope[JobAccepted]:
     content = await file.read()
-    document = knowledge_service.upload_document(
+    if get_settings().async_jobs_enabled:
+        document = knowledge_service.upload_document(
+            db,
+            user_id=current_user.user_id,
+            file_name=file.filename or "upload",
+            content=content,
+            defer_processing=True,
+        )
+        job = job_service.enqueue(
+            db,
+            background_tasks,
+            user_id=current_user.user_id,
+            job_type="knowledge_parse",
+            resource_type="knowledge_document",
+            resource_id=document.document_id,
+            fn=job_tasks.knowledge_parse(document.document_id, current_user.user_id),
+            payload={"document_id": document.document_id},
+        )
+        response.status_code = _ACCEPTED
+        return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
+    document = await run_in_threadpool(
+        knowledge_service.upload_document,
         db,
         user_id=current_user.user_id,
         file_name=file.filename or "upload",
@@ -82,6 +112,40 @@ def delete_document(
 ) -> Envelope[KnowledgeDeleteResult]:
     knowledge_service.delete_document(db, document_id, current_user.user_id)
     return Envelope(data=KnowledgeDeleteResult(document_id=document_id))
+
+
+@router.post(
+    "/knowledge/documents/{document_id}/retry",
+    response_model=Envelope[KnowledgeDocumentRead] | Envelope[JobAccepted],
+)
+def retry_document(
+    document_id: str,
+    db: DbSession,
+    current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    response: Response,
+) -> Envelope[KnowledgeDocumentRead] | Envelope[JobAccepted]:
+    """重新解析/索引处理失败的文档：仅 `failed` 可重试，成功转 `processed`。"""
+    if get_settings().async_jobs_enabled:
+        document = knowledge_service.retry_document(
+            db, document_id, current_user.user_id, defer_processing=True
+        )
+        job = job_service.enqueue(
+            db,
+            background_tasks,
+            user_id=current_user.user_id,
+            job_type="knowledge_parse",
+            resource_type="knowledge_document",
+            resource_id=document.document_id,
+            fn=job_tasks.knowledge_parse(document.document_id, current_user.user_id),
+            payload={"document_id": document.document_id},
+        )
+        response.status_code = _ACCEPTED
+        return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
+    document = knowledge_service.retry_document(
+        db, document_id, current_user.user_id
+    )
+    return Envelope(data=KnowledgeDocumentRead.model_validate(document))
 
 
 @router.post(

@@ -2,6 +2,8 @@
 
 > 三流分工、分支命名、合并/同步/发布流程的**唯一事实来源**是 [`docs/collaboration-rules.md`](docs/collaboration-rules.md)；本节仅作摘要，冲突时以该文件为准。
 
+> ⚠️ **评审冻结期（2026-11 起）**：校赛评审期间**不提 PR、不推送远程**，仅在本地提交与优化（`fetch`/`pull` 允许）。`git push` 已被 `scripts/git-hooks/pre-push` 拦截，详见 [collaboration-rules.md](docs/collaboration-rules.md) 文首状态块与 §十。
+
 ## 分支策略
 
 - `main`：稳定、可演示分支，只接受来自 `develop` 的合并。

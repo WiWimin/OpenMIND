@@ -46,7 +46,8 @@ def test_chat_returns_llm_result() -> None:
     assert result.latency_ms >= 0
 
 
-def test_chat_timeout_retries_then_model_timeout() -> None:
+def test_chat_read_timeout_fails_without_retry() -> None:
+    """非幂等 chat 不重传读超时：请求可能已被服务商处理并计费，重发有重复扣费风险。"""
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -57,6 +58,22 @@ def test_chat_timeout_retries_then_model_timeout() -> None:
         _client(handler).chat([{"role": "user", "content": "x"}], timeout_s=0.01)
 
     assert exc_info.value.error_code == "MODEL_TIMEOUT"
+    assert exc_info.value.retryable is True  # 仍标记可重试，由调用方决定是否手动重试
+    assert len(calls) == 1  # 已送达但未收到响应 → 不重发
+
+
+def test_chat_connect_error_retries_then_network_error() -> None:
+    """连接建立失败（请求未送达）可安全重试，按退避共 3 次尝试。"""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "INTERNAL_ERROR"
     assert exc_info.value.retryable is True
     assert len(calls) == 3
 
@@ -333,5 +350,109 @@ def test_list_models_invalid_json_raises_model_output_invalid() -> None:
 
     with pytest.raises(AppError) as exc_info:
         _client(handler).list_models()
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"
+
+
+# ---------------- finish_reason：截断与内容过滤（P0） ----------------
+
+
+def _finish_response(
+    request: httpx.Request, *, content: str, finish_reason: str | None
+) -> httpx.Response:
+    choice: dict = {"message": {"content": content}}
+    if finish_reason is not None:
+        choice["finish_reason"] = finish_reason
+    body = {
+        "model": "test-model",
+        "choices": [choice],
+        "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+    }
+    return httpx.Response(200, json=body, request=request)
+
+
+def test_chat_exposes_finish_reason() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content="完整", finish_reason="stop")
+
+    result = _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert result.finish_reason == "stop"
+
+
+def test_chat_without_finish_reason_field_is_none() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _ok_response(request)
+
+    result = _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert result.finish_reason is None
+
+
+def test_chat_truncated_empty_content_raises_truncated() -> None:
+    """有截断标记却无内容：区别于「模型输出为空」，指向 max_tokens 预算。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content="", finish_reason="length")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_TRUNCATED"
+    assert exc_info.value.http_status == 502
+    assert exc_info.value.retryable is False
+    assert exc_info.value.details == {"reason": "max_tokens"}
+
+
+def test_chat_content_filter_raises_filtered() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content="", finish_reason="content_filter")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat([{"role": "user", "content": "x"}])
+
+    assert exc_info.value.error_code == "MODEL_CONTENT_FILTERED"
+    assert exc_info.value.http_status == 422
+    assert exc_info.value.retryable is False
+
+
+def test_chat_json_salvages_truncated_json_without_error() -> None:
+    """缺右括号的截断输出：结构补齐后正常返回，不误判为失败。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(
+            request, content='{"answer": "部分内容"', finish_reason="length"
+        )
+
+    value = _client(handler).chat_json(
+        [{"role": "user", "content": "x"}], schema=_Echo, scene="unit_salvage"
+    )
+
+    assert value.answer == "部分内容"
+
+
+def test_chat_json_truncated_beyond_repair_raises_truncated() -> None:
+    """截断导致 schema 校验失败 → MODEL_OUTPUT_TRUNCATED，不进修复重试。"""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _finish_response(request, content='{"answer"', finish_reason="length")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat_json(
+            [{"role": "user", "content": "x"}], schema=_Echo, scene="unit_trunc"
+        )
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_TRUNCATED"
+    assert calls["n"] == 1  # 同预算重跑不会改善，不重试
+
+
+def test_chat_json_schema_failure_without_truncation_stays_output_invalid() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _finish_response(request, content='{"answer": 1', finish_reason="stop")
+
+    with pytest.raises(AppError) as exc_info:
+        _client(handler).chat_json([{"role": "user", "content": "x"}], schema=_Echo)
 
     assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"

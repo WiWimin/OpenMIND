@@ -218,9 +218,188 @@ def test_unsupported_audio_type(
     assert response.json()["error_code"] == "FILE_TYPE_NOT_SUPPORTED"
 
 
+def test_upload_document_txt_imports_without_asr(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """已转写好的文稿（txt/docx）直接解析导入，不调用 ASR。"""
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    def _fail_transcribe(content: bytes, file_name: str) -> str:
+        raise AssertionError("文稿导入不应调用 ASR 转写")
+
+    monkeypatch.setattr(audio_service, "transcribe_file", _fail_transcribe)
+
+    response = _upload(
+        client,
+        headers,
+        meeting["meeting_id"],
+        file_name="会议转写.txt",
+        content="第一行内容\n第二行内容".encode(),
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["type"] == "txt"
+    assert data["status"] == "transcribed"
+    assert data["transcript"] == "第一行内容\n第二行内容"
+    assert [seg["text"] for seg in data["segments"]] == ["第一行内容", "第二行内容"]
+    assert data["record_id"] is None
+
+
+def test_upload_document_docx_invalid_rejected_without_record(
+    client: TestClient, media_root
+) -> None:
+    """损坏的 docx 解析失败：返回 422 且不落任何记录。"""
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _upload(
+        client,
+        headers,
+        meeting["meeting_id"],
+        file_name="损坏文稿.docx",
+        content=b"not-a-docx",
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error_code"] == "FILE_PARSE_FAILED"
+
+    listing = client.get(
+        f"/api/v1/meetings/{meeting['meeting_id']}/audio", headers=headers
+    )
+    assert listing.json()["data"]["pagination"]["total"] == 0
+
+
 def test_requires_auth(client: TestClient) -> None:
     assert client.get("/api/v1/meetings/mtg_x/audio").status_code == 401
     assert client.post("/api/v1/audio/aud_x/confirm").status_code == 401
+
+
+# ============================ P0：ASR 审计与时长预检 ============================
+
+
+def test_upload_writes_asr_audit_log(
+    client: TestClient, db_session, media_root, fake_transcription: None
+) -> None:
+    """文件转写必须落一行 ai_call_logs（scene=asr），否则成本无从核算。"""
+    from sqlalchemy import select
+
+    from app.models.ai_call_log import AICallLog
+
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    _upload(client, headers, meeting["meeting_id"])
+
+    db_session.rollback()
+    rows = db_session.execute(select(AICallLog)).scalars().all()
+    asr_rows = [row for row in rows if row.scene == "asr"]
+
+    assert len(asr_rows) == 1
+    assert asr_rows[0].status == "success"
+    assert asr_rows[0].error_code is None
+    assert asr_rows[0].latency_ms >= 0
+
+
+def test_failed_transcription_writes_failed_audit_row(
+    client: TestClient, db_session, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import select
+
+    from app.models.ai_call_log import AICallLog
+
+    def fail(content, file_name):
+        raise AppError("MODEL_TIMEOUT", "转写服务超时", http_status=504)
+
+    monkeypatch.setattr(audio_service, "transcribe_file", fail)
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    _upload(client, headers, meeting["meeting_id"])
+
+    db_session.rollback()
+    rows = db_session.execute(select(AICallLog)).scalars().all()
+    asr_rows = [row for row in rows if row.scene == "asr"]
+
+    assert len(asr_rows) == 1
+    assert asr_rows[0].status == "failed"
+    assert asr_rows[0].error_code == "MODEL_TIMEOUT"
+
+
+def test_live_chunk_audit_can_be_switched_off(
+    client: TestClient, db_session, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """实时分片默认逐片审计关闭（1h 约 720 行），可按需打开。"""
+    from sqlalchemy import select
+
+    from app.models.ai_call_log import AICallLog
+
+    monkeypatch.setattr(
+        audio_service,
+        "transcribe_file",
+        lambda content, file_name: "分段文本",
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    audio = _start_live(client, headers, meeting["meeting_id"]).json()["data"]
+    _send_chunk(client, headers, audio["audio_id"], 1, b"one")
+
+    db_session.rollback()
+    rows = db_session.execute(select(AICallLog)).scalars().all()
+    assert [row.scene for row in rows if row.scene.startswith("asr")] == []
+
+
+def test_live_chunk_audit_can_be_switched_on(
+    client: TestClient, db_session, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import select
+
+    from app.core.config import get_settings
+    from app.models.ai_call_log import AICallLog
+
+    monkeypatch.setattr(get_settings(), "ai_audit_asr_chunks", True)
+    monkeypatch.setattr(
+        audio_service,
+        "transcribe_file",
+        lambda content, file_name: "分段文本",
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+    audio = _start_live(client, headers, meeting["meeting_id"]).json()["data"]
+    _send_chunk(client, headers, audio["audio_id"], 1, b"one")
+
+    db_session.rollback()
+    rows = db_session.execute(select(AICallLog)).scalars().all()
+    live_rows = [row for row in rows if row.scene == "asr_live"]
+
+    assert len(live_rows) == 1
+    assert live_rows[0].status == "success"
+
+
+def test_upload_rejects_audio_over_duration_limit(
+    client: TestClient, media_root, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """时长预检在落盘与调用 ASR 之前：超限直接 422，不进任务队列。"""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "asr_max_audio_seconds", 60)
+    monkeypatch.setattr(
+        audio_service, "probe_duration_seconds", lambda *args, **kwargs: 120.0
+    )
+    headers = _auth(client)
+    meeting = _meeting(client, headers)
+
+    response = _upload(client, headers, meeting["meeting_id"])
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert body["details"]["reason"] == "audio_too_long"
+    assert body["details"]["max_seconds"] == 60
+    # 未落库：列表为空
+    listing = client.get(
+        f"/api/v1/meetings/{meeting['meeting_id']}/audio", headers=headers
+    )
+    assert listing.json()["data"]["pagination"]["total"] == 0
 
 
 # ============================ 实时录音：分片边录边转 ============================

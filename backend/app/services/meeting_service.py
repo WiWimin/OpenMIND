@@ -52,7 +52,7 @@ def list_meetings(
     page: int,
     page_size: int,
 ) -> tuple[list[Meeting], int]:
-    return paginate_by(
+    items, total = paginate_by(
         meeting_repository.list_by_user,
         meeting_repository.count_by_user,
         db,
@@ -61,6 +61,17 @@ def list_meetings(
         page_size=page_size,
         status=status,
     )
+    # 会议卡片元信息：纪要 / 资料 / 录音 / 记录统计（分页内批量查询）
+    stats = meeting_repository.card_stats(db, [m.meeting_id for m in items])
+    for meeting in items:
+        meta = stats.get(meeting.meeting_id)
+        if not meta:
+            continue
+        meeting.has_minutes = bool(meta["has_minutes"])
+        meeting.material_count = int(meta["material_count"])
+        meeting.record_count = int(meta["record_count"])
+        meeting.audio_count = int(meta["audio_count"])
+    return items, total
 
 
 def create_meeting(db: Session, user_id: str, payload: MeetingCreate) -> Meeting:
@@ -103,6 +114,7 @@ def _ensure_deletable(db: Session, meeting_id: str) -> None:
             "BUSINESS_RULE_VIOLATION",
             "会议存在已转换的行动项或个人任务，无法删除",
             http_status=409,
+            details={"reason": "meeting_has_converted_action_items"},
         )
 
 

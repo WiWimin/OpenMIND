@@ -1,4 +1,7 @@
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.repositories import material_repository, minutes_repository
 
 REGISTER = "/api/v1/auth/register"
 MEETINGS = "/api/v1/meetings"
@@ -164,3 +167,50 @@ def test_delete_meeting(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["data"] == {"deleted": True, "meeting_id": meeting["meeting_id"]}
     assert client.get(url, headers=headers).status_code == 404
+
+
+def test_list_card_stats(client: TestClient, db_session: Session) -> None:
+    """列表接口附带卡片统计：纪要标签 + 资料/记录/录音数量。"""
+    registered = client.post(
+        REGISTER, json={"name": "alice", "password": PASSWORD}
+    ).json()["data"]
+    headers = {"Authorization": f"Bearer {registered['access_token']}"}
+    user_id = registered["user"]["user_id"]
+
+    with_stats = _create(client, headers, title="有资料的会议")
+    without_stats = _create(client, headers, title="空会议")
+
+    material_repository.create(
+        db_session,
+        material_id="mat_card_stats",
+        meeting_id=with_stats["meeting_id"],
+        user_id=user_id,
+        file_name="方案.txt",
+        material_type="txt",
+        source=None,
+        storage_key="materials/mat_card_stats.txt",
+    )
+    minutes_repository.create(
+        db_session,
+        minutes_id="min_card_stats",
+        meeting_id=with_stats["meeting_id"],
+        content="<p>纪要</p>",
+        source_record_ids=[],
+        source_material_ids=[],
+        template="standard",
+        status="confirmed",
+    )
+
+    items = {
+        item["meeting_id"]: item
+        for item in client.get(MEETINGS, headers=headers).json()["data"]["items"]
+    }
+    rich = items[with_stats["meeting_id"]]
+    assert rich["has_minutes"] is True
+    assert rich["material_count"] == 1
+
+    empty = items[without_stats["meeting_id"]]
+    assert empty["has_minutes"] is False
+    assert empty["material_count"] == 0
+    assert empty["record_count"] == 0
+    assert empty["audio_count"] == 0

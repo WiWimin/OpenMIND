@@ -90,15 +90,17 @@ describe('TemplateManageView', () => {
     const wrapper = await mountView()
 
     expect(cardNames(wrapper)).toEqual(['会议纪要', '会前摘要', '我的模板'])
-    // 内置模板不显示「内置」标签
+    // 元信息行展示来源：内置模板 / 我的模板
     const builtinCard = wrapper.findAll('.template-card')[0]
-    expect(builtinCard.text()).not.toContain('内置')
+    expect(builtinCard.text()).toContain('内置模板')
     // 用户上传的模板显示「我的」
     const customCard = wrapper.findAll('.template-card')[2]
     expect(customCard.text()).toContain('我的')
-    // 页头：上传 + AI 生成入口
+    // 页头：上传 + AI 生成 + 创建模板三个入口
     expect(wrapper.text()).toContain('上传模板文件')
     expect(wrapper.text()).toContain('AI 生成模板')
+    expect(wrapper.text()).toContain('创建模板')
+    expect(wrapper.text()).toContain('会议模板中心')
     expect(wrapper.text()).not.toContain('返回会议管理')
   })
 
@@ -130,6 +132,28 @@ describe('TemplateManageView', () => {
     expect(minutesCard.text()).toContain('默认')
   })
 
+  it('opens the template content as a document preview', async () => {
+    vi.mocked(templatesApi.getTemplate).mockResolvedValue({
+      ...builtinTemplate(),
+      content_text: '1. 会议信息\n2. 议题与讨论',
+    })
+    const wrapper = await mountView()
+
+    const card = wrapper
+      .findAll('.template-card')
+      .find((node) => node.text().includes('会议纪要'))
+    await card
+      ?.findAll('.template-card__action')
+      .find((node) => node.text() === '预览')
+      ?.trigger('click')
+    await flushPromises()
+
+    // 文档式预览：标题为模板名，正文按 Markdown 渲染进纸张区
+    expect(wrapper.get('.modal__title').text()).toBe('会议纪要')
+    expect(wrapper.get('.tpl-doc__paper').text()).toContain('会议信息')
+    expect(wrapper.find('.markdown-view').exists()).toBe(true)
+  })
+
   it('returns to the originating ai input page when 使用 is clicked', async () => {
     route.query = { returnTo: 'minutes', meetingId: 'mtg_9' }
     const wrapper = await mountView()
@@ -137,8 +161,8 @@ describe('TemplateManageView', () => {
     const useButton = wrapper
       .findAll('.template-card')
       .find((card) => card.text().includes('会议纪要'))
-      ?.findAll('.template-card__action')
-      .find((node) => node.text() === '使用')
+      ?.findAll('.template-card__use')
+      .find((node) => node.text() === '使用模板')
     await useButton?.trigger('click')
 
     expect(push).toHaveBeenCalledWith({
@@ -155,9 +179,15 @@ describe('TemplateManageView', () => {
     vi.mocked(templatesApi.createTemplateText).mockResolvedValue(customTemplate())
     const wrapper = await mountView()
 
-    const saveAs = wrapper
+    // 另存为收纳在卡片「更多」菜单中
+    const card = wrapper
       .findAll('.template-card')
-      .find((card) => card.text().includes('会议纪要'))
+      .find((node) => node.text().includes('会议纪要'))
+    await card
+      ?.findAll('.template-card__action')
+      .find((node) => node.text() === '更多')
+      ?.trigger('click')
+    const saveAs = card
       ?.findAll('.template-card__action')
       .find((node) => node.text() === '另存为')
     await saveAs?.trigger('click')
@@ -178,9 +208,15 @@ describe('TemplateManageView', () => {
     })
     const wrapper = await mountView()
 
-    const setDefault = wrapper
+    // 设为默认收纳在卡片「更多」菜单中
+    const card = wrapper
       .findAll('.template-card')
-      .find((card) => card.text().includes('会议纪要'))
+      .find((node) => node.text().includes('会议纪要'))
+    await card
+      ?.findAll('.template-card__action')
+      .find((node) => node.text() === '更多')
+      ?.trigger('click')
+    const setDefault = card
       ?.findAll('.template-card__action')
       .find((node) => node.text() === '设为默认')
     await setDefault?.trigger('click')

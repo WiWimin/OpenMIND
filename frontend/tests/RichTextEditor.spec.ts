@@ -25,7 +25,7 @@ describe('RichTextEditor', () => {
     expect(toolbar.find('[aria-label="无序列表"]').exists()).toBe(true)
   })
 
-  it('exposes font, color, highlight and image controls', () => {
+  it('exposes font, color and highlight controls without image upload', () => {
     const wrapper = mount(RichTextEditor, {
       props: { id: 'editor-1', modelValue: '', label: '纪要内容' },
     })
@@ -34,9 +34,29 @@ describe('RichTextEditor', () => {
     expect(toolbar.find('[aria-label="字体"]').exists()).toBe(true)
     expect(toolbar.find('[aria-label="文字颜色"]').exists()).toBe(true)
     expect(toolbar.find('[aria-label="高亮强调"]').exists()).toBe(true)
-    expect(toolbar.find('input[type="file"]').exists()).toBe(true)
+    expect(toolbar.find('input[type="file"]').exists()).toBe(false)
     expect(toolbar.text()).toContain('宋体')
     expect(toolbar.text()).toContain('黑体')
+  })
+
+  it('renders toolbar-end slot actions', () => {
+    const wrapper = mount(RichTextEditor, {
+      props: { id: 'editor-1', modelValue: '', label: '纪要内容' },
+      slots: { 'toolbar-end': '<button class="slot-save">保存</button>' },
+    })
+
+    expect(wrapper.find('.rich-editor__end .slot-save').exists()).toBe(true)
+  })
+
+  it('applies the document variant (hidden label + paper class)', () => {
+    const wrapper = mount(RichTextEditor, {
+      props: { id: 'editor-1', modelValue: '', label: '纪要内容', variant: 'document' },
+    })
+
+    expect(wrapper.get('.rich-editor__label').classes()).toContain('rich-editor__label--hidden')
+    expect(wrapper.get('.rich-editor__content').classes()).toContain(
+      'rich-editor__content--document',
+    )
   })
 
   it('applies a font family from the select', async () => {
@@ -65,24 +85,6 @@ describe('RichTextEditor', () => {
     await wrapper.get('[aria-label="高亮强调"]').trigger('click')
 
     expect(editor.getHTML()).toContain('mark')
-  })
-
-  it('inserts an image from a file selection', async () => {
-    const wrapper = mount(RichTextEditor, {
-      props: { id: 'editor-1', modelValue: '<p>正文</p>', label: '纪要内容' },
-    })
-    const editor = (
-      wrapper.vm as unknown as { editor: { commands: { selectAll: () => void }; getHTML: () => string } }
-    ).editor
-
-    editor.commands.selectAll()
-    const file = new File(['fake-image'], 'chart.png', { type: 'image/png' })
-    const input = wrapper.get('input[type="file"]').element as HTMLInputElement
-    Object.defineProperty(input, 'files', { value: [file] })
-    await wrapper.get('input[type="file"]').trigger('change')
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
-    expect(editor.getHTML()).toContain('<img')
   })
 
   it('converts plain text content into paragraphs', () => {

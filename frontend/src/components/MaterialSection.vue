@@ -1,8 +1,11 @@
 <template>
   <div class="material-section">
-    <MaterialUploader v-if="!readonly && !hideUploader" :uploading="uploading" @upload="upload" />
-
-    <ErrorMessage v-if="uploadError" :error="uploadError" />
+    <MaterialUploader
+      v-if="!readonly && !hideUploader"
+      :uploading="uploading"
+      :error="uploadError"
+      @upload="upload"
+    />
 
     <LoadingSpinner v-if="loading && items.length === 0" class="material-section__state" />
 
@@ -99,8 +102,9 @@ import MaterialUploader from '@/components/MaterialUploader.vue'
 import { useAsyncList } from '@/composables/useAsyncList'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useToast } from '@/composables/useToast'
-import type { Material, MaterialUploadPayload } from '@/types/material'
+import type { Material, MaterialUploadError, MaterialUploadPayload } from '@/types/material'
 import { formatDateTime } from '@/utils/datetime'
+import { resolveUploadError } from '@/utils/errors'
 import { materialStatusMeta } from '@/utils/statusLabels'
 
 const POLL_INTERVAL_MS = 3000
@@ -118,7 +122,7 @@ const { items, pagination, loading, error, load } = useAsyncList<Material>({
 })
 
 const uploading = ref(false)
-const uploadError = ref<unknown>(null)
+const uploadError = ref<MaterialUploadError | null>(null)
 const actionError = ref<unknown>(null)
 const showDelete = ref(false)
 const deleting = ref(false)
@@ -191,25 +195,17 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
   uploading.value = true
   uploadError.value = null
   try {
-    const material = await materialsApi.uploadMaterial(props.meetingId, payload)
+    await materialsApi.uploadMaterial(props.meetingId, payload)
     await load(1)
-    if (material.processing_status === 'failed') {
-      uploadError.value = {
-        status: 'error',
-        error_code: 'FILE_PARSE_FAILED',
-        message: material.parse_error ?? '文件解析失败',
-        retryable: false,
-      }
-      return
-    }
-    toast.success('资料已上传')
+    toast.success('资料已上传并解析')
     void mirrorMeetingFile({
       meetingId: props.meetingId,
       fileName: payload.file.name,
       content: payload.file,
     })
   } catch (caught) {
-    uploadError.value = caught
+    // 解析失败与其他失败都显示在上传框内，可直接重试
+    uploadError.value = resolveUploadError(caught, '上传失败，请检查文件后重试。')
   } finally {
     uploading.value = false
   }

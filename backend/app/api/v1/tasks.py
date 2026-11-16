@@ -2,15 +2,31 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData
-from app.schemas.task import TaskRead, TaskStatus, TaskUpdate
+from app.schemas.task import TaskCreate, TaskRead, TaskStatus, TaskUpdate
 from app.services import task_service
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+@router.post(
+    "", status_code=status.HTTP_201_CREATED, response_model=Envelope[TaskRead]
+)
+def create_task(
+    payload: TaskCreate, db: DbSession, current_user: CurrentUser
+) -> Envelope[TaskRead]:
+    task = task_service.create_task(
+        db,
+        user_id=current_user.user_id,
+        title=payload.title,
+        due_date=payload.due_date,
+        priority=payload.priority.value,
+    )
+    return Envelope(data=TaskRead.model_validate(task))
 
 
 @router.get("", response_model=Envelope[ListData[TaskRead]])

@@ -20,8 +20,8 @@ async function openAsrStage(page: Page): Promise<string> {
   return meetingId as string
 }
 
-function terminalBadge(page: Page, text: RegExp) {
-  return page.locator('.status-badge').filter({ hasText: text }).first()
+function confirmButton(page: Page) {
+  return page.getByRole('button', { name: '确认并保存为记录', exact: true })
 }
 
 test('主链路：录制→分片转码转写→确认生成会议记录', async ({ page }) => {
@@ -36,16 +36,16 @@ test('主链路：录制→分片转码转写→确认生成会议记录', async
   await page.waitForTimeout(8000)
   await pill.click()
 
-  // 终态：已转写（ffmpeg 转码后 FunASR 出文本）
-  await expect(terminalBadge(page, /已转写/)).toBeVisible({ timeout: 120_000 })
+  // 终态：转写完成（出现「确认并保存为记录」即有可用转写文本）
+  await expect(confirmButton(page)).toBeVisible({ timeout: 120_000 })
 
   // 转写正文来自 fixture 语音（“open mind 的语音转写测试…”）
   await expect(page.locator('.asr-page__main')).toContainText('open mind')
   await expect(page.locator('.asr-page__main')).toContainText(/转写内容流\s*1\s*条/)
 
-  // 确认并生成会议记录
-  await page.getByRole('button', { name: '确认并保存为记录', exact: true }).click()
-  await expect(page.getByText('已保存为会议记录').first()).toBeVisible({ timeout: 30_000 })
+  // 确认并生成会议记录：确认后操作按钮收起
+  await confirmButton(page).click()
+  await expect(confirmButton(page)).toBeHidden({ timeout: 30_000 })
 })
 
 test('异常①：麦克风权限被拒绝时给出明确提示', async ({ page }) => {
@@ -78,10 +78,13 @@ test('异常②：分片上传失败不中断会话，末段标记占位可重�
   await page.waitForTimeout(6000)
   await page.locator('.recording-pill').click()
 
-  // 单片失败仅占位，不中断：占位分段 + 会话进入终态
+  // 单片失败仅占位，不中断：占位分段 + 会话进入终态（可确认 或 可重新转写）
   await expect(page.getByText('已标记占位').first()).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.recording-pill')).toHaveCount(0, { timeout: 120_000 })
   await expect(
-    terminalBadge(page, /已转写|转写失败/),
+    confirmButton(page)
+      .or(page.getByRole('button', { name: '重新转写', exact: true }))
+      .first(),
   ).toBeVisible({ timeout: 120_000 })
 })
 
@@ -119,9 +122,11 @@ test('异常③：结束转写失败时展示失败原因且标记可重试', as
   await page.waitForTimeout(5000)
   await page.locator('.recording-pill').click()
 
-  // 失败原因透出（ErrorMessage），状态终态为转写失败
+  // 失败原因透出（ErrorMessage），并提供「重新转写」入口
   await expect(page.getByText('模拟转写失败，请稍后重试').first()).toBeVisible({
     timeout: 60_000,
   })
-  await expect(terminalBadge(page, /转写失败/)).toBeVisible({ timeout: 60_000 })
+  await expect(
+    page.getByRole('button', { name: '重新转写', exact: true }),
+  ).toBeVisible({ timeout: 60_000 })
 })

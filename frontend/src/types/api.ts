@@ -10,6 +10,7 @@ export interface ApiError {
   error_code: string
   message: string
   retryable?: boolean
+  details?: Record<string, unknown>
 }
 
 export interface ListData<T> {

@@ -38,6 +38,8 @@ class AudioRead(BaseModel):
     record_id: str | None
     created_at: datetime
     updated_at: datetime
+    # 原始文件大小（由存储层 stat 计算，非数据库列），供本地同步估算下载量
+    file_size: int | None = None
 
 
 class AudioUpdate(BaseModel):

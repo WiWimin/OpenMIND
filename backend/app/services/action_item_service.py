@@ -4,14 +4,15 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.extraction import ActionItemCandidate, ActionItemExtractor
 from app.core.exceptions import AppError, resource_not_found
 from app.models.action_item import ActionItem
 from app.models.record import MeetingRecord
 from app.models.task import PersonalTask
 from app.repositories import action_item_repository, task_repository
-from app.schemas.action_item import ActionItemUpdate, ConvertToTaskRequest
-from app.services import meeting_service
+from app.schemas.action_item import ActionItemCreate, ActionItemUpdate, ConvertToTaskRequest
+from app.services import ai_audit_service, meeting_service, sync_support
 from app.services.extraction_support import build_transcripts, gather_records
 from app.services.model_config_service import (
     ModelConfig,
@@ -67,7 +68,14 @@ def extract_action_items(
     records = gather_records(db, meeting_id, record_ids)
     transcripts = build_transcripts(records)
     config = resolve_model_config(db, user_id, purpose=ModelPurpose.extraction)
-    candidates = extract_candidates(transcripts, config)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=user_id,
+        scene="extract_action_items",
+        model=config.llm_model,
+        provider=audit.provider_host(config.llm_api_base),
+    ):
+        candidates = extract_candidates(transcripts, config)
     items: list[ActionItem] = []
     for candidate in candidates:
         source_record_id, source_excerpt = _source_record(records, candidate)
@@ -85,6 +93,43 @@ def extract_action_items(
             )
         )
     return items
+
+
+def create_action_item(
+    db: Session, *, meeting_id: str, user_id: str, payload: ActionItemCreate
+) -> ActionItem:
+    """手工新建行动项（本地工作区导入）：状态固定待确认，仍须用户确认/转任务。"""
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    if payload.client_op_id:
+        existing = action_item_repository.get_by_client_op_id(db, payload.client_op_id)
+        if existing is not None:
+            if existing.meeting_id != meeting_id:
+                raise resource_not_found("行动项")
+            sync_support.ensure_same_payload(
+                {
+                    "content": existing.content,
+                    "assignee": existing.assignee,
+                    "due_date": existing.due_date,
+                },
+                {
+                    "content": payload.content,
+                    "assignee": payload.assignee,
+                    "due_date": payload.due_date,
+                },
+            )
+            return existing
+    return action_item_repository.create(
+        db,
+        action_id=new_id("act"),
+        meeting_id=meeting_id,
+        content=payload.content,
+        assignee=payload.assignee,
+        due_date=payload.due_date,
+        source_record_id=None,
+        source_excerpt=None,
+        status=_PENDING,
+        client_op_id=payload.client_op_id,
+    )
 
 
 def list_action_items(
@@ -113,7 +158,11 @@ def update_action_item(
 ) -> ActionItem:
     item = get_owned_action_item(db, action_id, user_id)
     meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
-    data = payload.model_dump(exclude_unset=True)
+    # 乐观锁：本地同步回写前校验远端未被修改，避免覆盖他人修改
+    sync_support.ensure_unmodified(
+        item.updated_at, payload.expected_updated_at, label="行动项"
+    )
+    data = payload.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
     if data.get("content") is not None:
         item.content = data["content"]
     if "assignee" in data:
@@ -137,7 +186,10 @@ def delete_action_item(db: Session, action_id: str, user_id: str) -> None:
     meeting_service.get_mutable_meeting(db, item.meeting_id, user_id)
     if item.status == _CONVERTED:
         raise AppError(
-            "BUSINESS_RULE_VIOLATION", "已转为任务的行动项不可删除", http_status=409
+            "BUSINESS_RULE_VIOLATION",
+            "已转为任务的行动项不可删除",
+            http_status=409,
+            details={"reason": "action_item_converted"},
         )
     action_item_repository.delete(db, item)
 
@@ -162,6 +214,8 @@ def convert_to_task(
         action_id=action_id,
         title=payload.title,
         due_date=payload.due_date if payload.due_date is not None else item.due_date,
+        # 行动项本身不存优先级，转任务统一落 medium
+        priority="medium",
     )
     item.status = _CONVERTED
     action_item_repository.update(db, item)

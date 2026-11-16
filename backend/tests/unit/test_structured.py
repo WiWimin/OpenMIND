@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 import pytest
@@ -82,6 +83,48 @@ def test_validate_payload_business_validator_failure() -> None:
 
     assert value is None
     assert "items.0.priority 非法" in errors
+
+
+# ---------- 截断修复（P0） ----------
+
+
+def test_repair_closes_unclosed_brackets() -> None:
+    assert (
+        normalize_json_text('{"items": [{"name": "a"}')
+        == '{"items": [{"name": "a"}]}'
+    )
+
+
+def test_repair_closes_unterminated_string_and_drops_partial_item() -> None:
+    """末尾字符串被截断：裁掉残缺项，保留完整项，而不是整段作废。"""
+    repaired = normalize_json_text(
+        '{"items": [{"name": "a"}, {"name": "b"}, {"name": "c'
+    )
+    assert json.loads(repaired) == {"items": [{"name": "a"}, {"name": "b"}]}
+
+
+def test_repair_drops_dangling_value_after_comma() -> None:
+    repaired = normalize_json_text('{"items": [1, 2, ')
+    assert json.loads(repaired) == {"items": [1, 2]}
+
+
+def test_repair_leaves_valid_json_untouched() -> None:
+    raw = '{"items": [{"name": "a"}]}'
+    assert normalize_json_text(raw) == raw
+
+
+def test_repair_leaves_unrelated_text_untouched() -> None:
+    """没有结构可补时原样返回，交由常规校验报错（不臆造内容）。"""
+    raw = "完全不是 JSON 的内容"
+    assert normalize_json_text(raw) == raw
+
+
+def test_validate_payload_salvages_truncated_json() -> None:
+    value, errors = validate_payload('{"items": [{"name": "a"}', Result)
+
+    assert errors == []
+    assert value is not None
+    assert value.items[0].name == "a"
 
 
 # ---------- 修复重试：仅 1 次 ----------
@@ -220,6 +263,64 @@ def test_output_invalid_without_validation_detail_propagates() -> None:
 
     assert exc_info.value.error_code == "MODEL_OUTPUT_INVALID"
     assert exc_info.value.details is None
+
+
+def test_truncated_output_propagates_without_retry() -> None:
+    """截断：同一预算重跑不会改善，不消耗修复重试，错误码原样上抛。"""
+    calls: list[int] = []
+
+    def fetch(messages):  # noqa: ANN001
+        calls.append(len(messages))
+        raise AppError(
+            "MODEL_OUTPUT_TRUNCATED", "模型输出被截断", http_status=502, retryable=False
+        )
+
+    with pytest.raises(AppError) as exc_info:
+        run_structured(
+            fetch, [{"role": "user", "content": "x"}], Result, scene="unit_trunc"
+        )
+
+    assert exc_info.value.error_code == "MODEL_OUTPUT_TRUNCATED"
+    assert len(calls) == 1
+
+
+def test_truncated_output_degrades_without_retry() -> None:
+    """降级场景（summary/polish）遇到截断返回 None，而不是把错误抛给用户。"""
+    calls: list[int] = []
+
+    def fetch(messages):  # noqa: ANN001
+        calls.append(len(messages))
+        raise AppError("MODEL_OUTPUT_TRUNCATED", "截断", http_status=502)
+
+    result = run_structured(
+        fetch,
+        [{"role": "user", "content": "x"}],
+        Result,
+        scene="unit_trunc_degrade",
+        on_failure="degrade",
+    )
+
+    assert result is None
+    assert len(calls) == 1
+
+
+def test_content_filtered_degrades_without_retry() -> None:
+    calls: list[int] = []
+
+    def fetch(messages):  # noqa: ANN001
+        calls.append(len(messages))
+        raise AppError("MODEL_CONTENT_FILTERED", "被拦截", http_status=422)
+
+    result = run_structured(
+        fetch,
+        [{"role": "user", "content": "x"}],
+        Result,
+        scene="unit_filtered",
+        on_failure="degrade",
+    )
+
+    assert result is None
+    assert len(calls) == 1
 
 
 def test_error_details_from_chat_json_drive_repair_message() -> None:

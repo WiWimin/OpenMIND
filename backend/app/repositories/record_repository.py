@@ -18,6 +18,7 @@ def create(
     record_type: str,
     marker_type: str | None = None,
     source_material_id: str | None = None,
+    client_op_id: str | None = None,
 ) -> MeetingRecord:
     record = MeetingRecord(
         record_id=record_id,
@@ -26,6 +27,7 @@ def create(
         record_type=record_type,
         marker_type=marker_type,
         source_material_id=source_material_id,
+        client_op_id=client_op_id,
     )
     db.add(record)
     db.commit()
@@ -77,6 +79,13 @@ def count_by_meeting(db: Session, meeting_id: str) -> int:
         .where(MeetingRecord.meeting_id == meeting_id)
     )
     return int(db.execute(statement).scalar_one())
+
+
+def get_by_client_op_id(db: Session, client_op_id: str) -> MeetingRecord | None:
+    """幂等键命中查询（迁移 0027）：同键重复提交返回已有记录。"""
+    return db.execute(
+        select(MeetingRecord).where(MeetingRecord.client_op_id == client_op_id)
+    ).scalar_one_or_none()
 
 
 def list_by_ids(

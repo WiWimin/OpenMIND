@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.sync import OptimisticLockMixin
+
 
 class ActionItemStatus(StrEnum):
     pending_confirmation = "pending_confirmation"
@@ -62,7 +64,15 @@ class ActionItemExtractResult(BaseModel):
     items: list[ActionItemRead]
 
 
-class ActionItemUpdate(BaseModel):
+class ActionItemCreate(BaseModel):
+    content: str = Field(min_length=1)
+    assignee: str | None = Field(default=None, max_length=100)
+    due_date: date | None = None
+    # 幂等键：同一 client_op_id 重复提交只创建一条（迁移 0027）
+    client_op_id: str | None = Field(default=None, max_length=64)
+
+
+class ActionItemUpdate(OptimisticLockMixin):
     content: str | None = Field(default=None, min_length=1)
     assignee: str | None = None
     due_date: date | None = None

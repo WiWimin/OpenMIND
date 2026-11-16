@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.sync import OptimisticLockMixin
+
 
 class RecordType(StrEnum):
     manual = "manual"
@@ -22,9 +24,11 @@ class RecordCreate(BaseModel):
     content: str = Field(min_length=1)
     record_type: RecordType = RecordType.manual
     marker_type: RecordMarkerType | None = None
+    # 幂等键：同一 client_op_id 重复提交只创建一条（迁移 0026）
+    client_op_id: str | None = Field(default=None, max_length=64)
 
 
-class RecordUpdate(BaseModel):
+class RecordUpdate(OptimisticLockMixin):
     content: str | None = Field(default=None, min_length=1)
     marker_type: RecordMarkerType | None = None
 

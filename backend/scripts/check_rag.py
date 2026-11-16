@@ -253,12 +253,18 @@ def main() -> int:
     passed(f"parser={document.parser} 文件={document.file_name} 字符数={len(document.content)}")
 
     stage("2/4 切分")
-    excerpts = split_text(document.content, chunk_size=800, overlap=120)
+    rag_settings = get_settings()
+    excerpts = split_text(
+        document.content,
+        chunk_size=rag_settings.rag_chunk_size,
+        overlap=rag_settings.rag_chunk_overlap,
+    )
     if not excerpts:
         failed("切分结果为空")
         return EXIT_FAIL
     passed(
-        f"chunk_size=800 overlap=120 分块数={len(excerpts)} "
+        f"chunk_size={rag_settings.rag_chunk_size} "
+        f"overlap={rag_settings.rag_chunk_overlap} 分块数={len(excerpts)} "
         f"最长={max(len(chunk) for chunk in excerpts)}"
     )
 

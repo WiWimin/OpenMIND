@@ -1,27 +1,35 @@
 <template>
   <section class="home">
-    <!-- 欢迎横幅：问好 + 项目介绍 + IP 形象 -->
+    <!-- 欢迎横幅：背景为产品视觉图，左侧遮罩覆盖示意文字，问好与统计走真实数据 -->
     <section class="home__hero">
+      <div class="home__hero-bg" :style="{ backgroundImage: `url(${bannerUrl})` }" aria-hidden="true" />
+      <div class="home__hero-mask" aria-hidden="true" />
       <div class="home__hero-copy">
         <h1 class="home__greeting">{{ greeting }}，{{ userName }} <span aria-hidden="true">👋</span></h1>
         <p class="home__summary">
           今天有 <strong>{{ stats.scheduled }}</strong> 场会议和
           <strong>{{ stats.todo }}</strong> 项待办任务
         </p>
+        <span class="home__tag">
+          <NavIcon name="sparkle" :size="14" />
+          专注高效 · 从每一场会议开始
+        </span>
       </div>
-      <img
-        class="home__mascot"
-        :src="mascotUrl"
-        alt="OpenMIND 助手：我已整理今日日程"
-      />
     </section>
 
+    <!-- 智能助手介绍卡 -->
     <section class="home__intro">
+      <div class="home__intro-icon" aria-hidden="true">
+        <img :src="assistantUrl" alt="" />
+      </div>
       <div class="home__intro-copy">
         <h2 class="home__intro-title">OpenMIND 智能会议助手</h2>
         <p class="home__intro-desc">基于 AI 的会议纪要、日程与任务协作平台</p>
       </div>
-      <button class="home__cta" type="button" @click="openCreate">新建会议</button>
+      <button class="home__cta" type="button" @click="openCreate">
+        <NavIcon name="plus" :size="16" />
+        新建会议
+      </button>
     </section>
 
     <ErrorMessage
@@ -33,11 +41,16 @@
     />
 
     <!-- 我的会议 -->
-    <section id="my-meetings" class="home__panel">
+    <section
+      id="my-meetings"
+      class="home__panel home__panel--meetings"
+      :style="{ backgroundImage: `url(${panelMountainsUrl})` }"
+    >
       <header class="home__panel-head">
         <h2 class="home__panel-title">我的会议</h2>
         <RouterLink class="home__panel-link" :to="{ name: ROUTE_NAMES.meetings }">
           查看全部
+          <NavIcon name="chevron" :size="14" />
         </RouterLink>
       </header>
 
@@ -68,9 +81,15 @@
             class="home__meeting"
             @click="openDetail(meeting.meeting_id)"
           >
-            <span class="home__meeting-title">{{ meeting.title }}</span>
-            <span class="home__meeting-time">{{ formatMeetingTime(meeting.meeting_time) }}</span>
+            <span class="home__meeting-main">
+              <span class="home__meeting-icon" aria-hidden="true">
+                <NavIcon name="video" :size="16" />
+              </span>
+              <span class="home__meeting-title">{{ meeting.title }}</span>
+              <span class="home__meeting-time">{{ formatMeetingTime(meeting.meeting_time) }}</span>
+            </span>
             <StatusBadge
+              class="home__meeting-badge"
               :label="meetingStatusMeta[meeting.status].label"
               :tone="meetingStatusMeta[meeting.status].tone"
             />
@@ -85,6 +104,7 @@
         <h2 class="home__panel-title">待办任务</h2>
         <RouterLink class="home__panel-link" :to="{ name: ROUTE_NAMES.tasks }">
           查看全部
+          <NavIcon name="chevron" :size="14" />
         </RouterLink>
       </header>
 
@@ -100,25 +120,46 @@
         @retry="loadTasks"
       />
 
-      <p v-else-if="tasks.length === 0" class="home__tasks-empty">
-        今天没有待办任务，保持当前的会议节奏即可。
-      </p>
+      <div v-else-if="tasks.length === 0" class="home__tasks-empty">
+        <img class="home__tasks-empty-img" :src="taskEmptyUrl" alt="" aria-hidden="true" />
+        <p class="home__tasks-empty-text">今天没有待办任务，保持当前的会议节奏即可。</p>
+      </div>
 
       <ul v-else class="home__tasks">
-        <li v-for="task in tasks" :key="task.task_id">
+        <li
+          v-for="task in tasks"
+          :key="task.task_id"
+          class="home__task-item"
+          :class="{ 'home__task-item--leaving': leavingIds.has(task.task_id) }"
+        >
           <label class="home__task">
-            <input
-              type="checkbox"
-              class="home__task-check"
-              :checked="task.status === 'completed'"
-              :disabled="savingTaskId === task.task_id"
-              :aria-label="`完成任务：${task.title}`"
-              @change="completeTask(task)"
-            />
-            <span class="home__task-title">{{ task.title }}</span>
-            <span class="home__task-due">
+            <span class="home__task-check-wrap">
+              <input
+                type="checkbox"
+                class="home__task-check"
+                :checked="checkedIds.has(task.task_id)"
+                :disabled="savingTaskId === task.task_id"
+                :aria-label="`完成任务：${task.title}`"
+                @change="completeTask(task)"
+              />
+              <span class="home__task-check-mark" aria-hidden="true" />
+            </span>
+            <span
+              class="home__task-title"
+              :class="{ 'home__task-title--done': checkedIds.has(task.task_id) }"
+            >
+              {{ task.title }}
+            </span>
+            <span
+              class="home__task-due"
+              :class="{ 'home__task-due--overdue': isOverdue(task) }"
+            >
               <NavIcon name="clock" :size="14" />
-              {{ task.due_date ? formatDate(task.due_date) : '未设置截止时间' }}
+              {{
+                task.due_date
+                  ? (isOverdue(task) ? '已逾期 · ' : '截止 ') + formatDate(task.due_date)
+                  : '未设置截止时间'
+              }}
             </span>
           </label>
         </li>
@@ -135,7 +176,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { listMeetings } from '@/api/meetings'
 import { listTasks, updateTask } from '@/api/tasks'
-import mascotUrl from '@/assets/homepage-ip.png'
+import bannerUrl from '@/assets/homepage-banner.png'
+import assistantUrl from '@/assets/ip/assistant-robot.png'
+import taskEmptyUrl from '@/assets/task-empty.jpeg'
+import panelMountainsUrl from '@/assets/panel-mountains.png'
 import AppButton from '@/components/AppButton.vue'
 import CreateMeetingDialog from '@/components/CreateMeetingDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -168,6 +212,9 @@ const tasks = ref<PersonalTask[]>([])
 const tasksLoading = ref(true)
 const tasksError = ref<unknown>(null)
 const savingTaskId = ref<string | null>(null)
+// 已勾选（绿色√）与正在淡出的任务集合，驱动勾选动画与延迟移除
+const checkedIds = ref(new Set<string>())
+const leavingIds = ref(new Set<string>())
 const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
 
 const userName = computed(() => auth.user?.name ?? '朋友')
@@ -236,16 +283,36 @@ async function completeTask(task: PersonalTask): Promise<void> {
     return
   }
   savingTaskId.value = task.task_id
+  // 先呈现绿色勾选态，成功后再延迟淡出
+  checkedIds.value.add(task.task_id)
   try {
     await updateTask(task.task_id, { status: 'completed' })
-    toast.success('任务已完成')
-    tasks.value = tasks.value.filter((item) => item.task_id !== task.task_id)
+    toast.success('任务已完成，已移入已归档任务')
     stats.value = { ...stats.value, todo: Math.max(stats.value.todo - 1, 0) }
+    leavingIds.value.add(task.task_id)
+    window.setTimeout(() => {
+      tasks.value = tasks.value.filter((item) => item.task_id !== task.task_id)
+      checkedIds.value.delete(task.task_id)
+      leavingIds.value.delete(task.task_id)
+    }, 1200)
   } catch (error) {
+    // 失败回弹：撤销勾选态并展示错误
+    checkedIds.value.delete(task.task_id)
     tasksError.value = error
   } finally {
     savingTaskId.value = null
   }
+}
+
+function isOverdue(task: PersonalTask): boolean {
+  if (!task.due_date || checkedIds.value.has(task.task_id)) {
+    return false
+  }
+  const due = new Date(`${task.due_date}T23:59:59`)
+  if (Number.isNaN(due.getTime())) {
+    return false
+  }
+  return due.getTime() < Date.now()
 }
 
 function openCreate(): void {
@@ -296,16 +363,39 @@ watch(
 .home__hero {
   position: relative;
   overflow: hidden;
-  padding: 2.75rem 2.5rem 5.25rem;
-  background: linear-gradient(118deg, #e3edff 0%, #eaf0fe 48%, #f2effe 100%);
-  border: 1px solid rgba(21, 94, 239, 0.1);
+  padding: 2.5rem 2.5rem 3.25rem;
+  background: linear-gradient(118deg, #2b7bf6 0%, #4f97ff 52%, #8fc7ff 100%);
+  border: 1px solid rgba(21, 94, 239, 0.16);
   border-radius: var(--radius-xl);
+  box-shadow: 0 18px 40px rgba(21, 94, 239, 0.22);
+}
+
+.home__hero-bg {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  pointer-events: none;
+}
+
+/* 左侧遮罩：盖住背景图里的示意文字，真实问好与统计叠在遮罩之上 */
+.home__hero-mask {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(31, 107, 245, 0.95) 0%,
+    rgba(43, 123, 246, 0.82) 36%,
+    rgba(43, 123, 246, 0) 64%
+  );
+  pointer-events: none;
 }
 
 .home__hero-copy {
   position: relative;
   z-index: 1;
-  max-width: 60%;
+  max-width: 62%;
 }
 
 .home__greeting {
@@ -314,47 +404,73 @@ watch(
   font-size: clamp(1.5rem, 2.6vw, 2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--color-foreground);
+  color: #ffffff;
 }
 
 .home__summary {
   margin: var(--space-2) 0 0;
-  color: var(--color-muted-foreground);
+  color: rgba(255, 255, 255, 0.86);
   font-size: 0.9375rem;
 }
 
 .home__summary strong {
   padding: 0 2px;
-  color: var(--color-primary-strong);
+  color: #ffffff;
   font-size: 1.05rem;
   font-weight: 700;
 }
 
-.home__mascot {
-  position: absolute;
-  right: 4%;
-  bottom: 0;
-  height: 100%;
-  max-height: 15rem;
-  filter: drop-shadow(0 12px 20px rgba(21, 94, 239, 0.16));
-  user-select: none;
-  pointer-events: none;
+.home__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-4);
+  padding: 0.4rem 0.95rem;
+  color: #ffffff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
-/* 项目介绍卡（压在横幅下缘） */
+
+/* 智能助手介绍卡 */
 .home__intro {
   position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-4);
-  margin: -2.9rem 1.5rem 0;
   padding: var(--space-5) var(--space-6);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.home__intro-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  overflow: hidden;
+  border-radius: 50%;
+  box-shadow: 0 6px 16px rgba(21, 94, 239, 0.22);
+}
+
+.home__intro-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.home__intro-copy {
+  flex: 1;
+  min-width: 0;
 }
 
 .home__intro-title {
@@ -377,7 +493,8 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.8rem 2.1rem;
+  gap: 6px;
+  padding: 0.8rem 1.9rem;
   color: #ffffff;
   font: inherit;
   font-size: 0.9375rem;
@@ -409,12 +526,18 @@ watch(
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-4);
-  background: var(--color-surface);
+  background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   /* 侧边栏锚点跳转时避开顶部 56px 吸顶导航 */
   scroll-margin-top: 5rem;
+}
+
+.home__panel--meetings {
+  background-repeat: no-repeat;
+  background-position: right bottom;
+  background-size: 300px auto;
 }
 
 .home__panel-head {
@@ -434,6 +557,9 @@ watch(
 }
 
 .home__panel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   color: var(--color-primary-strong);
   font-size: 0.8125rem;
   font-weight: 600;
@@ -465,7 +591,8 @@ watch(
 }
 
 .home__meeting {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -480,12 +607,33 @@ watch(
   transition: background var(--transition-fast);
 }
 
+.home__meeting-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.home__meeting-badge {
+  justify-self: center;
+}
+
 .home__meeting:hover {
   background: var(--color-surface-muted);
 }
 
+.home__meeting-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--color-subtle-foreground);
+}
+
 .home__meeting-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 0.875rem;
@@ -496,6 +644,8 @@ watch(
 }
 
 .home__meeting-time {
+  flex: 0 0 auto;
+  min-width: 7rem;
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
   white-space: nowrap;
@@ -514,6 +664,15 @@ watch(
   border-top: 1px dashed var(--color-border);
 }
 
+/* 勾选完成后的延迟淡出 */
+.home__task-item--leaving {
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s ease;
+}
+
 .home__task {
   display: flex;
   align-items: center;
@@ -528,16 +687,65 @@ watch(
   background: var(--color-surface-muted);
 }
 
-.home__task-check {
+/* 自定义勾选框：绿色方块 + 白色 √ */
+.home__task-check-wrap {
+  position: relative;
   flex: 0 0 auto;
-  width: 1.05rem;
-  height: 1.05rem;
-  accent-color: var(--color-primary);
+  display: inline-flex;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.home__task-check {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 0.3rem;
   cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.home__task-check:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.home__task-check:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .home__task-check:disabled {
   cursor: progress;
+}
+
+/* √ 标记：默认隐藏，勾选后显示 */
+.home__task-check-mark {
+  position: absolute;
+  top: 0.05rem;
+  left: 0.34rem;
+  width: 0.3rem;
+  height: 0.6rem;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  pointer-events: none;
+  transition: transform 0.16s ease;
+}
+
+.home__task-check:checked {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.home__task-check:checked + .home__task-check-mark {
+  transform: rotate(45deg) scale(1);
 }
 
 .home__task-title {
@@ -548,6 +756,12 @@ watch(
   color: var(--color-foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--transition-fast);
+}
+
+.home__task-title--done {
+  color: var(--color-muted-foreground);
+  text-decoration: line-through;
 }
 
 .home__task-due {
@@ -559,13 +773,32 @@ watch(
   white-space: nowrap;
 }
 
+.home__task-due--overdue {
+  color: var(--color-down);
+  font-weight: 600;
+}
+
 .home__tasks-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-3);
+  background: #fefefe;
+  border-radius: var(--radius-md);
+}
+
+.home__tasks-empty-img {
+  width: 9.5rem;
+  max-width: 60%;
+  object-fit: contain;
+}
+
+.home__tasks-empty-text {
   margin: 0;
-  padding: var(--space-3);
   color: var(--color-muted-foreground);
   font-size: 0.8125rem;
-  background: var(--color-surface-strong);
-  border-radius: var(--radius-md);
+  text-align: center;
 }
 
 @media (max-width: 900px) {
@@ -577,24 +810,14 @@ watch(
     max-width: 55%;
   }
 
-  .home__mascot {
-    right: 0;
-    height: 9.5rem;
-  }
-
   .home__intro {
-    margin: -2.5rem 0.75rem 0;
     padding: var(--space-4) var(--space-5);
   }
 }
 
 @media (max-width: 640px) {
-  .home__mascot {
-    display: none;
-  }
-
   .home__hero {
-    padding: 2rem 1.5rem 4.25rem;
+    padding: 2rem 1.5rem 3.5rem;
   }
 
   .home__hero-copy {
@@ -604,7 +827,6 @@ watch(
   .home__intro {
     flex-direction: column;
     align-items: flex-start;
-    margin: -2.5rem 0.25rem 0;
   }
 
   .home__cta {
