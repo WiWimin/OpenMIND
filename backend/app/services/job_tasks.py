@@ -144,3 +144,48 @@ def preparation_generate(
             raise
 
     return _run
+
+
+def agent_workflow(run_id: str) -> JobFn:
+    """Agent 工作流任务体：执行 `agent_runs` 中的实例（延迟导入避免循环依赖）。"""
+
+    def _run(db: Session, progress: Progress) -> None:
+        from app.agent import service as agent_service
+
+        agent_service.execute_run(db, run_id, progress_cb=progress)
+
+    return _run
+
+
+def build_job_fn(
+    *, job_type: str, resource_id: str | None, payload: dict, user_id: str
+) -> JobFn:
+    """worker 侧按任务类型重建任务体（闭包无法跨进程传递，故用 payload）。"""
+    data = payload or {}
+    if job_type == "material_parse" and resource_id:
+        return material_parse(resource_id, user_id)
+    if job_type == "knowledge_parse" and resource_id:
+        return knowledge_parse(resource_id, user_id)
+    if job_type == "audio_transcribe" and resource_id:
+        return audio_transcribe(resource_id, user_id)
+    if job_type == "minutes_generate":
+        return minutes_generate(
+            str(data.get("meeting_id") or ""),
+            user_id,
+            MinutesGenerateRequest.model_validate(data.get("request") or {}),
+        )
+    if job_type == "preparation_generate" and resource_id:
+        return preparation_generate(
+            str(data.get("meeting_id") or ""),
+            user_id,
+            resource_id,
+            user_goal=data.get("user_goal"),
+            include_history=bool(data.get("include_history", True)),
+            model=data.get("model"),
+            template_id=data.get("template_id"),
+        )
+    if job_type == "agent_workflow" and resource_id:
+        return agent_workflow(resource_id)
+    raise AppError(
+        "AGENT_TOOL_NOT_FOUND", f"未登记的任务类型：{job_type}", http_status=500
+    )

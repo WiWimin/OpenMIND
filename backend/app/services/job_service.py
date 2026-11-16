@@ -33,7 +33,10 @@ def create_job(
     job_type: str,
     resource_type: str,
     resource_id: str | None,
+    payload: dict | None = None,
+    priority: int = 0,
 ) -> AsyncJob:
+    settings = get_settings()
     return job_repository.create(
         db,
         job_id=new_id("job"),
@@ -41,28 +44,41 @@ def create_job(
         job_type=job_type,
         resource_type=resource_type,
         resource_id=resource_id,
+        payload=payload,
+        max_attempts=max(1, settings.job_max_attempts),
+        priority=priority,
+        next_run_at=datetime.now(UTC),
     )
 
 
 def enqueue(
     db: Session,
-    background_tasks: BackgroundTasks,
+    background_tasks: BackgroundTasks | None,
     *,
     user_id: str,
     job_type: str,
     resource_type: str,
     resource_id: str | None,
-    fn: Callable[[Session, Callable[[int], None]], None],
+    fn: Callable[[Session, Callable[[int], None]], None] | None = None,
+    payload: dict | None = None,
+    priority: int = 0,
 ) -> AsyncJob:
-    """创建任务并注册到 BackgroundTasks（响应返回后执行）。"""
+    """创建任务。
+
+    - `JOB_WORKER_ENABLED=true`：只落库，由独立 worker 认领执行（持久化队列）；
+    - 否则注册到 `BackgroundTasks`（旧行为，响应返回后执行）。
+    """
     job = create_job(
         db,
         user_id=user_id,
         job_type=job_type,
         resource_type=resource_type,
         resource_id=resource_id,
+        payload=payload,
+        priority=priority,
     )
-    background_tasks.add_task(task_runner.run_job, job.job_id, fn)
+    if not get_settings().job_worker_enabled and background_tasks is not None and fn is not None:
+        background_tasks.add_task(task_runner.run_job, job.job_id, fn)
     return job
 
 
@@ -130,6 +146,39 @@ def mark_failed(
         error_message=error_message,
         finished_at=datetime.now(UTC),
     )
+
+
+def claim_next(db: Session, worker_id: str) -> AsyncJob | None:
+    """worker 认领一个到期任务（`pending → running`）。"""
+    return job_repository.claim_next(db, worker_id=worker_id, now=datetime.now(UTC))
+
+
+def heartbeat(db: Session, job: AsyncJob) -> None:
+    job_repository.heartbeat(db, job, now=datetime.now(UTC))
+
+
+def retry_or_fail(
+    db: Session, job: AsyncJob, error_code: str, error_message: str
+) -> bool:
+    """可重试错误回到 pending（指数退避），否则落 failed；返回是否重试。"""
+    from app.agent.workflow import DEFAULT_RETRY_CODES
+
+    attempts = job.attempts or 0
+    if error_code in DEFAULT_RETRY_CODES and attempts < (job.max_attempts or 1):
+        delay = min(60.0, 2.0 ** max(0, attempts - 1) * 5.0)
+        job_repository.release_for_retry(
+            db, job, next_run_at=datetime.now(UTC) + timedelta(seconds=delay)
+        )
+        logger.warning(
+            "任务失败可重试 job_id=%s code=%s attempt=%s/%s",
+            job.job_id,
+            error_code,
+            attempts,
+            job.max_attempts,
+        )
+        return True
+    mark_failed(db, job, error_code, error_message)
+    return False
 
 
 def reap_stale(db: Session, *, older_than_minutes: int | None = None) -> int:

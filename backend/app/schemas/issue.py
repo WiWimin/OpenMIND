@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.sync import OptimisticLockMixin
+
 
 class IssueStatus(StrEnum):
     open = "open"
@@ -55,7 +57,14 @@ class IssueExtractResult(BaseModel):
     items: list[IssueRead]
 
 
-class IssueUpdate(BaseModel):
+class IssueCreate(BaseModel):
+    description: str = Field(min_length=1)
+    follow_up: str | None = None
+    # 幂等键：同一 client_op_id 重复提交只创建一条（迁移 0027）
+    client_op_id: str | None = Field(default=None, max_length=64)
+
+
+class IssueUpdate(OptimisticLockMixin):
     description: str | None = Field(default=None, min_length=1)
     status: IssueStatus | None = None
     follow_up: str | None = None

@@ -26,4 +26,6 @@ export interface GenerateMinutesPayload {
 
 export interface UpdateMinutesPayload {
   content?: string
+  // 乐观锁：与服务端 version 不一致时返回 409 SYNC_CONFLICT
+  expected_version?: number
 }

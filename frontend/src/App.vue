@@ -3,9 +3,25 @@
 </template>
 
 <script setup lang="ts">
-import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
+import { watch } from 'vue'
 
-// 应用启动即恢复本地工作区句柄与授权状态，
-// 使任意页面（含刷新后直达的详情页）都能使用本地文件夹能力（幂等）。
-void useLocalWorkspace().init()
+import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
+import { useAuthStore } from '@/stores/auth'
+
+// 本地工作区必须按登录用户初始化：句柄在 IndexedDB 里按 userId 隔离，
+// 未登录/切换账号时不能沿用上一个账号的目录。
+const auth = useAuthStore()
+const workspace = useLocalWorkspace()
+
+watch(
+  () => auth.user?.user_id,
+  (next) => {
+    if (next) {
+      void workspace.init(next)
+    } else {
+      void workspace.disconnect()
+    }
+  },
+  { immediate: true },
+)
 </script>

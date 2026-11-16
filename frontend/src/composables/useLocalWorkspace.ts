@@ -1,33 +1,66 @@
 import { computed, ref, shallowRef } from 'vue'
 
 import * as meetingsApi from '@/api/meetings'
+import { useAuthStore } from '@/stores/auth'
+import { executeConfirmedPush, runSync, type RunSyncContext } from '@/services/localSync/runSync'
+import { workspaceWatcher } from '@/composables/useWorkspaceWatcher'
 import {
   clearMeetingRoot,
+  clearRootHandle,
   clearStoredHandle,
   ensureLocalDir,
   isLocalWorkspaceSupported,
   isWriteAllowed,
   listSubdirs,
+  loadBaselines,
+  loadConflicts,
   loadMeetingRoot,
+  loadPrefs,
+  loadRootHandle,
   loadStoredHandle,
   moveDirPath,
   pickDirectory,
   queryPermission,
   removeDirPath,
   requestPermission,
+  resolveConflict as resolveStoredConflict,
   sanitizeFolderName,
+  saveBaselineFor,
+  savePrefs,
   storeHandle,
   storeMeetingRoot,
+  storeRootHandle,
   writeBlobToPath,
   type LocalDirHandle,
+  type StoredConflict,
 } from '@/utils/localFileSystem'
+import type { SyncSummary } from '@/types/localWorkspace'
 import { categoryOf, categoryNameOf } from '@/utils/meetingCategories'
 
 export type WorkspaceStatus = 'unsupported' | 'unconfigured' | 'needs-permission' | 'connected'
 
-/** 全局单例：整个应用共享同一个已授权目录 */
+/** 全局单例：整个应用共享同一个已授权目录（句柄在 IndexedDB 中按 userId 隔离） */
 const handle = shallowRef<LocalDirHandle | null>(null)
 const permission = ref<PermissionState>('denied')
+const userId = ref<string | null>(null)
+
+/* 双向同步状态 */
+const syncing = ref(false)
+const lastSummary = ref<SyncSummary | null>(null)
+const conflicts = ref<StoredConflict[]>([])
+const autoPull = ref(true)
+
+function currentUserId(): string | null {
+  if (userId.value) {
+    return userId.value
+  }
+  try {
+    userId.value = useAuthStore().user?.user_id ?? null
+  } catch {
+    /* 单测/非 Pinia 环境下退化为未登录 */
+  }
+  return userId.value
+}
 
 const status = computed<WorkspaceStatus>(() => {
   if (!isLocalWorkspaceSupported()) {
@@ -58,16 +91,26 @@ async function resolveMeetingTitle(meetingId: string): Promise<string> {
   }
 }
 
-async function init(): Promise<void> {
+async function init(id?: string): Promise<void> {
+  const resolved = id ?? currentUserId()
+  if (resolved && userId.value && userId.value !== resolved) {
+    // 账号切换：先停掉上一个账号的监听并丢弃其句柄，避免串目录
+    await disconnect()
+  }
+  if (resolved) {
+    userId.value = resolved
+  }
   if (!isLocalWorkspaceSupported() || handle.value) {
     return
   }
-  const stored = await loadStoredHandle()
-  if (!stored) {
+  const uid = userId.value
+  const stored = uid ? await loadRootHandle(uid) : null
+  const effective = stored ?? (await loadStoredHandle())
+  if (!effective) {
     return
   }
-  handle.value = stored
-  permission.value = await queryPermission(stored)
+  handle.value = effective
+  permission.value = await queryPermission(effective)
 }
 
 /** 打开原生目录选择窗口；成功后持久化句柄 */
@@ -81,8 +124,13 @@ async function connect(): Promise<boolean> {
   }
   handle.value = picked
   permission.value = await queryPermission(picked)
+  const uid = currentUserId()
   try {
-    await storeHandle(picked)
+    if (uid) {
+      await storeRootHandle(uid, picked)
+    } else {
+      await storeHandle(picked)
+    }
   } catch {
     /* 持久化失败不影响本次会话使用 */
   }
@@ -103,9 +151,17 @@ async function restore(): Promise<boolean> {
 }
 
 async function disconnect(): Promise<void> {
+  workspaceWatcher.stop()
   handle.value = null
   permission.value = 'denied'
+  lastSummary.value = null
+  conflicts.value = []
+  const uid = userId.value
+  userId.value = null
   try {
+    if (uid) {
+      await clearRootHandle(uid)
+    }
     await clearStoredHandle()
   } catch {
     /* 忽略清理失败 */
@@ -137,15 +193,9 @@ function categoryNameFor(categoryId: string | null): string | null {
  * 优先使用创建时持久化的路径（改名后与磁盘保持一致），否则按当前分类/标题推导。
  * categoryId 显式传入时以它为准（创建/编辑流程刚写入归属，立即可用）。
  */
-function meetingSegmentsOf(
-  meetingId: string,
-  title: string,
-  categoryId?: string | null,
-): string[] {
+function meetingSegmentsOf(meetingId: string, title: string, categoryId?: string | null): string[] {
   const categoryName =
-    categoryId !== undefined
-      ? categoryNameFor(categoryId)
-      : categoryNameOf(categoryOf(meetingId))
+    categoryId !== undefined ? categoryNameFor(categoryId) : categoryNameOf(categoryOf(meetingId))
   const segments = categoryName ? [sanitizeFolderName(categoryName)] : []
   segments.push(sanitizeFolderName(title))
   return segments
@@ -178,7 +228,12 @@ async function mirrorMeetingFile(options: MirrorMeetingFileOptions): Promise<Mir
       typeof options.content === 'string'
         ? new Blob([options.content], { type: 'text/plain;charset=utf-8' })
         : options.content
-    await writeBlobToPath(handle.value as LocalDirHandle, segments, sanitizeFolderName(options.fileName), content)
+    await writeBlobToPath(
+      handle.value as LocalDirHandle,
+      segments,
+      sanitizeFolderName(options.fileName),
+      content,
+    )
     return 'written'
   } catch (caught) {
     console.warn('[local-workspace] 本地镜像写入失败', caught)
@@ -307,7 +362,8 @@ async function demoteCategoryLocal(
   for (const meeting of meetings) {
     try {
       const stored = await loadMeetingRoot(meeting.meetingId)
-      const source = stored && stored.length > 0 ? stored : meetingSegmentsOf(meeting.meetingId, meeting.title)
+      const source =
+        stored && stored.length > 0 ? stored : meetingSegmentsOf(meeting.meetingId, meeting.title)
       if (source[0] !== categoryFolder || source.length < 2) {
         continue
       }
@@ -320,15 +376,124 @@ async function demoteCategoryLocal(
   }
 }
 
+/* ===== 双向同步：对账入口与确认式回写 ===== */
+
+async function buildSyncContext(
+  meetingId: string,
+  meetingTitle?: string,
+): Promise<RunSyncContext | null> {
+  const uid = userId.value
+  if (!connected() || !uid) {
+    return null
+  }
+  const title = meetingTitle || (await resolveMeetingTitle(meetingId))
+  const meetingRoot = await storedMeetingSegments(meetingId, title)
+  return {
+    userId: uid,
+    meetingId,
+    meetingTitle: title,
+    root: handle.value as LocalDirHandle,
+    meetingRoot,
+  }
+}
+
+/** 立即对账一次：只自动执行安全动作，回写/删除留给用户确认 */
+async function syncNow(meetingId: string, meetingTitle?: string): Promise<SyncSummary | null> {
+  const ctx = await buildSyncContext(meetingId, meetingTitle)
+  if (!ctx || syncing.value) {
+    return null
+  }
+  syncing.value = true
+  try {
+    const result = await runSync(ctx, { autoPull: autoPull.value })
+    lastSummary.value = result.summary
+    if (userId.value) {
+      conflicts.value = await loadConflicts(userId.value, ctx.meetingId)
+    }
+    return result.summary
+  } catch (caught) {
+    console.warn('[local-workspace] 同步失败', caught)
+    return null
+  } finally {
+    syncing.value = false
+  }
+}
+
+/** 用户确认后的回写；乐观锁失败（409）会抛给调用方转成冲突展示 */
+async function confirmPush(
+  meetingId: string,
+  action: Parameters<typeof executeConfirmedPush>[0]['action'],
+  payload: { file?: File; text?: string; expectedUpdatedAt?: string; expectedVersion?: number },
+  meetingTitle?: string,
+): Promise<boolean> {
+  const ctx = await buildSyncContext(meetingId, meetingTitle)
+  if (!ctx || !userId.value) {
+    return false
+  }
+  try {
+    const baseline = await executeConfirmedPush({ ctx, action, ...payload })
+    if (baseline) {
+      await saveBaselineFor(userId.value, ctx.meetingId, baseline)
+    }
+    return true
+  } catch (caught) {
+    console.warn('[local-workspace] 回写失败', caught)
+    return false
+  }
+}
+
+/** 用户处理完冲突后移除记录 */
+async function resolveConflict(conflictId: string): Promise<void> {
+  const uid = userId.value
+  if (!uid) {
+    return
+  }
+  await resolveStoredConflict(uid, conflictId)
+  conflicts.value = conflicts.value.filter((item) => item.conflictId !== conflictId)
+}
+
+/** 是否在同步时自动拉取远端更新（只覆盖本地未修改的文件） */
+async function setAutoPull(enabled: boolean): Promise<void> {
+  autoPull.value = enabled
+  const uid = userId.value
+  if (!uid) {
+    return
+  }
+  try {
+    const prefs = await loadPrefs(uid)
+    await savePrefs(uid, { ...prefs, autoPull: enabled })
+  } catch {
+    /* 偏好写入失败不影响本次会话 */
+  }
+}
+
+/** 取该会议的同步基线，供面板展示「已同步/待处理」 */
+async function loadMeetingBaselines(meetingId: string) {
+  const uid = userId.value
+  if (!uid) {
+    return []
+  }
+  return loadBaselines(uid, meetingId)
+}
+
 export function useLocalWorkspace() {
   return {
     status,
     directoryName,
     rootHandle: handle,
+    syncing,
+    lastSummary,
+    conflicts,
+    autoPull,
     init,
     connect,
     restore,
     disconnect,
+    syncNow,
+    confirmPush,
+    resolveConflict,
+    setAutoPull,
+    loadMeetingBaselines,
     mirrorMeetingFile,
     mirrorConfirmedMinutes,
     storedMeetingSegments,

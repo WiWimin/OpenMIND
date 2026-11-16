@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.page import PageParams, list_envelope
 from app.schemas.common import Envelope, ListData
 from app.schemas.issue import (
+    IssueCreate,
     IssueExtractRequest,
     IssueExtractResult,
     IssueRead,
@@ -35,6 +36,24 @@ def extract_issues(
     return Envelope(
         data=IssueExtractResult(items=[IssueRead.model_validate(issue) for issue in issues])
     )
+
+
+@router.post(
+    "/meetings/{meeting_id}/issues",
+    status_code=status.HTTP_201_CREATED,
+    response_model=Envelope[IssueRead],
+)
+def create_issue(
+    meeting_id: str,
+    payload: IssueCreate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> Envelope[IssueRead]:
+    """手工新建问题（本地工作区导入）；`client_op_id` 幂等，状态固定 open。"""
+    issue = issue_service.create_issue(
+        db, meeting_id=meeting_id, user_id=current_user.user_id, payload=payload
+    )
+    return Envelope(data=IssueRead.model_validate(issue))
 
 
 @router.get(

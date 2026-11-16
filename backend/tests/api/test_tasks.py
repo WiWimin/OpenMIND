@@ -3,7 +3,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.repositories import task_repository
+from app.repositories import meeting_repository, task_repository
 
 REGISTER = "/api/v1/auth/register"
 
@@ -187,3 +187,75 @@ def test_cancel_completed_task_conflict(client: TestClient, db_session: Session)
 
     response = client.post("/api/v1/tasks/tsk_1/cancel", headers=headers)
     assert response.status_code == 409
+
+
+def test_create_task_priority_default_and_override(client: TestClient) -> None:
+    headers, _ = _register(client)
+
+    default = client.post("/api/v1/tasks", json={"title": "默认优先级"}, headers=headers)
+    assert default.status_code == 201
+    assert default.json()["data"]["priority"] == "medium"
+
+    high = client.post(
+        "/api/v1/tasks", json={"title": "高优先级", "priority": "high"}, headers=headers
+    )
+    assert high.status_code == 201
+    assert high.json()["data"]["priority"] == "high"
+
+
+def test_create_task_invalid_priority_rejected(client: TestClient) -> None:
+    headers, _ = _register(client)
+
+    response = client.post(
+        "/api/v1/tasks", json={"title": "错误优先级", "priority": "urgent"}, headers=headers
+    )
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+def test_update_task_priority(client: TestClient, db_session: Session) -> None:
+    headers, user_id = _register(client)
+    _seed(db_session, user_id, task_id="tsk_1")
+
+    response = client.patch("/api/v1/tasks/tsk_1", json={"priority": "low"}, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["data"]["priority"] == "low"
+
+
+def test_list_tasks_includes_meeting_title(
+    client: TestClient, db_session: Session
+) -> None:
+    headers, user_id = _register(client)
+    meeting = meeting_repository.create(
+        db_session,
+        meeting_id="mtg_task_title",
+        user_id=user_id,
+        title="需求评审会",
+        topic=None,
+        meeting_time=None,
+    )
+    task_repository.create(
+        db_session,
+        task_id="tsk_with_meeting",
+        user_id=user_id,
+        meeting_id=meeting.meeting_id,
+        action_id=None,
+        title="整理评审结论",
+        due_date=None,
+    )
+    task_repository.create(
+        db_session,
+        task_id="tsk_without_meeting",
+        user_id=user_id,
+        meeting_id=None,
+        action_id=None,
+        title="独立任务",
+        due_date=None,
+    )
+
+    items = {
+        item["task_id"]: item
+        for item in client.get("/api/v1/tasks", headers=headers).json()["data"]["items"]
+    }
+    assert items["tsk_with_meeting"]["meeting_title"] == "需求评审会"
+    assert items["tsk_without_meeting"]["meeting_title"] is None

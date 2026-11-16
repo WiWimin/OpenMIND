@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError, resource_not_found
 from app.models.task import PersonalTask
-from app.repositories import task_repository
-from app.schemas.task import TaskStatus, TaskUpdate
+from app.repositories import meeting_repository, task_repository
+from app.schemas.task import TaskPriority, TaskStatus, TaskUpdate
 from app.utils.ids import new_id
 from app.utils.pagination import paginate_by
 
@@ -28,7 +28,7 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 def list_tasks(
     db: Session, *, user_id: str, status: str | None, page: int, page_size: int
 ) -> tuple[list[PersonalTask], int]:
-    return paginate_by(
+    items, total = paginate_by(
         task_repository.list_by_user,
         task_repository.count_by_user,
         db,
@@ -37,10 +37,21 @@ def list_tasks(
         page_size=page_size,
         status=status,
     )
+    # 附带关联会议标题（表格跳转链接展示），批量一次查询
+    meeting_ids = [task.meeting_id for task in items if task.meeting_id]
+    titles = meeting_repository.titles_by_ids(db, user_id, meeting_ids)
+    for task in items:
+        task.meeting_title = titles.get(task.meeting_id) if task.meeting_id else None
+    return items, total
 
 
 def create_task(
-    db: Session, *, user_id: str, title: str, due_date: date | None
+    db: Session,
+    *,
+    user_id: str,
+    title: str,
+    due_date: date | None,
+    priority: str = TaskPriority.medium.value,
 ) -> PersonalTask:
     return task_repository.create(
         db,
@@ -50,6 +61,7 @@ def create_task(
         action_id=None,
         title=title,
         due_date=due_date,
+        priority=priority,
     )
 
 
@@ -84,6 +96,8 @@ def update_task(
         target = TaskStatus(data["status"]).value
         _ensure_transition(task.status, target)
         task.status = target
+    if data.get("priority") is not None:
+        task.priority = TaskPriority(data["priority"]).value
     return task_repository.update(db, task)
 
 

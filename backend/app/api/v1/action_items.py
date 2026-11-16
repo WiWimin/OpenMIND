@@ -5,6 +5,7 @@ from fastapi import APIRouter, Response, status
 from app.api.deps import CurrentUser, DbSession
 from app.api.page import PageParams, list_envelope
 from app.schemas.action_item import (
+    ActionItemCreate,
     ActionItemExtractRequest,
     ActionItemExtractResult,
     ActionItemRead,
@@ -39,6 +40,24 @@ def extract_action_items(
             items=[ActionItemRead.model_validate(item) for item in items]
         )
     )
+
+
+@router.post(
+    "/meetings/{meeting_id}/action-items",
+    status_code=status.HTTP_201_CREATED,
+    response_model=Envelope[ActionItemRead],
+)
+def create_action_item(
+    meeting_id: str,
+    payload: ActionItemCreate,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> Envelope[ActionItemRead]:
+    """手工新建行动项（本地工作区导入）：状态固定待确认，仍须用户确认/转任务。"""
+    item = action_item_service.create_action_item(
+        db, meeting_id=meeting_id, user_id=current_user.user_id, payload=payload
+    )
+    return Envelope(data=ActionItemRead.model_validate(item))
 
 
 @router.get(

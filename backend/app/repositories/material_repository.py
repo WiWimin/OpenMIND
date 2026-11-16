@@ -17,6 +17,7 @@ def create(
     material_type: str,
     source: str | None,
     storage_key: str,
+    client_op_id: str | None = None,
 ) -> MeetingMaterial:
     material = MeetingMaterial(
         material_id=material_id,
@@ -26,6 +27,7 @@ def create(
         type=material_type,
         source=source,
         storage_key=storage_key,
+        client_op_id=client_op_id,
     )
     db.add(material)
     db.commit()
@@ -39,6 +41,42 @@ def get_owned(db: Session, material_id: str, user_id: str) -> MeetingMaterial | 
             MeetingMaterial.material_id == material_id,
             MeetingMaterial.user_id == user_id,
         )
+    ).scalar_one_or_none()
+
+
+def find_reusable_index(
+    db: Session,
+    *,
+    user_id: str,
+    content_hash: str,
+    fingerprint: str,
+    exclude_material_id: str,
+) -> MeetingMaterial | None:
+    """增量索引复用源：同用户、同内容、同指纹且已成功建索引的材料。
+
+    仅限本表（会议材料库）内复用，不跨到知识库，避免跨库脏召回；
+    `index_fingerprint` 为空的存量行永不命中（旧向量产出参数未知）。
+    """
+    statement = (
+        select(MeetingMaterial)
+        .where(
+            MeetingMaterial.user_id == user_id,
+            MeetingMaterial.content_hash == content_hash,
+            MeetingMaterial.index_fingerprint == fingerprint,
+            MeetingMaterial.processing_status == "processed",
+            MeetingMaterial.material_id != exclude_material_id,
+            MeetingMaterial.content.is_not(None),
+        )
+        .order_by(MeetingMaterial.created_at.asc())
+        .limit(1)
+    )
+    return db.execute(statement).scalar_one_or_none()
+
+
+def get_by_client_op_id(db: Session, client_op_id: str) -> MeetingMaterial | None:
+    """幂等键命中查询（迁移 0027）：同键重复提交返回已有记录。"""
+    return db.execute(
+        select(MeetingMaterial).where(MeetingMaterial.client_op_id == client_op_id)
     ).scalar_one_or_none()
 
 

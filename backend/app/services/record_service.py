@@ -10,7 +10,7 @@ from app.repositories import (
     record_repository,
 )
 from app.schemas.record import RecordCreate, RecordUpdate
-from app.services import meeting_service
+from app.services import meeting_service, sync_support
 from app.utils.ids import new_id
 from app.utils.pagination import paginate_by
 
@@ -19,6 +19,27 @@ def create_record(
     db: Session, *, meeting_id: str, user_id: str, payload: RecordCreate
 ) -> MeetingRecord:
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    # 幂等键：同一 client_op_id 重复提交只落一条（本地工作区同步重试）
+    if payload.client_op_id:
+        existing = record_repository.get_by_client_op_id(db, payload.client_op_id)
+        if existing is not None:
+            if existing.meeting_id != meeting_id:
+                raise resource_not_found("记录")
+            sync_support.ensure_same_payload(
+                {
+                    "content": existing.content,
+                    "record_type": existing.record_type,
+                    "marker_type": existing.marker_type,
+                },
+                {
+                    "content": payload.content,
+                    "record_type": payload.record_type.value,
+                    "marker_type": payload.marker_type.value
+                    if payload.marker_type
+                    else None,
+                },
+            )
+            return existing
     return record_repository.create(
         db,
         record_id=new_id("rec"),
@@ -26,6 +47,7 @@ def create_record(
         content=payload.content,
         record_type=payload.record_type.value,
         marker_type=payload.marker_type.value if payload.marker_type else None,
+        client_op_id=payload.client_op_id,
     )
 
 
@@ -55,7 +77,13 @@ def update_record(
 ) -> MeetingRecord:
     record = get_owned_record(db, record_id, user_id)
     meeting_service.get_mutable_meeting(db, record.meeting_id, user_id)
-    data = payload.model_dump(exclude_unset=True)
+    # 乐观锁：本地同步回写前校验远端未被修改，避免覆盖他人修改
+    sync_support.ensure_unmodified(
+        record.updated_at,
+        payload.expected_updated_at,
+        label="会议记录",
+    )
+    data = payload.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
     if "content" in data and data["content"] is not None:
         record.content = data["content"]
     if "marker_type" in data:

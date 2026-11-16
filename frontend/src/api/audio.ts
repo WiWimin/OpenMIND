@@ -32,30 +32,29 @@ export async function listAudio(
   return unwrapData(data)
 }
 
-export async function uploadAudio(meetingId: string, file: File): Promise<MeetingAudio> {
+export async function uploadAudio(
+  meetingId: string,
+  file: File,
+  clientOpId?: string | null,
+): Promise<MeetingAudio> {
   const form = new FormData()
   form.append('file', file)
+  if (clientOpId) {
+    form.append('client_op_id', clientOpId)
+  }
   const { data } = await http.post<
     ApiSuccess<MeetingAudio | JobAccepted> | MeetingAudio | JobAccepted
-  >(
-    `/meetings/${meetingId}/audio`,
-    form,
-    {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: LONG_REQUEST_TIMEOUT_MS,
-    },
-  )
+  >(`/meetings/${meetingId}/audio`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: LONG_REQUEST_TIMEOUT_MS,
+  })
   return waitAudioJob(unwrapData<MeetingAudio | JobAccepted>(data))
 }
 
-export async function updateTranscript(
-  audioId: string,
-  transcript: string,
-): Promise<MeetingAudio> {
-  const { data } = await http.patch<ApiSuccess<MeetingAudio> | MeetingAudio>(
-    `/audio/${audioId}`,
-    { transcript },
-  )
+export async function updateTranscript(audioId: string, transcript: string): Promise<MeetingAudio> {
+  const { data } = await http.patch<ApiSuccess<MeetingAudio> | MeetingAudio>(`/audio/${audioId}`, {
+    transcript,
+  })
   return unwrapData(data)
 }
 
@@ -80,12 +79,18 @@ export async function deleteAudio(audioId: string): Promise<DeletedResult<'audio
   return unwrapData(data)
 }
 
+// 下载原始音频（非信封，Content-Disposition 携带文件名），用于本地工作区同步
+export async function downloadAudio(audioId: string): Promise<Blob> {
+  const { data } = await http.get<Blob>(`/audio/${audioId}/download`, {
+    responseType: 'blob',
+    timeout: LONG_REQUEST_TIMEOUT_MS,
+  })
+  return data
+}
+
 /* ============================ 实时录音：分片边录边转 ============================ */
 
-export async function startLiveAudio(
-  meetingId: string,
-  fileType: string,
-): Promise<MeetingAudio> {
+export async function startLiveAudio(meetingId: string, fileType: string): Promise<MeetingAudio> {
   const { data } = await http.post<ApiSuccess<MeetingAudio> | MeetingAudio>(
     `/meetings/${meetingId}/audio/live/start`,
     { file_type: fileType },

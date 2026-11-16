@@ -17,6 +17,7 @@ from app.services import (
     meeting_service,
     meeting_template_service,
     memory_service,
+    sync_support,
 )
 from app.services.extraction_support import gather_records
 from app.services.model_config_service import (
@@ -244,7 +245,9 @@ def update_minutes(
 ) -> MeetingMinutes:
     minutes = get_owned_minutes(db, minutes_id, user_id)
     meeting_service.get_mutable_meeting(db, minutes.meeting_id, user_id)
-    data = payload.model_dump(exclude_unset=True)
+    # 乐观锁：本地同步回写前校验纪要版本，避免覆盖他人修改
+    sync_support.ensure_version(minutes.version, payload.expected_version)
+    data = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
     if data.get("content") is not None:
         minutes.content = data["content"]
     minutes.version += 1

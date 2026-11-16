@@ -6,12 +6,14 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.ai.indexing import build_index_fingerprint, file_sha256
 from app.ai.parsers import SUPPORTED_EXTENSIONS, parse_bytes
 from app.core.config import get_settings
 from app.core.exceptions import AppError, resource_not_found
 from app.models.material import MeetingMaterial
+from app.models.user import utc_now
 from app.repositories import chunk_repository, material_repository, record_repository
-from app.services import indexing_service, meeting_service
+from app.services import indexing_service, meeting_service, sync_support
 from app.utils import storage
 from app.utils.ids import new_id
 from app.utils.pagination import paginate_by
@@ -48,6 +50,54 @@ def _mark_failed(
     db.refresh(material)
 
 
+def _try_reuse_index(
+    db: Session,
+    material: MeetingMaterial,
+    content: bytes,
+    *,
+    fingerprint: str,
+    progress_cb: Callable[[int], None] | None = None,
+) -> bool:
+    """增量索引：命中同用户、同内容、同指纹的已索引材料则复用其分块。
+
+    复用范围仅限会议材料库内（可跨会议），不跨到知识库；
+    命中即跳过解析与向量化（零 Embedding 调用），返回 True。
+    """
+    settings = get_settings()
+    if not settings.rag_incremental_index_enabled:
+        return False
+    content_hash = material.content_hash or file_sha256(content)
+    source = material_repository.find_reusable_index(
+        db,
+        user_id=material.user_id,
+        content_hash=content_hash,
+        fingerprint=fingerprint,
+        exclude_material_id=material.material_id,
+    )
+    if source is None or not source.content:
+        return False
+    copied = chunk_repository.copy_by_material(
+        db, source.material_id, material.material_id
+    )
+    material.content = source.content
+    material.processing_status = "processed"
+    material.parse_error = None
+    material.parse_error_code = None
+    material.index_fingerprint = fingerprint
+    material.indexed_at = utc_now()
+    db.commit()
+    db.refresh(material)
+    if progress_cb:
+        progress_cb(90)
+    logger.info(
+        "增量索引复用 material_id=%s source_material_id=%s chunks=%d",
+        material.material_id,
+        source.material_id,
+        copied,
+    )
+    return True
+
+
 def _process_material(
     db: Session,
     material: MeetingMaterial,
@@ -58,13 +108,20 @@ def _process_material(
 ) -> str:
     """解析 + 索引：成功转 `processed`，失败转 `failed` 并保留记录与文件（可重试）。
 
-    返回终态 `processed` / `failed`；异步任务（`job_tasks`）据此判定任务成败。
+    增量索引：同用户、同库内命中同内容、同指纹的已索引记录时直接复用分块，
+    跳过解析与向量化。返回终态 `processed` / `failed`；异步任务（`job_tasks`）据此判定任务成败。
     """
+    fingerprint = build_index_fingerprint(get_settings())
     material.processing_status = "processing"
+    material.content_hash = material.content_hash or file_sha256(content)
     db.commit()
     if progress_cb:
         progress_cb(10)
     try:
+        if _try_reuse_index(
+            db, material, content, fingerprint=fingerprint, progress_cb=progress_cb
+        ):
+            return "processed"
         parsed = parse_bytes(content, file_name)
         material.content = parsed.content
         if progress_cb:
@@ -73,6 +130,8 @@ def _process_material(
         material.processing_status = "processed"
         material.parse_error = None
         material.parse_error_code = None
+        material.index_fingerprint = fingerprint
+        material.indexed_at = utc_now()
         db.commit()
         db.refresh(material)
         if progress_cb:
@@ -97,6 +156,7 @@ def upload_material(
     source: str | None,
     material_type: str | None,
     defer_processing: bool = False,
+    client_op_id: str | None = None,
 ) -> MeetingMaterial:
     """上传并（同步或交由异步任务）处理材料。
 
@@ -108,6 +168,18 @@ def upload_material(
 
     settings = get_settings()
     ensure_upload_size(content, max_mb=settings.max_upload_mb)
+
+    # 幂等键：同一 client_op_id 重复提交只落一条，避免同步重试重复导入
+    if client_op_id:
+        existing = material_repository.get_by_client_op_id(db, client_op_id)
+        if existing is not None:
+            if existing.user_id != user_id or existing.meeting_id != meeting_id:
+                raise resource_not_found("材料")
+            sync_support.ensure_same_payload(
+                {"file_name": existing.file_name, "type": existing.type},
+                {"file_name": file_name, "type": normalized_type},
+            )
+            return existing
 
     material_id = new_id("mat")
     storage_key = f"materials/{material_id}.{normalized_type}"
@@ -124,6 +196,7 @@ def upload_material(
             material_type=normalized_type,
             source=source,
             storage_key=storage_key,
+            client_op_id=client_op_id,
         ),
     )
     # 失败不再回滚清理：记录与文件保留为 failed，由重试接口处理（docs/database.md 统一策略）
@@ -194,6 +267,23 @@ def get_owned_material(db: Session, material_id: str, user_id: str) -> MeetingMa
     if material is None:
         raise resource_not_found("材料")
     return material
+
+
+def file_size_of(material: MeetingMaterial) -> int | None:
+    """原始文件大小（stat 计算，非数据库列）；文件丢失返回 None。"""
+    return storage.stat_size(get_settings().storage_dir, material.storage_key)
+
+
+def read_material_file(material: MeetingMaterial) -> bytes:
+    """读取原始文件内容（下载接口用）；文件已丢失时抛 404。"""
+    try:
+        return storage.read_bytes(get_settings().storage_dir, material.storage_key)
+    except OSError:
+        raise AppError(
+            "RESOURCE_NOT_FOUND",
+            "原始文件已丢失，请重新上传",
+            http_status=404,
+        ) from None
 
 
 def delete_material(db: Session, material_id: str, user_id: str) -> None:

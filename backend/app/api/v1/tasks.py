@@ -24,6 +24,7 @@ def create_task(
         user_id=current_user.user_id,
         title=payload.title,
         due_date=payload.due_date,
+        priority=payload.priority.value,
     )
     return Envelope(data=TaskRead.model_validate(task))
 
