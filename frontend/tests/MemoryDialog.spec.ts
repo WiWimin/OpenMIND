@@ -19,8 +19,8 @@ const memory: UserMemory = {
   updated_at: '2026-10-20T10:00:00+08:00',
 }
 
-function mountDialog() {
-  return mount(MemoryDialog, { props: { open: true } })
+function mountDialog(props: Record<string, unknown> = {}) {
+  return mount(MemoryDialog, { props: { open: true, ...props } })
 }
 
 describe('MemoryDialog', () => {
@@ -75,5 +75,17 @@ describe('MemoryDialog', () => {
 
     expect(memoryApi.clearMemory).toHaveBeenCalled()
     expect((wrapper.find('#memory-role').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('stepper mode shows a next action and hides clear memory', async () => {
+    const wrapper = mountDialog({ stepper: true })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('清除记忆')
+    const next = wrapper.findAll('button').find((node) => node.text() === '下一步')
+    expect(next).toBeTruthy()
+
+    await next?.trigger('click')
+    expect(wrapper.emitted('next')).toHaveLength(1)
   })
 })

@@ -10,7 +10,6 @@ import * as minutesDocx from '@/utils/minutesDocx'
 
 vi.mock('@/api/minutes', () => ({
   listMinutes: vi.fn(),
-  generateMinutes: vi.fn(),
   getMinutes: vi.fn(),
   updateMinutes: vi.fn(),
   confirmMinutes: vi.fn(),
@@ -24,10 +23,12 @@ vi.mock('@/composables/useLocalWorkspace', () => ({
 
 vi.mock('@/components/RichTextEditor.vue', () => ({
   default: {
-    props: { id: String, modelValue: String, label: String },
+    props: { id: String, modelValue: String, label: String, editable: Boolean, variant: String },
     emits: ['update:modelValue'],
     template:
-      '<div><label :for="id">{{ label }}</label><textarea :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
+      '<div class="mock-editor"><label :for="id">{{ label }}</label>' +
+      '<textarea :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />' +
+      '<div class="mock-toolbar-end"><slot name="toolbar-end" /></div></div>',
   },
 }))
 
@@ -39,7 +40,7 @@ vi.mock('@/utils/minutesDocx', () => ({
 const minutes: Minutes = {
   minutes_id: 'min_1',
   meeting_id: 'mtg_1',
-  content: '会议纪要草稿',
+  content: '会议纪要正文',
   status: 'draft',
   version: 1,
   template: 'standard',
@@ -82,15 +83,15 @@ describe('MinutesSection', () => {
     expect(wrapper.text()).toContain('还没有纪要')
   })
 
-  it('lists and edits a minutes draft', async () => {
+  it('opens directly on the latest minutes and saves edits', async () => {
     vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
     vi.mocked(minutesApi.updateMinutes).mockResolvedValue({ ...minutes, content: '改后' })
     const wrapper = mountSection()
     await flushPromises()
 
-    await wrapper.get('.minutes-section__item').trigger('click')
+    // 无历史列表：挂载后直接展示最新一版正文
     expect((wrapper.get('#minutes-content').element as HTMLTextAreaElement).value).toBe(
-      '会议纪要草稿',
+      '会议纪要正文',
     )
 
     await wrapper.get('#minutes-content').setValue('改后')
@@ -100,93 +101,33 @@ describe('MinutesSection', () => {
     expect(minutesApi.updateMinutes).toHaveBeenCalledWith('min_1', { content: '改后' })
   })
 
-  it('generates a minutes draft', async () => {
-    vi.mocked(minutesApi.listMinutes)
-      .mockResolvedValueOnce(listOf([]))
-      .mockResolvedValue(listOf([minutes]))
-    vi.mocked(minutesApi.generateMinutes).mockResolvedValue(minutes)
+  it('exposes save/confirm/export actions above the editor without status labels', async () => {
+    vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
     const wrapper = mountSection()
     await flushPromises()
 
-    await button(wrapper, '生成会议纪要')?.trigger('click')
-    await flushPromises()
-
-    expect(minutesApi.generateMinutes).toHaveBeenCalledWith(
-      'mtg_1',
-      {
-        record_ids: [],
-        include_action_items: true,
-        include_materials: true,
-      },
-      expect.anything(),
-    )
-    expect(minutesApi.listMinutes).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('#minutes-content').exists()).toBe(true)
+    expect(button(wrapper, '保存')).toBeTruthy()
+    expect(button(wrapper, '确认')).toBeTruthy()
+    expect(button(wrapper, '导出 DOCX')).toBeTruthy()
+    expect(button(wrapper, '生成会议纪要')).toBeUndefined()
+    // 不再标注草稿/版本等状态
+    expect(wrapper.text()).not.toContain('草稿')
+    expect(wrapper.text()).not.toContain('已确认')
   })
 
-  it('can generate without materials', async () => {
-    vi.mocked(minutesApi.listMinutes)
-      .mockResolvedValueOnce(listOf([]))
-      .mockResolvedValue(listOf([minutes]))
-    vi.mocked(minutesApi.generateMinutes).mockResolvedValue(minutes)
-    const wrapper = mountSection()
-    await flushPromises()
-
-    await wrapper.get('.minutes-section__materials input').setValue(false)
-    await button(wrapper, '生成会议纪要')?.trigger('click')
-    await flushPromises()
-
-    expect(minutesApi.generateMinutes).toHaveBeenCalledWith(
-      'mtg_1',
-      {
-        record_ids: [],
-        include_action_items: true,
-        include_materials: false,
-      },
-      expect.anything(),
-    )
-  })
-
-  it('generates with the selected template and displays it', async () => {
-    vi.mocked(minutesApi.listMinutes)
-      .mockResolvedValueOnce(listOf([]))
-      .mockResolvedValue(listOf([{ ...minutes, template: 'concise' }]))
-    vi.mocked(minutesApi.generateMinutes).mockResolvedValue({
-      ...minutes,
-      template: 'concise',
-    })
-    const wrapper = mountSection()
-    await flushPromises()
-
-    await wrapper.get('#minutes-template').setValue('concise')
-    await button(wrapper, '生成会议纪要')?.trigger('click')
-    await flushPromises()
-
-    expect(minutesApi.generateMinutes).toHaveBeenCalledWith(
-      'mtg_1',
-      {
-        record_ids: [],
-        include_action_items: true,
-        include_materials: true,
-        template: 'concise',
-      },
-      expect.anything(),
-    )
-    expect(wrapper.text()).toContain('简洁记录')
-  })
-
-  it('confirms a minutes draft', async () => {
+  it('confirms the minutes and reports success', async () => {
     vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
     vi.mocked(minutesApi.confirmMinutes).mockResolvedValue({ ...minutes, status: 'confirmed' })
     const wrapper = mountSection()
     await flushPromises()
 
-    await wrapper.get('.minutes-section__item').trigger('click')
     await button(wrapper, '确认')?.trigger('click')
     await flushPromises()
 
     expect(minutesApi.confirmMinutes).toHaveBeenCalledWith('min_1')
-    expect(wrapper.text()).toContain('已确认')
+    expect(useToast().toasts.value.some((toast) => toast.message.includes('纪要已确认'))).toBe(true)
+    // 确认后操作按钮收起
+    expect(button(wrapper, '确认')).toBeUndefined()
   })
 
   it('mirrors confirmed minutes to the local folder and reports success', async () => {
@@ -199,7 +140,6 @@ describe('MinutesSection', () => {
     })
     await flushPromises()
 
-    await wrapper.get('.minutes-section__item').trigger('click')
     await button(wrapper, '确认')?.trigger('click')
     await flushPromises()
 
@@ -216,11 +156,9 @@ describe('MinutesSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await wrapper.get('.minutes-section__item').trigger('click')
     await button(wrapper, '确认')?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已确认')
     expect(useToast().toasts.value.some((toast) => toast.message.includes('本地文件夹同步失败'))).toBe(
       true,
     )
@@ -233,17 +171,15 @@ describe('MinutesSection', () => {
     const wrapper = mountSection()
     await flushPromises()
 
-    await wrapper.get('.minutes-section__item').trigger('click')
     await button(wrapper, '确认')?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已确认')
-    expect(
-      useToast().toasts.value.some((toast) => toast.message.includes('已同步到本地文件夹')),
-    ).toBe(false)
+    expect(useToast().toasts.value.some((toast) => toast.message.includes('已同步到本地文件夹'))).toBe(
+      false,
+    )
   })
 
-  it('exports the selected draft as docx', async () => {
+  it('exports the minutes as docx', async () => {
     vi.mocked(minutesApi.listMinutes).mockResolvedValue(listOf([minutes]))
     const blob = new Blob(['docx'], { type: 'application/octet-stream' })
     vi.mocked(minutesDocx.buildMinutesDocxBlob).mockResolvedValue(blob)
@@ -252,13 +188,12 @@ describe('MinutesSection', () => {
     })
     await flushPromises()
 
-    await wrapper.get('.minutes-section__item').trigger('click')
     await button(wrapper, '导出 DOCX')?.trigger('click')
     await flushPromises()
 
     expect(minutesDocx.buildMinutesDocxBlob).toHaveBeenCalledWith(
       '项目周会 · 会议纪要',
-      '会议纪要草稿',
+      '会议纪要正文',
     )
     expect(minutesDocx.downloadBlob).toHaveBeenCalledWith(blob, '项目周会 · 会议纪要.docx')
   })

@@ -91,6 +91,7 @@ const ICONS: Record<string, string[]> = {
     'M14 11v6',
   ],
   undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11'],
+  more: ['M12 6.2h.01M12 12h.01M12 17.8h.01'],
 }
 
 const paths = computed(() => ICONS[props.name] ?? ICONS.grid)

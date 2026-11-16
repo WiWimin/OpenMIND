@@ -14,13 +14,6 @@
           large
           @click="toggleCreate"
         />
-        <FormSelect
-          id="task-status-filter"
-          label="状态"
-          :model-value="store.filters.status"
-          :options="filterOptions"
-          @update:model-value="onFilter"
-        />
       </div>
     </div>
 
@@ -33,12 +26,20 @@
         :error="newFormError"
         placeholder="要做的一件事…"
       />
-      <FormField
-        id="task-create-due"
-        v-model="newDue"
-        label="截止日期"
-        type="date"
-      />
+      <div class="task-create__row">
+        <FormField
+          id="task-create-due"
+          v-model="newDue"
+          label="截止日期"
+          type="date"
+        />
+        <FormSelect
+          id="task-create-priority"
+          v-model="newPriority"
+          label="优先级"
+          :options="priorityOptions"
+        />
+      </div>
       <ErrorMessage v-if="newError" :error="newError" />
       <div class="task-create__actions">
         <AppButton type="button" variant="ghost" :disabled="newSaving" @click="cancelCreate">
@@ -71,6 +72,7 @@
       <div class="task-section__table">
         <div class="task-section__head" aria-hidden="true">
           <span>任务</span>
+          <span>关联会议</span>
           <span>截止时间与状态</span>
           <span>操作</span>
         </div>
@@ -85,12 +87,20 @@
                 required
                 :error="editFormError"
               />
-              <FormField
-                :id="`task-edit-due-${task.task_id}`"
-                v-model="editDue"
-                label="截止日期"
-                type="date"
-              />
+              <div class="task-item__edit-row">
+                <FormField
+                  :id="`task-edit-due-${task.task_id}`"
+                  v-model="editDue"
+                  label="截止日期"
+                  type="date"
+                />
+                <FormSelect
+                  :id="`task-edit-priority-${task.task_id}`"
+                  v-model="editPriority"
+                  label="优先级"
+                  :options="priorityOptions"
+                />
+              </div>
               <ErrorMessage v-if="editError" :error="editError" />
               <div class="task-item__edit-actions">
                 <AppButton type="button" variant="ghost" :disabled="editSaving" @click="cancelEdit">
@@ -112,6 +122,20 @@
                 </button>
               </div>
 
+              <!-- 关联会议：点击跳转会议管理 -->
+              <div class="task-item__meeting">
+                <button
+                  v-if="task.meeting_id"
+                  type="button"
+                  class="task-item__meeting-link"
+                  :title="`跳转到会议「${task.meeting_title ?? task.meeting_id}」`"
+                  @click="goMeeting(task)"
+                >
+                  {{ task.meeting_title || '来源会议' }}
+                </button>
+                <span v-else class="task-item__meeting-none">—</span>
+              </div>
+
               <div class="task-item__controls">
                 <select
                   v-if="!readonly"
@@ -127,7 +151,11 @@
                 </select>
                 <StatusBadge v-else :label="metaOf(task).label" :tone="metaOf(task).tone" />
 
-                <span v-if="task.due_date" class="task-item__due">
+                <span
+                  v-if="task.due_date"
+                  class="task-item__due"
+                  :class="{ 'task-item__due--overdue': isOverdue(task) }"
+                >
                   截止 {{ dueOf(task) }}
                   <StatusBadge
                     v-if="isOverdue(task)"
@@ -185,6 +213,12 @@
           <dd>{{ metaOf(detailTask).label }}</dd>
         </div>
         <div class="task-detail__row">
+          <dt>优先级</dt>
+          <dd>
+            <StatusBadge :label="priorityMeta(detailTask).label" :tone="priorityMeta(detailTask).tone" />
+          </dd>
+        </div>
+        <div class="task-detail__row">
           <dt>截止日期</dt>
           <dd>
             {{ dueOf(detailTask) }}
@@ -197,7 +231,7 @@
         </div>
         <div class="task-detail__row">
           <dt>来源会议</dt>
-          <dd>{{ detailTask.meeting_id ?? '无关联会议' }}</dd>
+          <dd>{{ detailTask.meeting_title || detailTask.meeting_id || '无关联会议' }}</dd>
         </div>
       </dl>
       <template #footer>
@@ -240,8 +274,8 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
 import { useTasksStore, type TaskStatusFilter } from '@/stores/tasks'
-import type { PersonalTask, TaskStatus } from '@/types/task'
-import type { SelectOption } from '@/types/ui'
+import type { PersonalTask, TaskPriority, TaskStatus } from '@/types/task'
+import type { SelectOption, StatusTone } from '@/types/ui'
 import { formatDate, formatDateTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
 import { taskStatusMeta, type StatusMeta } from '@/utils/statusLabels'
@@ -271,9 +305,24 @@ const taskStatusOptions = (
   Object.entries(taskStatusMeta) as [TaskStatus, StatusMeta][]
 ).map(([value, meta]) => ({ value, label: meta.label }))
 
-const filterOptions: SelectOption[] = [{ value: '', label: '全部' }, ...taskStatusOptions]
-
 const statusOptions: SelectOption[] = taskStatusOptions
+
+/** 优先级三色：高＝红、中＝橙、低＝灰 */
+const PRIORITY_META: Record<TaskPriority, { label: string; tone: StatusTone }> = {
+  high: { label: '高', tone: 'danger' },
+  medium: { label: '中', tone: 'warning' },
+  low: { label: '低', tone: 'neutral' },
+}
+
+const priorityOptions: SelectOption[] = [
+  { value: 'high', label: '高' },
+  { value: 'medium', label: '中' },
+  { value: 'low', label: '低' },
+]
+
+function priorityMeta(task: PersonalTask): { label: string; tone: StatusTone } {
+  return PRIORITY_META[task.priority ?? 'medium']
+}
 
 const showCancel = ref(false)
 const cancelling = ref(false)
@@ -283,6 +332,7 @@ const detailTask = ref<PersonalTask | null>(null)
 const editId = ref<string | null>(null)
 const editTitle = ref('')
 const editDue = ref('')
+const editPriority = ref<TaskPriority>('medium')
 const editFormError = ref('')
 const editError = ref<unknown>(null)
 const editSaving = ref(false)
@@ -291,6 +341,7 @@ const editSaving = ref(false)
 const showCreate = ref(false)
 const newTitle = ref('')
 const newDue = ref('')
+const newPriority = ref<TaskPriority>('medium')
 const newFormError = ref('')
 const newError = ref<unknown>(null)
 const newSaving = ref(false)
@@ -339,6 +390,7 @@ function startEdit(task: PersonalTask): void {
   editId.value = task.task_id
   editTitle.value = task.title
   editDue.value = task.due_date ?? ''
+  editPriority.value = task.priority ?? 'medium'
   editFormError.value = ''
   editError.value = null
 }
@@ -363,6 +415,7 @@ async function saveEdit(): Promise<void> {
     await store.updateTask(editId.value, {
       title,
       due_date: editDue.value || undefined,
+      priority: editPriority.value,
     })
     editId.value = null
     toast.success('任务已更新')
@@ -378,6 +431,7 @@ function toggleCreate(): void {
   if (showCreate.value) {
     newTitle.value = ''
     newDue.value = ''
+    newPriority.value = 'medium'
     newFormError.value = ''
     newError.value = null
   }
@@ -399,7 +453,11 @@ async function saveNew(): Promise<void> {
   newSaving.value = true
   newError.value = null
   try {
-    await store.createTask({ title, due_date: newDue.value || undefined })
+    await store.createTask({
+      title,
+      due_date: newDue.value || undefined,
+      priority: newPriority.value,
+    })
     showCreate.value = false
     toast.success('任务已创建')
   } catch (caught) {
@@ -425,12 +483,20 @@ async function revert(task: PersonalTask): Promise<void> {
 }
 
 function goToMeeting(): void {
-  const meetingId = detailTask.value?.meeting_id
-  if (!meetingId) {
+  const task = detailTask.value
+  detailTask.value = null
+  if (task) {
+    goMeeting(task)
+  }
+}
+
+/** 行内「关联会议」链接与详情弹窗共用：跳到会议管理该会议的文件列表 */
+function goMeeting(task: PersonalTask): void {
+  if (!task.meeting_id) {
     return
   }
   // 跳到会议管理中该会议的文件列表（原会议详情页已删除）
-  void router.push({ name: ROUTE_NAMES.meetings, query: { meeting: meetingId } })
+  void router.push({ name: ROUTE_NAMES.meetings, query: { meeting: task.meeting_id } })
 }
 
 onMounted(() => {
@@ -438,10 +504,6 @@ onMounted(() => {
     void store.fetchList()
   }
 })
-
-function onFilter(value: string): void {
-  void store.setStatusFilter(value as TaskStatusFilter)
-}
 
 function onStatusChange(task: PersonalTask, event: Event): void {
   const target = event.target as HTMLSelectElement
@@ -517,10 +579,6 @@ async function confirmCancel(): Promise<void> {
   font-size: 0.75rem;
 }
 
-.task-section__toolbar :deep(.form-field) {
-  min-width: 11rem;
-}
-
 .task-section__toolbar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -536,6 +594,14 @@ async function confirmCancel(): Promise<void> {
   background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+}
+
+/* 截止日期 + 优先级并排 */
+.task-create__row,
+.task-item__edit-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
 .task-create__actions {
@@ -567,7 +633,7 @@ async function confirmCancel(): Promise<void> {
 
 .task-section__head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18rem auto;
+  grid-template-columns: minmax(0, 1fr) 9.5rem 12.5rem auto;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   color: var(--color-muted-foreground);
@@ -595,7 +661,7 @@ async function confirmCancel(): Promise<void> {
 
 .task-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18rem auto;
+  grid-template-columns: minmax(0, 1fr) 9.5rem 12.5rem auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -614,7 +680,8 @@ async function confirmCancel(): Promise<void> {
 .task-item__head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -641,6 +708,45 @@ async function confirmCancel(): Promise<void> {
   outline: none;
   box-shadow: var(--focus-ring);
   border-radius: 2px;
+}
+
+/* 关联会议跳转链接 */
+.task-item__meeting {
+  min-width: 0;
+}
+
+.task-item__meeting-link {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  color: var(--color-primary-strong);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.task-item__meeting-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.task-item__meeting-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 2px;
+}
+
+.task-item__meeting-none {
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  opacity: 0.6;
 }
 
 .task-item__controls {
@@ -677,11 +783,25 @@ async function confirmCancel(): Promise<void> {
   font-size: 0.75rem;
 }
 
+/* 逾期：截止日期文字标红 */
+.task-item__due--overdue {
+  color: var(--color-down);
+  font-weight: 600;
+}
+
+/* 操作按钮：默认收起，hover / 键盘聚焦时显现 */
 .task-item__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.task-item:hover .task-item__actions,
+.task-item:focus-within .task-item__actions {
+  opacity: 1;
 }
 
 .task-item__edit {
@@ -719,6 +839,13 @@ async function confirmCancel(): Promise<void> {
 
   .task-item__actions {
     justify-content: flex-start;
+    /* 触屏无 hover：操作常驻可见 */
+    opacity: 1;
+  }
+
+  .task-create__row,
+  .task-item__edit-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -60,12 +60,13 @@ describe('AgentChat streaming (onSendStream)', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已结合会议资料生成。')
+    expect(wrapper.text()).not.toContain('已结合会议资料生成。')
+    expect(wrapper.find('.agent-message__status').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('正在输入')
     expect(wrapper.find('.agent-message__body--error').exists()).toBe(false)
   })
 
-  it('keeps partial streamed content and shows the failure as a note', async () => {
+  it('keeps partial streamed content and shows the failure in the status line', async () => {
     const onSendStream = vi.fn(
       async (_text: string, _signal: AbortSignal, handlers: AgentStreamHandlers) => {
         handlers.onDelta?.('已经流出的部分正文')
@@ -78,7 +79,7 @@ describe('AgentChat streaming (onSendStream)', () => {
 
     expect(wrapper.text()).toContain('已经流出的部分正文')
     expect(wrapper.find('.agent-message__body--error').exists()).toBe(true)
-    expect(wrapper.find('.agent-message__note').text()).toContain('模型服务超时')
+    expect(wrapper.find('.agent-message__status').text()).toContain('模型服务超时')
     // 部分正文不被错误文案覆盖
     expect(wrapper.find('.agent-message__content').text()).not.toContain('生成失败')
   })
@@ -114,9 +115,9 @@ describe('AgentChat streaming (onSendStream)', () => {
     await wrapper.get('.agent-composer__stop').trigger('click')
     await flushPromises()
 
-    // 已流出的正文保留，占位/停止语义由 note 承担
+    // 已流出的正文保留，停止语义由状态行承担
     expect(wrapper.find('.agent-message__content').text()).toContain('流到一半的内容')
-    expect(wrapper.find('.agent-message__note').text()).toContain('输出已停止')
+    expect(wrapper.find('.agent-message__status').text()).toContain('输出已停止')
     expect(wrapper.find('.agent-message__body--error').exists()).toBe(false)
   })
 

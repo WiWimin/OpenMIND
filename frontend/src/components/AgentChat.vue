@@ -114,6 +114,19 @@
               </div>
             </header>
 
+            <!-- 思考过程（推理链）：原生推理 + 真实执行步骤，正文开始后自动折叠 -->
+            <AgentReasoningPanel
+              v-if="hasTrace(message)"
+              :panel-id="`agent-reasoning-${message.id}`"
+              :label="reasoningLabel(message)"
+              :open="Boolean(message.reasoningOpen)"
+              :stages="message.trace ?? []"
+              :reasoning="message.reasoning ?? ''"
+              :hint="reasoningHint(message)"
+              :live="isReasoningLive(message)"
+              @toggle="toggleReasoning(message)"
+            />
+
             <div
               v-if="message.streaming && !message.content"
               class="agent-typing"
@@ -123,10 +136,58 @@
               <span />
               <span />
             </div>
+
+            <!-- 会后产出：一句介绍 + 文件卡 + 下一步建议 -->
+            <template v-else-if="isMinutesCard(message)">
+              <MarkdownView class="agent-message__content" :content="message.content" />
+              <AgentDocCard
+                v-if="message.file && meetingId"
+                :meeting-id="meetingId"
+                :file="message.file"
+                :meta="minutesMetaOf(message.structured)"
+                @open="openDoc(message)"
+              />
+              <div class="agent-suggestions" role="group" aria-label="下一步建议">
+                <button
+                  v-for="suggestion in suggestionsFor(message)"
+                  :key="suggestion.label"
+                  type="button"
+                  class="agent-suggestion"
+                  @click="runSuggestion(message, suggestion)"
+                >
+                  {{ suggestion.label }}
+                </button>
+              </div>
+            </template>
+
+            <!-- 会后产出：一句介绍 + 行动项清单卡 + 下一步建议 -->
+            <template v-else-if="isActionItemsCard(message)">
+              <MarkdownView class="agent-message__content" :content="message.content" />
+              <AgentActionItemsCard
+                :items="actionItemsOf(message.structured)"
+                @open="openDoc(message)"
+              />
+              <div class="agent-suggestions" role="group" aria-label="下一步建议">
+                <button
+                  v-for="suggestion in suggestionsFor(message)"
+                  :key="suggestion.label"
+                  type="button"
+                  class="agent-suggestion"
+                  @click="runSuggestion(message, suggestion)"
+                >
+                  {{ suggestion.label }}
+                </button>
+              </div>
+            </template>
+
             <div v-else-if="message.structured" class="agent-message__structured">
               <slot name="structured" :message="message">
+                <BriefCard
+                  v-if="message.kind === 'brief' && isMaterialBrief(message.structured)"
+                  :data="message.structured"
+                />
                 <SummaryCard
-                  v-if="message.kind === 'summary' && isSummaryStructured(message.structured)"
+                  v-else-if="message.kind === 'summary' && isSummaryStructured(message.structured)"
                   :data="message.structured"
                 />
                 <PolishDiffPanel
@@ -138,7 +199,14 @@
             </div>
             <MarkdownView v-else class="agent-message__content" :content="message.content" />
 
-            <p v-if="message.note" class="agent-message__note">{{ message.note }}</p>
+            <!-- 仅错误与手动停止时显示状态行，普通回复不再有额外提示文字 -->
+            <p
+              v-if="message.note && (message.error || message.stopped || message.statusNote)"
+              class="agent-message__status"
+              :class="{ 'agent-message__status--error': message.error || message.statusNote }"
+            >
+              {{ message.note }}
+            </p>
 
             <div v-if="message.sources?.length" class="agent-message__sources">
               <span
@@ -151,9 +219,42 @@
               </span>
             </div>
 
+            <!-- 服务端确认门：AI 只给候选，联网等有副作用的动作需用户显式批准 -->
+            <div
+              v-if="message.pendingAction"
+              class="agent-pending"
+              role="group"
+              aria-label="待确认操作"
+            >
+              <template v-if="message.pendingAction.status === 'pending'">
+                <p class="agent-pending__label">需要你的确认</p>
+                <div class="agent-pending__actions">
+                  <button
+                    type="button"
+                    class="agent-pending__approve"
+                    :disabled="message.pendingDeciding || isBusy"
+                    @click="decidePending(message, true)"
+                  >
+                    {{ message.pendingDeciding ? '处理中…' : approveLabel(message.pendingAction) }}
+                  </button>
+                  <button
+                    type="button"
+                    class="agent-pending__reject"
+                    :disabled="message.pendingDeciding || isBusy"
+                    @click="decidePending(message, false)"
+                  >
+                    暂不处理
+                  </button>
+                </div>
+              </template>
+              <p v-else class="agent-pending__status">
+                {{ pendingStatusText(message.pendingAction.status) }}
+              </p>
+            </div>
+
             <!-- Build 模式产出：下载 DOCX + 保存到会议资料 + 写入本地文件夹（各自独立重试） -->
             <ChatFileCard
-              v-if="message.file && meetingId"
+              v-if="message.file && meetingId && !isMinutesCard(message)"
               :meeting-id="meetingId"
               :file="message.file"
             />
@@ -231,8 +332,40 @@
         </div>
 
         <div class="agent-composer__bar">
-          <div v-if="$slots['composer-extra']" class="agent-composer__tools">
-            <slot name="composer-extra" />
+          <div class="agent-composer__tools">
+            <button
+              type="button"
+              class="agent-thinking-toggle"
+              :class="{ 'agent-thinking-toggle--on': thinking }"
+              :aria-pressed="thinking"
+              :disabled="disabled || isBusy"
+              aria-label="显示 AI 思考过程"
+              title="显示 AI 思考过程（部分模型会更慢、更贵）"
+              @click="thinking = !thinking"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 4.5c-3 0-5 2.1-5 4.7 0 1.4.6 2.4 1.4 3.2.5.5.8 1 .9 1.6h5.4c.1-.6.4-1.1.9-1.6.8-.8 1.4-1.8 1.4-3.2 0-2.6-2-4.7-5-4.7Z"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M10 17.5h4M10.6 20h2.8"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="agent-thinking-toggle__text">思考</span>
+            </button>
+            <slot v-if="$slots['composer-extra']" name="composer-extra" />
           </div>
           <div class="agent-composer__actions">
             <button
@@ -285,7 +418,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import * as agentApi from '@/api/agent'
 import assistantParrotUrl from '@/assets/ip/assistant-parrot.png'
+import AgentActionItemsCard from '@/components/AgentActionItemsCard.vue'
+import AgentDocCard from '@/components/AgentDocCard.vue'
+import AgentReasoningPanel from '@/components/AgentReasoningPanel.vue'
+import BriefCard from '@/components/BriefCard.vue'
 import ChatFileCard from '@/components/ChatFileCard.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import PolishDiffPanel from '@/components/PolishDiffPanel.vue'
@@ -293,14 +431,32 @@ import SummaryCard from '@/components/SummaryCard.vue'
 import { clearChatSession, loadChatSession, saveChatSession } from '@/utils/chatSession'
 import { formatTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
-import type { PolishSuggestion, SummaryStructured } from '@/types/chat'
 import type {
+  ChatTrace,
+  ChatTraceStage,
+  MaterialBrief,
+  PolishSuggestion,
+  SummaryStructured,
+} from '@/types/chat'
+import type {
+  AgentActionItemLite,
+  AgentBackendMessage,
   AgentChatMessage,
+  AgentDocOpenEvent,
+  AgentIntentName,
+  AgentPendingAction,
   AgentQuickAction,
+  AgentQuickTaskHandler,
   AgentReply,
+  AgentResultEvent,
+  AgentScene,
   AgentSendHandler,
   AgentSendStreamHandler,
+  AgentStreamDone,
   AgentTaskHandler,
+  AgentTurnOptions,
+  MinutesDocMeta,
+  QuickTask,
 } from '@/types/agent'
 
 const props = withDefaults(
@@ -315,6 +471,11 @@ const props = withDefaults(
     onSend: AgentSendHandler
     /** 快捷任务处理器：quickAction 带 task 时调用，走后端专用实现链 */
     onTask?: AgentTaskHandler
+    /**
+     * 简单文本任务处理器（quickTask）：页面未启用后端会话时由页面自行调用
+     * `/agent/turns` 的 `quick_task` 通道；缺省时按普通对话发送。
+     */
+    onQuickTask?: AgentQuickTaskHandler
     /**
      * 流式发送处理器（SSE）：非任务对话走增量渲染（meta 来源先渲染、正文逐段追加、
      * 跳过打字动画）；缺省时全部走 onSend 同步链路。
@@ -338,6 +499,15 @@ const props = withDefaults(
      * 切页/刷新后恢复；为空则保持纯内存行为。
      */
     storageKey?: string
+    /**
+     * 后端会话模式：会话、消息与确认门持久化到服务端（`/agent/*`），
+     * 加载失败或后端未启用时自动回退到 `storageKey` 的 localStorage 缓存。
+     */
+    backendSession?: boolean
+    /** 后端会话场景（决定默认会话归属与页面先验） */
+    agentScene?: AgentScene
+    /** 透传给后端单轮的执行选项（模型/模板/模式/检索范围等） */
+    agentOptions?: AgentTurnOptions
   }>(),
   {
     subtitle: '',
@@ -346,6 +516,7 @@ const props = withDefaults(
     meetingId: '',
     quickActions: () => [],
     onTask: undefined,
+    onQuickTask: undefined,
     onSendStream: undefined,
     placeholder: '描述目标，或选中内容后提问…',
     disabled: false,
@@ -357,10 +528,21 @@ const props = withDefaults(
     mascotSrc: assistantParrotUrl,
     mascotSize: '4.5rem',
     storageKey: '',
+    backendSession: false,
+    agentScene: 'minutes',
+    agentOptions: () => ({}),
   },
 )
 
-const emit = defineEmits<{ 'clear-context': [] }>()
+/** 是否请求模型思考模式（推理链）：默认开启，输入框工具栏可手动关闭 */
+const thinking = defineModel<boolean>('thinking', { default: true })
+
+const emit = defineEmits<{
+  'clear-context': []
+  'agent-result': [payload: AgentResultEvent]
+  /** 点击会后产出的文件卡/清单卡：由页面在右侧打开查看与编辑 */
+  'open-doc': [payload: AgentDocOpenEvent]
+}>()
 
 const messages = ref<AgentChatMessage[]>([])
 const draft = ref('')
@@ -371,7 +553,25 @@ const listEl = ref<HTMLElement | null>(null)
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
 const stickToBottom = ref(true)
 /** 待发送的快捷功能标记：点击快捷卡后挂到输入框，随用户输入一起发送 */
-const pendingAction = ref<{ label: string; task?: string; prompt: string } | null>(null)
+const pendingAction = ref<{
+  label: string
+  task?: string
+  intent?: AgentIntentName
+  mode?: 'plan' | 'build'
+  quickTask?: QuickTask
+  prompt: string
+} | null>(null)
+
+/* ---------- 后端会话（服务端持久化 + 确认门） ---------- */
+
+/** 当前服务端会话 id；为空表示尚未建立或已回退本地模式 */
+const backendSessionId = ref('')
+/** 后端可用性：加载失败（未启用/网络异常）后回退 localStorage */
+const backendActive = ref(false)
+/** 挂载/切会议时的加载去重，避免并发 ensure */
+let backendLoadPromise: Promise<void> | null = null
+
+const isBackendMode = computed(() => props.backendSession && backendActive.value)
 
 /* ---------- 输入框装饰：鹦鹉 IP 与快捷任务标记 ---------- */
 
@@ -401,12 +601,101 @@ let copyTimer: ReturnType<typeof setTimeout> | null = null
 const isBusy = computed(() => pending.value || messages.value.some((message) => message.streaming))
 
 // 组织化回复的类型守卫：kind 与 structured 独立存储，需要显式收窄
+function isMaterialBrief(data: AgentChatMessage['structured']): data is MaterialBrief {
+  return (
+    data !== undefined &&
+    !Array.isArray(data) &&
+    typeof data === 'object' &&
+    data !== null &&
+    'headline' in data
+  )
+}
+
 function isSummaryStructured(data: AgentChatMessage['structured']): data is SummaryStructured {
-  return data !== undefined && !Array.isArray(data)
+  return (
+    data !== undefined &&
+    !Array.isArray(data) &&
+    typeof data === 'object' &&
+    data !== null &&
+    'conclusion' in data
+  )
 }
 
 function isPolishSuggestions(data: AgentChatMessage['structured']): data is PolishSuggestion[] {
   return Array.isArray(data)
+}
+
+/* ---------- 会后产出：纪要文件卡 / 行动项清单卡 ---------- */
+
+function isMinutesMeta(data: AgentChatMessage['structured']): data is MinutesDocMeta {
+  return (
+    data !== undefined &&
+    !Array.isArray(data) &&
+    typeof data === 'object' &&
+    data !== null &&
+    'minutes_id' in data
+  )
+}
+
+function minutesMetaOf(data: AgentChatMessage['structured']): MinutesDocMeta | undefined {
+  return isMinutesMeta(data) ? data : undefined
+}
+
+function isMinutesCard(message: AgentChatMessage): boolean {
+  return message.kind === 'minutes' && Boolean(message.file) && isMinutesMeta(message.structured)
+}
+
+function actionItemsOf(data: AgentChatMessage['structured']): AgentActionItemLite[] {
+  return Array.isArray(data) ? (data as AgentActionItemLite[]) : []
+}
+
+function isActionItemsCard(message: AgentChatMessage): boolean {
+  return message.kind === 'action_items' && actionItemsOf(message.structured).length > 0
+}
+
+interface DocSuggestion {
+  label: string
+  /** 点击后直接发送的后续提示词 */
+  prompt?: string
+  /** 点击后在右侧打开产出 */
+  open?: boolean
+}
+
+function suggestionsFor(message: AgentChatMessage): DocSuggestion[] {
+  if (message.kind === 'minutes') {
+    return [
+      { label: '打开并编辑', open: true },
+      {
+        label: '提取行动项',
+        prompt: '请从会议记录中提取待办任务与行动项，标注责任人和截止时间。',
+      },
+      { label: '再生成一版', prompt: '请重新生成会议纪要。' },
+    ]
+  }
+  if (message.kind === 'action_items') {
+    return [
+      { label: '打开确认', open: true },
+      { label: '再提取一次', prompt: '请重新提取待办任务与行动项。' },
+    ]
+  }
+  return []
+}
+
+function openDoc(message: AgentChatMessage): void {
+  emit('open-doc', {
+    kind: message.kind === 'action_items' ? 'action_items' : 'minutes',
+    meta: minutesMetaOf(message.structured),
+  })
+}
+
+function runSuggestion(message: AgentChatMessage, suggestion: DocSuggestion): void {
+  if (suggestion.open) {
+    openDoc(message)
+    return
+  }
+  if (suggestion.prompt) {
+    void sendPrompt(suggestion.prompt)
+  }
 }
 const displayWelcomeTitle = computed(
   () => props.welcomeTitle || `使用${props.agentName}处理这场会议`,
@@ -476,6 +765,14 @@ function clear(): void {
   errorText.value = ''
   messages.value = []
   clearChatSession(props.storageKey)
+  if (isBackendMode.value && backendSessionId.value) {
+    const previous = backendSessionId.value
+    backendSessionId.value = ''
+    void agentApi
+      .deleteSession(previous)
+      .catch(() => undefined)
+      .then(() => loadBackendSession())
+  }
   void nextTick(focusInput)
 }
 
@@ -517,11 +814,14 @@ function stop(): void {
     typingTarget.message.content = typingTarget.full
     typingTarget.message.streaming = false
     typingTarget.message.note = '输出已停止'
+    typingTarget.message.stopped = true
+    finalizeReasoning(typingTarget.message)
   }
   finishTyping()
   const waiting = messages.value.find((message) => message.streaming)
   if (waiting) {
     waiting.streaming = false
+    finalizeReasoning(waiting)
     if (!waiting.content) {
       waiting.content = '正在停止生成…'
     }
@@ -586,15 +886,434 @@ function applyStructured(message: AgentChatMessage, reply: AgentReply): void {
   scrollToBottom()
 }
 
+/* ---------- 思考过程（推理链）：原生推理 + 真实执行步骤 ---------- */
+
+function hasTrace(message: AgentChatMessage): boolean {
+  return Boolean(message.reasoning || (message.trace && message.trace.length > 0))
+}
+
+function isReasoningLive(message: AgentChatMessage): boolean {
+  return Boolean(message.streaming && !message.reasoningDone)
+}
+
+/** 合并服务端下发的执行步骤（按 id 覆盖状态与细节） */
+function upsertStage(message: AgentChatMessage, stage: ChatTraceStage): void {
+  const trace = message.trace ?? (message.trace = [])
+  const existing = trace.find((item) => item.id === stage.id)
+  if (existing) {
+    existing.status = stage.status
+    if (stage.detail !== undefined) {
+      existing.detail = stage.detail
+    }
+    if (stage.label) {
+      existing.label = stage.label
+    }
+    return
+  }
+  trace.push({ ...stage })
+}
+
+/** 收敛执行步骤：running → done / error（done 帧与错误路径统一调用） */
+function finishTrace(
+  message: AgentChatMessage,
+  status: 'done' | 'error' = 'done',
+): void {
+  for (const stage of message.trace ?? []) {
+    if (stage.status === 'running') {
+      stage.status = status
+    }
+  }
+}
+
+function applyTrace(message: AgentChatMessage, trace?: ChatTrace): void {
+  if (!trace || !trace.stages?.length) {
+    return
+  }
+  for (const stage of trace.stages) {
+    upsertStage(message, stage)
+  }
+  message.nativeReasoning = trace.native_reasoning
+  openReasoning(message)
+}
+
+function openReasoning(message: AgentChatMessage): void {
+  if (!message.reasoningPinned) {
+    message.reasoningOpen = true
+  }
+}
+
+function closeReasoning(message: AgentChatMessage): void {
+  if (!message.reasoningPinned) {
+    message.reasoningOpen = false
+  }
+}
+
+function toggleReasoning(message: AgentChatMessage): void {
+  message.reasoningOpen = !message.reasoningOpen
+  // 手动展开/折叠后不再被自动折叠覆盖
+  message.reasoningPinned = true
+}
+
+function reasoningSeconds(message: AgentChatMessage): number {
+  const ms =
+    message.reasoningDurationMs ??
+    (message.reasoningStartedAt ? Date.now() - message.reasoningStartedAt : 0)
+  return Math.max(0, ms) / 1000
+}
+
+function reasoningLabel(message: AgentChatMessage): string {
+  if (isReasoningLive(message)) {
+    const seconds = reasoningSeconds(message)
+    return seconds >= 1 ? `思考中 · ${seconds.toFixed(1)} 秒` : '思考中…'
+  }
+  if (message.reasoningDurationMs) {
+    const prefix = message.reasoning ? '已思考' : '执行过程'
+    const seconds = reasoningSeconds(message)
+    const duration = seconds < 1 ? '不到 1 秒' : `${seconds.toFixed(1)} 秒`
+    return `${prefix} ${duration}`
+  }
+  return '思考过程'
+}
+
+function reasoningHint(message: AgentChatMessage): string {
+  if (message.reasoning) {
+    return ''
+  }
+  if (message.nativeReasoning === false) {
+    return '当前模型未返回内部推理，以上为本次回答的实际执行步骤。'
+  }
+  return '以上为本次回答的实际执行步骤。'
+}
+
+/** 收尾：标记思考完成、计算耗时、正文开始后折叠（手动展开过则保持） */
+function finalizeReasoning(
+  message: AgentChatMessage,
+  status: 'done' | 'error' = 'done',
+): void {
+  message.reasoningDone = true
+  finishTrace(message, status)
+  if (!message.reasoningDurationMs && message.reasoningStartedAt) {
+    message.reasoningDurationMs = Date.now() - message.reasoningStartedAt
+  }
+  if (status === 'done') {
+    closeReasoning(message)
+  }
+}
+
+/** 正文首个增量到达：思考阶段结束，执行步骤收敛、面板自动折叠 */
+function onFirstContent(message: AgentChatMessage): void {
+  message.reasoningDone = true
+  if (!message.reasoningDurationMs && message.reasoningStartedAt) {
+    message.reasoningDurationMs = Date.now() - message.reasoningStartedAt
+  }
+  finishTrace(message)
+  closeReasoning(message)
+}
+
+/* ---------- 后端会话：映射、加载与单轮 ---------- */
+
+function toAgentSource(source: {
+  origin?: string
+  title?: string | null
+  document_name?: string | null
+  material_id?: string | null
+  record_id?: string | null
+  meeting_id?: string | null
+  excerpt?: string
+}): { label: string; detail?: string } {
+  let label = '来源'
+  if (source.origin === 'web') {
+    label = source.title ? `联网 · ${source.title}` : '联网检索'
+  } else if (source.document_name) {
+    label = source.document_name
+  } else if (source.material_id) {
+    label = '会议资料'
+  } else if (source.record_id) {
+    label = '会议记录'
+  } else if (source.meeting_id) {
+    label = '会议上下文'
+  }
+  const detail = source.excerpt?.replace(/\s+/g, ' ').slice(0, 64)
+  return detail ? { label, detail } : { label }
+}
+
+function toChatMessage(message: AgentBackendMessage): AgentChatMessage {
+  const role = message.role === 'user' ? 'user' : 'assistant'
+  const meta = message.meta ?? {}
+  const reasoning = typeof meta.reasoning === 'string' ? meta.reasoning : undefined
+  const trace = Array.isArray(meta.trace)
+    ? (meta.trace as ChatTraceStage[])
+    : undefined
+  return {
+    id: nextMessageId(),
+    role,
+    content: message.content,
+    createdAt: Date.parse(message.created_at) || Date.now(),
+    streaming: false,
+    sources: message.sources?.length ? message.sources.map(toAgentSource) : undefined,
+    file: message.file ?? undefined,
+    kind: message.kind ?? undefined,
+    structured: (message.structured as AgentChatMessage['structured']) ?? undefined,
+    error: message.status === 'failed' || undefined,
+    // 历史消息：思考过程默认折叠，耗时与推理文本来自 meta
+    reasoning,
+    reasoningDone: role === 'assistant',
+    reasoningDurationMs:
+      typeof meta.reasoning_ms === 'number' ? meta.reasoning_ms : undefined,
+    reasoningOpen: false,
+    reasoningPinned: false,
+    trace,
+    nativeReasoning: reasoning ? true : undefined,
+  }
+}
+
+/** 服务端历史 + 待确认动作 → 组件消息（确认门挂到对应助手消息） */
+function applyBackendHistory(
+  history: AgentBackendMessage[],
+  actions: AgentPendingAction[],
+): void {
+  const pendingByMessage = new Map<AgentChatMessage, string>()
+  const mapped = history.map((item) => {
+    const message = toChatMessage(item)
+    const pendingId = item.meta?.pending_action_id
+    if (typeof pendingId === 'string') {
+      pendingByMessage.set(message, pendingId)
+    }
+    return message
+  })
+
+  for (const action of actions) {
+    const target = [...pendingByMessage.entries()].find(([, id]) => id === action.action_id)?.[0]
+    if (target) {
+      target.pendingAction = action
+      continue
+    }
+    // 历史消息缺少关联（如运行中断）：补一条提示消息承载确认门
+    mapped.push({
+      id: nextMessageId(),
+      role: 'assistant',
+      content: action.question,
+      createdAt: Date.parse(action.created_at) || Date.now(),
+      streaming: false,
+      pendingAction: action,
+    })
+  }
+
+  messages.value = mapped
+  stickToBottom.value = true
+  void nextTick(() => scrollToBottom(true))
+}
+
+function isResourceNotFound(caught: unknown): boolean {
+  return (
+    typeof caught === 'object' &&
+    caught !== null &&
+    'error_code' in caught &&
+    (caught as { error_code: unknown }).error_code === 'RESOURCE_NOT_FOUND'
+  )
+}
+
+/** 建立/恢复服务端会话并加载历史与确认门；失败回退 localStorage 缓存 */
+function loadBackendSession(): Promise<void> {
+  if (!props.backendSession) {
+    return Promise.resolve()
+  }
+  if (backendLoadPromise) {
+    return backendLoadPromise
+  }
+  backendLoadPromise = (async () => {
+    try {
+      const session = await agentApi.ensureSession({
+        scene: props.agentScene,
+        meeting_id: props.meetingId || undefined,
+      })
+      backendSessionId.value = session.session_id
+      const [history, actions] = await Promise.all([
+        agentApi.listMessages(session.session_id),
+        agentApi.listPendingActions(session.session_id),
+      ])
+      applyBackendHistory(history, actions)
+      backendActive.value = true
+      errorText.value = ''
+    } catch (caught) {
+      backendActive.value = false
+      backendSessionId.value = ''
+      restoreSession()
+      if (!isResourceNotFound(caught)) {
+        errorText.value = resolveErrorMessage(caught, '会话加载失败，已回退本地缓存。')
+      }
+    } finally {
+      backendLoadPromise = null
+    }
+  })()
+  return backendLoadPromise
+}
+
+/** 后端单轮：SSE 增量渲染 + 确认门/业务结果回传 */
+async function runBackendTurn(
+  text: string,
+  signal: AbortSignal,
+  assistant: AgentChatMessage,
+  options?: {
+    intent?: AgentIntentName
+    mode?: 'plan' | 'build'
+    quickTask?: QuickTask
+  },
+): Promise<{ reply: AgentReply; done: AgentStreamDone }> {
+  if (!backendSessionId.value) {
+    await loadBackendSession()
+  }
+  let streamed = ''
+  let pendingFromStream: AgentPendingAction | undefined
+
+  const turnOptions: AgentTurnOptions = { ...props.agentOptions, thinking: thinking.value }
+  if (options?.mode) {
+    turnOptions.mode = options.mode
+  }
+  if (options?.quickTask) {
+    turnOptions.quick_task = options.quickTask
+  }
+
+  const done = await agentApi.streamAgentTurn(
+    {
+      session_id: backendSessionId.value || undefined,
+      meeting_id: props.meetingId || undefined,
+      scene: props.agentScene,
+      message: text,
+      intent: options?.intent,
+      options: turnOptions,
+    },
+    {
+      signal,
+      onMeta: (meta) => {
+        assistant.sources = meta.sources.map(toAgentSource)
+        if (thinking.value) {
+          applyTrace(assistant, meta.trace)
+        }
+      },
+      onReasoning: (chunk) => {
+        if (!thinking.value) {
+          return
+        }
+        assistant.reasoning = (assistant.reasoning ?? '') + chunk
+        openReasoning(assistant)
+        scrollToBottom()
+      },
+      onDelta: (chunk) => {
+        const first = streamed.length === 0
+        streamed += chunk
+        assistant.content = streamed
+        if (first) {
+          onFirstContent(assistant)
+        }
+        scrollToBottom()
+      },
+      onPendingAction: (action) => {
+        pendingFromStream = action
+      },
+    },
+  )
+
+  backendSessionId.value = done.session_id
+  if (pendingFromStream) {
+    assistant.pendingAction = pendingFromStream
+  }
+  // done 兜底：推理增量丢失时补齐全文与耗时
+  if (thinking.value) {
+    if (!assistant.reasoning && done.reply.reasoning) {
+      assistant.reasoning = done.reply.reasoning
+    }
+    if (done.reply.reasoning_ms) {
+      assistant.reasoningDurationMs = done.reply.reasoning_ms
+    }
+  }
+  const reply: AgentReply = {
+    content: done.reply.content,
+    kind: (done.reply.kind as AgentReply['kind']) ?? undefined,
+    structured: (done.reply.structured as AgentReply['structured']) ?? undefined,
+    sources: done.reply.sources.map(toAgentSource),
+    note: done.reply.note ?? undefined,
+    file: done.reply.file ?? undefined,
+    reasoning: done.reply.reasoning ?? undefined,
+    reasoningMs: done.reply.reasoning_ms ?? undefined,
+    trace: done.reply.trace ?? undefined,
+  }
+  return { reply, done }
+}
+
+function approveLabel(action: AgentPendingAction): string {
+  if (action.action_type === 'web_search') {
+    return '联网检索'
+  }
+  return '允许执行'
+}
+
+function pendingStatusText(status: string): string {
+  if (status === 'approved') {
+    return '已批准，正在继续执行。'
+  }
+  if (status === 'rejected') {
+    return '已取消该操作。'
+  }
+  return '该操作已过期，请重新发起。'
+}
+
+/** 确认门：批准继续工作流 / 拒绝取消；结果追加为新的助手消息 */
+async function decidePending(message: AgentChatMessage, approve: boolean): Promise<void> {
+  const action = message.pendingAction
+  if (!action || action.status !== 'pending' || message.pendingDeciding) {
+    return
+  }
+  message.pendingDeciding = true
+  try {
+    const result = approve
+      ? await agentApi.approvePendingAction(action.action_id)
+      : await agentApi.rejectPendingAction(action.action_id)
+    message.pendingAction = {
+      ...action,
+      status: approve ? 'approved' : 'rejected',
+      decided_at: new Date().toISOString(),
+    }
+    if (result.session_id) {
+      backendSessionId.value = result.session_id
+    }
+    if (result.assistant_message) {
+      messages.value.push(toChatMessage(result.assistant_message))
+      stickToBottom.value = true
+      void nextTick(() => scrollToBottom(true))
+    }
+    emit('agent-result', {
+      sessionId: result.session_id,
+      intent: result.intent,
+      result: undefined,
+    })
+  } catch (caught) {
+    message.note = resolveErrorMessage(caught, '处理确认失败，请重试。')
+    message.statusNote = true
+  } finally {
+    message.pendingDeciding = false
+  }
+}
+
 async function runTurn(
   text: string,
   context: string | undefined,
   pushUser: boolean,
-  options?: { task?: string; displayText?: string },
+  options?: {
+    task?: string
+    intent?: AgentIntentName
+    mode?: 'plan' | 'build'
+    quickTask?: QuickTask
+    displayText?: string
+  },
 ): Promise<void> {
   const value = text.trim()
   // 快捷任务允许空输入（仅按设计好的提示词执行）
-  if ((!value && !options?.task) || props.disabled || isBusy.value) {
+  if (
+    (!value && !options?.task && !options?.quickTask) ||
+    props.disabled ||
+    isBusy.value
+  ) {
     return
   }
 
@@ -621,7 +1340,17 @@ async function runTurn(
     streaming: true,
     regenerateText: value,
     task: options?.task,
+    intent: options?.intent,
+    mode: options?.mode,
+    quickTask: options?.quickTask,
     createdAt: Date.now(),
+    // 思考过程（推理链）：随流式回调逐步填充，正文开始后自动折叠
+    reasoning: '',
+    reasoningDone: false,
+    reasoningOpen: false,
+    reasoningPinned: false,
+    reasoningStartedAt: Date.now(),
+    trace: [],
   })
   const assistant = messages.value[messages.value.length - 1] as AgentChatMessage
   stickToBottom.value = true
@@ -633,21 +1362,66 @@ async function runTurn(
   activeController = controller
 
   try {
-    // 非快捷任务且提供流式处理器时走 SSE 增量；快捷任务保持同步实现链
-    const streamHandler = options?.task ? undefined : props.onSendStream
+    // 快捷任务保持同步实现链；后端会话模式走 Agent SSE；否则沿用页面提供的流式/同步处理器
+    const streamHandler = options?.task || options?.quickTask ? undefined : props.onSendStream
+    const useBackend = isBackendMode.value && !options?.task
     let normalized: AgentReply | null = null
 
-    if (streamHandler) {
+    if (useBackend) {
+      const { reply, done } = await runBackendTurn(
+        composed,
+        controller.signal,
+        assistant,
+        options,
+      )
+      normalized = reply
+      pending.value = false
+      if (cancelled) {
+        assistant.streaming = false
+        applyStoppedContent(assistant)
+        return
+      }
+      if (reply.structured) {
+        applyStructured(assistant, reply)
+      } else if (assistant.content) {
+        // SSE 增量已直接写入：跳过打字动画
+        assistant.streaming = false
+        scrollToBottom()
+      } else {
+        await typeReply(assistant, reply.content)
+      }
+      emit('agent-result', {
+        sessionId: done.session_id,
+        intent: done.intent,
+        result: done.reply.result,
+      })
+    } else if (streamHandler) {
       let streamed = ''
       normalized =
         (await streamHandler(composed, controller.signal, {
-          onMeta: (sources) => {
+          thinking: thinking.value,
+          onMeta: (sources, trace) => {
             // meta 先于正文到达：来源标签立即渲染
             assistant.sources = sources
+            if (thinking.value) {
+              applyTrace(assistant, trace)
+            }
+          },
+          onReasoning: (chunk) => {
+            if (!thinking.value) {
+              return
+            }
+            assistant.reasoning = (assistant.reasoning ?? '') + chunk
+            openReasoning(assistant)
+            scrollToBottom()
           },
           onDelta: (chunk) => {
+            const first = streamed.length === 0
             streamed += chunk
             assistant.content = streamed
+            if (first) {
+              onFirstContent(assistant)
+            }
             scrollToBottom()
           },
         })) ?? null
@@ -669,9 +1443,11 @@ async function runTurn(
         assistant.streaming = false
       }
     } else {
-      const reply: AgentReply | string = await (options?.task && props.onTask
-        ? props.onTask(options.task, value, controller.signal)
-        : props.onSend(composed, controller.signal))
+      const reply: AgentReply | string = await (options?.quickTask && props.onQuickTask
+        ? props.onQuickTask(options.quickTask, value, controller.signal)
+        : options?.task && props.onTask
+          ? props.onTask(options.task, value, controller.signal)
+          : props.onSend(composed, controller.signal))
       normalized = typeof reply === 'string' ? { content: reply } : reply
       pending.value = false
       if (cancelled) {
@@ -694,6 +1470,18 @@ async function runTurn(
       }
       assistant.note = normalized.note
       assistant.file = normalized.file
+      // done 兜底：增量丢失时补齐推理、耗时与执行步骤
+      if (thinking.value && normalized.reasoning && !assistant.reasoning) {
+        assistant.reasoning = normalized.reasoning
+      }
+      if (normalized.reasoningMs && !assistant.reasoningDurationMs) {
+        assistant.reasoningDurationMs = normalized.reasoningMs
+      }
+      if (thinking.value && normalized.trace?.length && !assistant.trace?.length) {
+        for (const stage of normalized.trace) {
+          upsertStage(assistant, stage)
+        }
+      }
     }
   } catch (caught) {
     pending.value = false
@@ -701,9 +1489,11 @@ async function runTurn(
     if (cancelled) {
       applyStoppedContent(assistant)
       assistant.note = '输出已停止'
+      assistant.stopped = true
       return
     }
     assistant.error = true
+    finishTrace(assistant, 'error')
     const message = resolveErrorMessage(caught, '生成失败，请稍后重试。')
     if (assistant.content) {
       // 流式已输出部分正文：保留原文，错误改以备注提示
@@ -712,6 +1502,8 @@ async function runTurn(
       assistant.content = message
     }
   } finally {
+    // 所有分支（成功/失败/停止）统一收尾思考状态
+    finalizeReasoning(assistant, assistant.error ? 'error' : 'done')
     if (activeController === controller) {
       activeController = null
     }
@@ -729,19 +1521,35 @@ async function send(): Promise<void> {
   // 提示词模式把设计好的完整提示词与用户补充自动组合后发送（允许空输入）
   if (pendingAction.value) {
     const action = pendingAction.value
+    const context = props.contextText?.trim() || undefined
+    // 简单文本任务：优先用输入框文字，其次用选中内容作为待处理文本
+    if (action.quickTask && !text && !context) {
+      errorText.value = '请先选中或输入要处理的文本。'
+      return
+    }
     pendingAction.value = null
     draft.value = ''
     await nextTick(adjustTextarea)
-    const context = props.contextText?.trim() || undefined
     if (context) {
       emit('clear-context')
     }
     const displayText = text ? `#${action.label} ${text}` : `#${action.label}`
     if (action.task && props.onTask) {
       await runTurn(text, context, true, { task: action.task, displayText })
+    } else if (action.quickTask) {
+      await runTurn(text || context || '', undefined, true, {
+        quickTask: action.quickTask,
+        intent: action.intent,
+        mode: action.mode,
+        displayText,
+      })
     } else {
       const composed = text ? `${action.prompt}\n\n用户补充：${text}` : action.prompt
-      await runTurn(composed, context, true, { displayText })
+      await runTurn(composed, context, true, {
+        displayText,
+        intent: action.intent,
+        mode: action.mode,
+      })
     }
     return
   }
@@ -781,13 +1589,25 @@ async function sendTask(task: string, prompt: string, displayText?: string): Pro
 }
 
 function runStarter(action: AgentQuickAction): void {
-  if (action.task && props.onTask) {
-    // 挂载任务标记到输入框，待用户补充/确认后随发送一起执行
+  // 有专用实现链或需要选中文本的动作：挂载标记，等用户补充/确认后发送
+  if (action.quickTask || (action.task && props.onTask)) {
     pendingAction.value = action
     focusInput()
-  } else {
-    void sendPrompt(action.prompt)
+    return
   }
+  const context = props.contextText?.trim() || undefined
+  if (context) {
+    emit('clear-context')
+  }
+  if (action.intent || action.mode) {
+    void runTurn(action.prompt, context, true, {
+      intent: action.intent,
+      mode: action.mode,
+      displayText: action.label,
+    })
+    return
+  }
+  void sendPrompt(action.prompt)
 }
 
 async function regenerate(index: number): Promise<void> {
@@ -802,7 +1622,12 @@ async function regenerate(index: number): Promise<void> {
     .reverse()
     .find((message) => message.role === 'user')
   messages.value.splice(index, 1)
-  await runTurn(target.regenerateText, previousUser?.context, false, { task: target.task })
+  await runTurn(target.regenerateText, previousUser?.context, false, {
+    task: target.task,
+    intent: target.intent,
+    mode: target.mode,
+    quickTask: target.quickTask,
+  })
 }
 
 /* ---------- 对话持久化（按 storageKey 存取 localStorage，切页/刷新后恢复） ---------- */
@@ -846,16 +1671,20 @@ function persistSession(immediate = false): void {
   }
 }
 
-// 换会议/换页面：中断当前流式并切换到目标会话
+// 换会议/换页面/切换模式：中断当前流式并切换到目标会话
 watch(
-  () => props.storageKey,
+  [() => props.storageKey, () => props.meetingId, () => props.backendSession],
   () => {
-    if (props.storageKey) {
-      cancelled = true
-      activeController?.abort()
-      finishTyping()
-      pending.value = false
-      errorText.value = ''
+    cancelled = true
+    activeController?.abort()
+    finishTyping()
+    pending.value = false
+    errorText.value = ''
+    backendSessionId.value = ''
+    backendActive.value = false
+    if (props.backendSession) {
+      void loadBackendSession()
+    } else if (props.storageKey) {
       restoreSession()
     }
   },
@@ -871,7 +1700,11 @@ watch(
 
 onMounted(() => {
   adjustTextarea()
-  restoreSession()
+  if (props.backendSession) {
+    void loadBackendSession()
+  } else {
+    restoreSession()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -880,7 +1713,14 @@ onBeforeUnmount(() => {
 })
 
 /** 挂载快捷功能标记（供外部快捷按钮调用）：task 模式走 onTask 专用链，否则按设计好的提示词组合发送 */
-function setPendingQuickAction(action: { label: string; task?: string; prompt: string }): void {
+function setPendingQuickAction(action: {
+  label: string
+  task?: string
+  intent?: AgentIntentName
+  mode?: 'plan' | 'build'
+  quickTask?: QuickTask
+  prompt: string
+}): void {
   pendingAction.value = action
   focusInput()
 }
@@ -1231,10 +2071,37 @@ defineExpose({ sendPrompt, sendTask, setPendingQuickAction, setDraft, focusInput
   color: var(--color-down);
 }
 
-.agent-message__note {
+.agent-message__status {
   margin: var(--space-2) 0 0;
-  color: var(--color-checking);
+  color: var(--color-muted-foreground);
   font-size: 0.75rem;
+}
+
+.agent-message__status--error {
+  color: var(--color-down);
+}
+
+.agent-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.agent-suggestion {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  color: var(--color-foreground);
+  font-size: 0.75rem;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.agent-suggestion:hover {
+  color: var(--color-primary-strong);
+  background: var(--color-surface-strong);
 }
 
 .agent-message__sources {
@@ -1259,6 +2126,64 @@ defineExpose({ sendPrompt, sendTask, setPendingQuickAction, setDraft, focusInput
 .agent-source strong {
   color: var(--color-foreground);
   font-weight: 600;
+}
+
+/* 服务端确认门：待批准动作卡片 */
+.agent-pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface-strong);
+  border: 1px dashed var(--color-border-strong, var(--color-border));
+  border-radius: var(--radius-md);
+}
+
+.agent-pending__label {
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.agent-pending__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.agent-pending__approve,
+.agent-pending__reject {
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.agent-pending__approve {
+  color: #ffffff;
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.agent-pending__reject {
+  color: var(--color-muted-foreground);
+  background: transparent;
+  border: 1px solid var(--color-border);
+}
+
+.agent-pending__approve:disabled,
+.agent-pending__reject:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.agent-pending__status {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
 }
 
 .agent-message--user {
@@ -1511,6 +2436,49 @@ defineExpose({ sendPrompt, sendTask, setPendingQuickAction, setDraft, focusInput
   min-width: 0;
 }
 
+/* 思考过程开关：默认开启，生成中禁用（避免半途状态不一致） */
+.agent-thinking-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 2rem;
+  padding: 0 0.625rem;
+  color: var(--color-muted-foreground);
+  font: inherit;
+  font-size: 0.6875rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.agent-thinking-toggle:hover:not(:disabled) {
+  color: var(--color-foreground);
+  border-color: var(--color-border-strong);
+}
+
+.agent-thinking-toggle--on {
+  color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+  border-color: rgba(21, 94, 239, 0.35);
+}
+
+.agent-thinking-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.agent-thinking-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .agent-composer__actions {
   display: flex;
   align-items: center;
@@ -1599,6 +2567,16 @@ defineExpose({ sendPrompt, sendTask, setPendingQuickAction, setDraft, focusInput
 
   .agent-user {
     max-width: 90%;
+  }
+
+  /* 窄屏只保留图标（按钮带 aria-label），为模式/模型选择器让出空间 */
+  .agent-thinking-toggle__text {
+    display: none;
+  }
+
+  .agent-thinking-toggle {
+    width: 2.5rem;
+    padding: 0;
   }
 
   .agent-composer__send,

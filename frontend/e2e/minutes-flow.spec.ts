@@ -29,26 +29,28 @@ test.describe('纪要生成闭环（本地 Mock 模型，非真实供应商）',
     await openStage(page, 'asr', meetingId)
     await addRecord(page, '决议：周五前完成灰度发布检查清单，负责人李雷，截止日期本周五。')
 
-    // 2) 纪要：阶段页「会后智能处理」经快捷卡片生成；产出区在生成后出现并选中该纪要
+    // 2) 纪要：阶段页「会后智能处理」经快捷卡片生成；聊天内出现文件卡，右侧打开查看与编辑
     await openStage(page, 'minutes', meetingId)
     await page.locator('.task-card').filter({ hasText: '帮我生成一篇会议纪要' }).click()
     await page.getByRole('button', { name: '发送消息', exact: true }).click()
+
+    const docCard = page.locator('.doc-card').first()
+    await expect(docCard).toBeVisible({ timeout: 300_000 })
+    await docCard.getByRole('button', { name: '打开', exact: true }).click()
 
     const editor = page.locator('.minutes-section__editor')
     await expect(editor).toBeVisible({ timeout: 120_000 })
     await expect(editor.getByText('灰度发布', { exact: false }).first()).toBeVisible({
       timeout: 120_000,
     })
-    await expect(editor.getByText('草稿', { exact: true }).first()).toBeVisible()
+    // 文件页不再标注状态（草稿/已确认），确认成功以提示条为准
 
     // 3) 确认纪要（draft → confirmed）
     await editor.getByRole('button', { name: '确认', exact: true }).click()
-    await expect(editor.getByText('已确认', { exact: true }).first()).toBeVisible({
-      timeout: 60_000,
-    })
+    await expect(page.getByText('纪要已确认')).toBeVisible({ timeout: 60_000 })
 
     // 4) 持久化验证：直接读取后端，确认「已确认」与内容来自持久化数据。
-    //    产出区是生成后才出现的会话态 UI（刷新即隐藏），故以 API 断言为准。
+    //    右侧抽屉与聊天内文件卡是会话态 UI（刷新即隐藏），故以 API 断言为准。
     const token = await authToken(page)
     const response = await page.request.get(`${apiBase()}/meetings/${meetingId}/minutes`, {
       headers: { Authorization: `Bearer ${token}` },
