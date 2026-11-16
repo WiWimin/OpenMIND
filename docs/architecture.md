@@ -12,11 +12,15 @@ OpenMIND 是面向个人参会者的「AI 会议个人助理」，围绕会前�
 | 后端 | Python、FastAPI、Pydantic |
 | ORM 与迁移 | SQLAlchemy、Alembic |
 | 数据库 | PostgreSQL、pgvector |
-| AI 能力 | 大模型 API + Embedding + RAG（后续阶段） |
+| AI 能力 | 大模型 API + Embedding + RAG、解析与转写（见 `ai-design.md`） |
 | 文件存储 | 本地持久化目录（MVP） |
 | 开发环境 | Docker Compose |
 
 ## 分层与边界
+
+![OpenMIND 系统架构](assets/architecture.svg)
+
+（同一张图的源文件：`docs/assets/architecture.svg`，README 与本文件共用，避免两处发散。）
 
 ```text
 浏览器
@@ -29,7 +33,7 @@ OpenMIND 是面向个人参会者的「AI 会议个人助理」，围绕会前�
   ├── agent/           意图路由与工作流编排（只编排，不写业务 CRUD）
   ├── services/        业务规则与状态流转
   ├── repositories/    数据库访问
-  └── ai/              LLM、Embedding、RAG、Prompt（后续阶段）
+  └── ai/              LLM、Embedding、RAG、Prompt、解析、提取与转写
   ▼
 数据层                 PostgreSQL + pgvector + storage/ 文件目录
 ```
