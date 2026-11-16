@@ -71,22 +71,15 @@ OpenMIND 是面向**个人参会者**的 AI 会议助理。它不替代会议软
 
 ## 4. 系统架构
 
-```mermaid
-flowchart LR
-    UI["Vue 3 SPA<br/>只做展示与交互"] -->|"HTTP / SSE · JWT"| API["FastAPI /api/v1<br/>鉴权 · 统一错误体"]
-    API --> SVC["services<br/>权限校验 · 状态流转 · 业务规则"]
-    SVC --> REPO["repositories"]
-    REPO --> DB[("PostgreSQL 16<br/>+ pgvector")]
-    SVC --> AI["app/ai<br/>LLM · Embedding · RAG · Agent"]
-    AI --> EXT["外部模型 API<br/>BYOK 优先"]
-    SVC --> FS[("storage/<br/>原始文件")]
-    WK["app.worker<br/>异步任务 / Agent 运行"] --> REPO
-    API -.->|"投递"| WK
-```
+![OpenMIND 系统架构](docs/assets/architecture.svg)
 
-- **前端**不直连数据库、不持有密钥，只调 API 与渲染 SSE。
-- **后端**是权限与业务状态的唯一裁决者；前端无法通过改状态字段绕过规则。
-- **AI 层**只产出候选与检索结果，不决定任务创建/完成等业务事实。
+**依赖方向只能自上而下**，跨层调用一律禁止：
+
+- **前端**不直连数据库、不持有密钥，只调 API 与渲染 SSE；本地目录仅在用户授权后经 File System Access API 访问。
+- **接入层**是唯一入口：JWT 鉴权、限流、统一错误体；业务状态由后端裁决，前端改状态字段绕不过规则。
+- **编排层**（`app/agent`）只做意图路由、工作流与确认门，工具只包 `services` 与 `ai`，不直接拼 SQL。
+- **AI 能力层**（`app/ai`）只产出候选与检索结果，不决定任务创建、完成或撤销。
+- **数据访问**统一走 `repositories`，查询一律以 `user_id` 下推过滤。
 
 详见 [`docs/architecture.md`](docs/architecture.md)。
 
