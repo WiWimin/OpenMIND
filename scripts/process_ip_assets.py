@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """生成前端 IP 吉祥物透明 PNG。
 
-处理 resources/ 下的白底 JPEG（豆包生成，含水印）：
+处理 docs/assets/design/ 下的白底 JPEG（豆包生成，含水印）：
 1. 定位"台沿"线（鹦鹉趴伏的水平线），裁掉台沿以下与右下角水印；
 2. 从图像边缘种子点泛洪填充去白底（只移除与边界连通的白色，
    鹦鹉白脸/白肚被蓝色轮廓包裹不受影响）；
@@ -18,7 +18,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
-RESOURCES = ROOT / "resources"
+RESOURCES = ROOT / "docs" / "assets" / "design"
 OUT_DIR = ROOT / "frontend" / "src" / "assets" / "ip"
 
 # 泛洪判定：与种子色差异小于该值视为同一区域（覆盖 JPEG 白噪与浅灰阴影）

@@ -1,421 +1,248 @@
 # OpenMIND · AI 会议个人助理
 
-## 1. 项目简介
+> 把一场会议从「建会」推到「行动项被跟进」——资料可检索、结论有出处、写操作必须经你确认。
 
-OpenMIND 是面向**个人参会者**的「AI 会议个人助理」Web 应用，围绕「会前准备 → 会中记录 → 会后纪要 → 个人任务跟进」构建可闭环的个人会议工作流。
+[![CI](https://github.com/WiWimin/OpenMIND/actions/workflows/ci.yml/badge.svg)](https://github.com/WiWimin/OpenMIND/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](backend/requirements.txt)
+[![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](frontend/package.json)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)](docs/database.md)
 
-服务对象是单个参会人，而非团队协作平台；第一版不做多人实时协作、会议主持、共享空间与组织权限体系。
+![OpenMIND 首页](docs/assets/sidebar-home.png)
 
-> **当前进度**：MVP 闭环 **M00–M10 已全部实现**，并扩展了 BYOK、按用途模型路由、个人知识库、记忆中心、会议模板、本地会议工作区与音频转写（本地 FunASR / 外部 OpenAI 兼容 ASR），以及提示词注入防护与结构化输出管线（D-28~D-30）、RAG 可观测性（D-31）与用户能力声明文档（`docs/user-guide.md`）。
-> `develop → main` 已完成一次发布，当前状态以远程 `main` 分支为准。
+---
 
-## 2. 项目目标
+## 1. 这是什么
 
-1. **跑通 MVP 闭环**：创建会议 → 导入资料 → AI 理解与检索 → 会前准备 → 会中记录与问答 → 生成纪要 → 提取行动项 → 个人任务跟进。
-2. **闭环判定标准**：一次真实会议从「建会」走到「行动项转为个人任务并被跟进」，全程数据可追溯、状态由后端控制、关键结果经用户确认。
-3. **工程目标**：建立人人可复现的开发环境、统一的代码与接口规范，以及可协作、可回归的持续集成流程。
-4. **质量底线**：个人数据隔离、原始数据与 AI 结果分离、候选与确认分离、密钥不下发前端。
+OpenMIND 是面向**个人参会者**的 AI 会议助理。它不替代会议软件，而是在会前把资料读薄、会中把内容记实、会后把结论落成待办——整个过程中，AI 只产出**候选**，写库与状态流转始终由你确认。
 
-## 3. 技术栈
+**为谁而做**：每天开 2–5 场会、需要自己整理纪要与待办的个人。不做多人实时协作、会议主持、组织权限体系——那是团队协作平台的范畴。
 
-| 层次 | 技术 |
-| --- | --- |
-| 前端 | Vue 3、TypeScript、Vite、Pinia、Vue Router |
-| 后端 | Python、FastAPI、Pydantic |
-| ORM 与迁移 | SQLAlchemy、Alembic |
-| 数据库 | PostgreSQL 16、pgvector |
-| AI 能力 | 云端 LLM（用户自带 BYOK，服务端全局仅显式回退）+ Embedding（服务端统一，1024 维）；RAG 相关性 Judge、两段式联网补救 |
-| 音频转写（ASR） | 外部 OpenAI 兼容 ASR / 本地 FunASR（SenseVoice CPU，Compose `--profile asr`） |
-| 文件存储 | 本地持久化目录（MVP） |
-| 开发环境 | Docker Compose |
-| 质量保障 | pytest、Vitest、ruff、ESLint、Prettier、GitHub Actions CI |
+**凭什么不一样**：
 
-## 技术架构
+- **能查到出处**：回答来自你的资料原文，标注来源；找不到证据就说找不到，不编。
+- **不会自作主张**：纪要、行动项、联网检索都要过一次确认门，AI 不能直接改你的数据。
+- **数据在你手里**：模型密钥自己带（BYOK，加密存库、永不明文回传），会议文件可双向同步到本地目录。
 
-> 详版（分层边界、数据流、关键约定）见 [`docs/architecture.md`](docs/architecture.md)。
+## 2. 功能一览
 
-- **分层与边界**：Vue 3 SPA（仅展示与交互，不直连数据库）→ FastAPI `/api/v1`（JWT 鉴权、统一错误体、依赖注入）→ `services/`（业务规则与个人数据隔离）→ `app/ai/` 能力层（LLM、Embedding、RAG、Prompt、结构化输出；只产出候选，不决定业务状态）→ PostgreSQL + pgvector（数据）与 `storage/`（文件）。
-- **RAG 写入**：材料解析（PDF/DOCX/TXT）→ 按 `RAG_CHUNK_SIZE`/`RAG_CHUNK_OVERLAP`（默认 800 字符 / 120 重叠）切分 → 1024 维向量化 → 写入 `document_chunks` / `knowledge_chunks`（`vector(1024)`，重解析先删旧分块）。**增量索引**：同用户、同库内（会议材料 / 知识库各自独立）命中同内容（`content_hash`）+ 同索引指纹（`index_fingerprint`）的已索引记录时直接复制分块，跳过解析与向量化，零重复 Embedding 消耗。
-- **RAG 检索**：SQL 按 `user_id` 权限下推 → 向量近邻排序（PostgreSQL 走 pgvector **HNSW** 索引，`RAG_VECTOR_BACKEND=auto`；测试/回滚走应用层余弦）→ top5（`min_score=0.3`，`RAG_ANN_OVERSAMPLE` 过采样补偿过滤召回）→ 低分带相关性 Judge（top1 < 0.6 交 LLM 复核，不可用回退分数判定）→ 组装上下文与 Prompt → LLM 生成回答 + 来源标注；材料与记录全无证据才触发两段式联网补救。
-- **质量护栏**：结构化输出统一走「解析预处理 → schema + 业务字段校验 → 1 次修复重试 → 统一报错/降级 + 规范日志」管线；外部模板与用户补充只注入 user 消息段（防提示词注入），用户画像注入 ≤500 字符截断（见 `docs/ai-design.md` 3.3/七）。
+| 阶段 | 能力 | 说明 |
+| --- | --- | --- |
+| **会前** | 会议管理 | 创建 / 编辑 / 归档 / 删除；内置与自定义模板（可由 AI 生成草稿），注入后续生成链路 |
+| | 资料导入与索引 | PDF / DOCX / TXT 解析 → 800/120 分块 → 1024 维向量 → HNSW 近邻索引；同用户同内容文件复用分块，零重复 Embedding |
+| | 会前速览与准备 | 速览卡（60 秒读完：要谈什么、要决定什么）+ 准备要点与清单 |
+| **会中** | 记录 | 手动记录与重点 / 决议 / 疑问标记；音频转写（外部 OpenAI 兼容 ASR 或本地 FunASR） |
+| | AI 问答 | SSE 流式输出、来源标注、低分带 LLM Judge 复核；材料与记录全无证据时才联网补救 |
+| **会后** | 纪要 | 转写确认后自动产出**草稿**（绝不自动确认）；模板渲染、富文本编辑、DOCX 导出 |
+| | 行动项 → 任务 | AI 提取候选 → 你逐条确认 → 转为个人任务并跟进 |
+| **贯穿** | Agent 编排 | 意图路由 + 声明式工作流 + 确认门 + 证据门（见 §3） |
+| | 本地工作区 | File System Access API 双向同步：三方对账、`client_op_id` 幂等、`expected_version` 乐观锁 |
+| | 个人知识库 / 记忆中心 | 知识库独立检索（不与会议内容混检）；个人画像注入 Prompt 且截断 ≤500 字 |
+| | 可靠性 | 统一错误体、限流、AI 调用审计与成本估算、异步任务队列 + 独立 worker |
 
-## 4. 项目目录
+## 3. 核心设计
+
+### 3.1 四条不变量
+
+1. **个人数据隔离**：任何查询都以 `user_id` 下推过滤，跨用户访问返回 404 而非 403。
+2. **原文与 AI 结果分离**：AI 产出写入独立字段/表，永不覆盖你输入的原文。
+3. **候选与确认分离**：AI 只能提出候选，写库、状态流转、任务创建都由用户显式确认。
+4. **密钥不落前端**：模型密钥只存在于服务端环境变量或 Fernet 加密的 BYOK 存储中。
+
+### 3.2 Agent 链路
 
 ```text
-OpenMIND/
-├── frontend/                # Vue 3 前端
-│   ├── src/
-│   │   ├── api/             # axios 实例与接口封装
-│   │   ├── assets/          # 样式与静态资源
-│   │   ├── components/      # 可复用组件
-│   │   ├── composables/     # 组合式函数（列表/提示/工作区等）
-│   │   ├── constants/       # 路由名、导航、上传常量
-│   │   ├── layouts/         # 页面骨架与导航
-│   │   ├── router/          # Vue Router 路由
-│   │   ├── stores/          # Pinia 状态
-│   │   ├── types/           # 前端类型定义
-│   │   ├── utils/           # 工具函数
-│   │   └── views/           # 页面级组件
-│   ├── tests/               # Vitest 测试
-│   ├── Dockerfile
-│   └── package.json
-├── backend/                 # FastAPI 后端
-│   ├── app/
-│   │   ├── main.py          # 应用工厂：CORS、异常处理、路由挂载
-│   │   ├── api/             # HTTP 路由与依赖注入
-│   │   ├── core/            # 配置、日志、异常
-│   │   ├── db/              # 声明式 Base、Engine、Session
-│   │   ├── models/          # SQLAlchemy ORM 模型
-│   │   ├── schemas/         # Pydantic 请求/响应模型
-│   │   ├── repositories/    # 数据库查询与持久化
-│   │   ├── services/        # 业务规则
-│   │   ├── ai/              # LLM、Embedding、RAG、Prompt
-│   │   └── utils/           # 通用工具
-│   ├── alembic/             # Alembic 迁移
-│   ├── scripts/             # 运维与评测脚本（check_ai / check_rag / eval_rag / reindex_all）
-│   ├── tests/               # pytest 测试
-│   ├── requirements.txt
-│   └── Dockerfile
-├── docker/                  # Compose 与环境变量示例（与业务代码分离）
-│   ├── compose.dev.yml
-│   └── .env.example
-├── docs/                    # 需求、架构、API、数据库、开发、测试、模块规划、设计基线与使用说明
-├── scripts/                 # 开发 / 测试 / 数据库校验 / ASR 与素材处理脚本
-├── storage/                 # 运行时文件持久化（不提交真实会议资料）
-├── .github/                 # Issue / PR 模板与 CI
-├── .editorconfig
-├── .dockerignore
-├── .gitattributes
-├── .gitignore
-├── CONTRIBUTING.md
-├── LICENSE
-└── README.md
+用户输入
+  ↓ 意图路由：显式指令 → 规则命中 → LLM 兜底（3s 超时）→ 页面先验
+工作流（声明式 Step / Edge / StepRetry）
+  ↓ 工具调用：只包 services 与 ai 层，不直接拼 SQL
+确认门（写操作前停下，落 pending_action，等待用户批准）
+  ↓
+证据门（无相关证据则拒答，而非编造）
+  ↓
+结果落库：agent_runs 是失败的唯一事实来源（同步 502 / SSE error），不落假消息
 ```
 
-## 5. 开发环境要求
+- **确认门幂等**：条件 UPDATE 抢占 + 部分唯一索引（`run_id WHERE status='pending'`）兜底，并发下只有一个请求生效。
+- **多轮上下文**：最近 6 条消息 / ≤3000 字符注入 Prompt；记录上下文按问题词面相关性筛选（bigram 覆盖率 ≥0.3，top5，≤4000 字符）。
+- **可控预算**：`AGENT_MAX_STEPS`（默认 20）与 `AGENT_MAX_WALL_SECONDS`（默认 600）硬限制单次运行。
 
-| 依赖 | 版本要求 | 说明 |
-| --- | --- | --- |
-| Docker Desktop | 含 Docker Compose v2 | 推荐方式，需确保 Docker 引擎已启动 |
-| Python | 3.11+ | 本项目验证于 3.13；`backend/Dockerfile` 使用 `python:3.13-slim` |
-| Node.js | 20+ | 本项目验证于 24；`frontend/Dockerfile` 使用 `node:22-bookworm` |
-| npm | 随 Node 附带 | 前端依赖管理 |
-| Git | 任意近期版本 | 版本控制 |
+设计细节见 [`docs/agent-framework.md`](docs/agent-framework.md)。
 
-## 6. 环境变量配置
+## 4. 系统架构
 
-所有环境变量示例集中在 `docker/.env.example`，本地复制为 `docker/.env`（**已被 `.gitignore` 忽略，禁止提交**）：
-
-```bash
-cp docker/.env.example docker/.env          # Windows: copy docker\.env.example docker\.env
+```mermaid
+flowchart LR
+    UI["Vue 3 SPA<br/>只做展示与交互"] -->|"HTTP / SSE · JWT"| API["FastAPI /api/v1<br/>鉴权 · 统一错误体"]
+    API --> SVC["services<br/>权限校验 · 状态流转 · 业务规则"]
+    SVC --> REPO["repositories"]
+    REPO --> DB[("PostgreSQL 16<br/>+ pgvector")]
+    SVC --> AI["app/ai<br/>LLM · Embedding · RAG · Agent"]
+    AI --> EXT["外部模型 API<br/>BYOK 优先"]
+    SVC --> FS[("storage/<br/>原始文件")]
+    WK["app.worker<br/>异步任务 / Agent 运行"] --> REPO
+    API -.->|"投递"| WK
 ```
 
-- Docker Compose 启动时从 `docker/.env` 读取变量做插值；未提供时使用 `docker/compose.dev.yml` 中的默认值。
-- 后端以原生方式运行时，`pydantic-settings` 会从 `docker/.env` 读取配置。
+- **前端**不直连数据库、不持有密钥，只调 API 与渲染 SSE。
+- **后端**是权限与业务状态的唯一裁决者；前端无法通过改状态字段绕过规则。
+- **AI 层**只产出候选与检索结果，不决定任务创建/完成等业务事实。
 
-关键变量：
+详见 [`docs/architecture.md`](docs/architecture.md)。
 
-| 变量 | 作用 | 示例（占位，非真实值） |
-| --- | --- | --- |
-| `APP_NAME` / `APP_ENV` | 应用名与运行环境 | `OpenMIND` / `development` |
-| `API_V1_PREFIX` | API 版本前缀 | `/api/v1` |
-| `SECRET_KEY` | 认证签名密钥 | `change-me`（生产必须替换） |
-| `POSTGRES_*` | 数据库连接信息 | `openmind` / `change-me` / `openmind` |
-| `DATABASE_URL` | SQLAlchemy 连接串（宿主机视角） | `postgresql+psycopg://…@localhost:5432/openmind` |
-| `STORAGE_DIR` / `MAX_UPLOAD_MB` | 文件存储目录与上传大小上限 | `./storage` / `20` |
-| `LLM_*` / `EMBEDDING_*` | 服务端全局模型配置；默认仅供显式开启回退时使用 | `https://api.example.com/v1` 等 |
-| `ALLOW_GLOBAL_FALLBACK` | 是否允许未配置 BYOK 的用户回退到服务端全局配置；默认 `false` | `false` |
-| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | 分块大小与重叠；改动后存量分块指纹失效，须 `python scripts/reindex_all.py` 重建 | `800` / `120` |
-| `RAG_TOP_K` / `RAG_MIN_SCORE` | 检索条数与相似度阈值（知识库检索 API 缺省时同此值） | `5` / `0.3` |
-| `RAG_JUDGE_ENABLED` / `RAG_JUDGE_MIN_SCORE` | RAG 低分带相关性 Judge 开关与触发阈值（top1 低于阈值时交 LLM 复核） | `true` / `0.6` |
-| `RAG_JUDGE_TOP_CANDIDATES` / `RAG_JUDGE_MAX_EXCERPT_CHARS` | Judge 复核的候选条数与单条截断长度 | `3` / `600` |
-| `RAG_VECTOR_BACKEND` | 向量检索后端：`auto`（PG→pgvector HNSW / SQLite→应用层）、`python`（强制应用层，回滚开关）、`pgvector`（强制 SQL ANN） | `auto` |
-| `RAG_ANN_OVERSAMPLE` / `RAG_ANN_MAX_CANDIDATES` | ANN 过采样倍数与取回上限（HNSW + 权限过滤会损失召回） | `4` / `200` |
-| `RAG_HNSW_EF_SEARCH` | HNSW 查询期 `ef_search`；`<=0` 不设置 | `40` |
-| `RAG_INCREMENTAL_INDEX_ENABLED` | 增量索引：同用户同库内复用同内容文件的分块，跳过解析与向量化 | `true` |
-| `RAG_INDEX_FINGERPRINT_VERSION` | 索引指纹版本，分块算法变更时递增使存量分块整体失效 | `1` |
-| `RAG_ALERT_TOTAL_MS_P95` / `RAG_ALERT_CANDIDATE_ROWS_P95` / `RAG_ALERT_COOLDOWN_S` | 检索性能 P95 告警阈值与冷却（超阈值打 `logger.error` 告警行；`<=0` 关闭，见 `docs/api.md 1.8`） | `3000` / `5000` / `60` |
-| `WEB_SEARCH_ENABLED` / `WEB_SEARCH_PROVIDER` | 答案层两段式联网补救（仅资料与记录全无证据时触发，不进检索层） | `true` / `bing` |
-| `ASR_*` / `FUNASR_*` | 音频转写：外部 OpenAI 兼容 ASR 与本地 FunASR 参数 | 见 `docker/.env.example` |
-| `CORS_ORIGINS` | 允许的前端来源 | `http://localhost:5173` |
-| `VITE_API_BASE_URL` | 前端 axios `baseURL` | `http://localhost:8000/api/v1` |
-| `VITE_APP_ENV` | 预留的构建期环境标识（当前前端未消费） | `development` |
-| `VITE_DEV_PROXY_TARGET` | 开发期 Vite 代理目标（示例中默认注释；容器内由 Compose 注入 `http://backend:8000`） | `http://localhost:8000` |
+## 5. 快速开始
 
-> **安全约束**：LLM / Embedding 密钥只能存在于服务端环境变量或用户 BYOK 的加密存储中；任何接口不得返回明文，`docker/.env` 永不入库。非开发环境必须配置至少 32 字符的随机 `SECRET_KEY`。默认要求用户配置 BYOK；只有显式设置 `ALLOW_GLOBAL_FALLBACK=true` 时才允许未配置用户使用服务端全局 Key。
-
-## 7. Docker 启动方式
-
-在仓库根目录执行：
+**前置条件**：Docker Desktop（含 Compose v2）。原生开发另需 Python 3.11+ 与 Node 20+。
 
 ```bash
-# 1) 准备本地环境变量
-cp docker/.env.example docker/.env        # Windows: copy docker\.env.example docker\.env
+git clone https://github.com/WiWimin/OpenMIND.git
+cd OpenMIND
 
-# 2) 构建并启动全部服务（db / backend / frontend）
-docker compose -f docker/compose.dev.yml up --build
+# 1) 环境变量（Windows: copy docker\.env.example docker\.env）
+cp docker/.env.example docker/.env
 
-# 后台运行（推荐）
+# 2) 启动 db / worker / backend / frontend
 docker compose -f docker/compose.dev.yml up -d --build
 
-# 3) 首次启动或数据库结构变更后执行迁移
+# 3) 执行数据库迁移
 docker compose -f docker/compose.dev.yml exec backend alembic upgrade head
 
-# 4) 调整过 RAG_* 参数（分块/Embedding 模型）后，重建存量向量索引
+# 4)（可选）重建存量向量索引——改动过 RAG_* 参数时需执行
 docker compose -f docker/compose.dev.yml exec backend python scripts/reindex_all.py
 ```
 
-本地原生开发（不经过容器；数据库仍用 Docker 启动）：
-
-```bash
-# 数据库
-docker compose -f docker/compose.dev.yml up -d db
-
-# 后端（Python 3.11+）
-cd backend
-python -m venv .venv
-.venv\Scripts\activate        # macOS / Linux: source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# 前端（Node 20+）
-cd frontend
-npm install
-npm run dev
-```
-
-也可使用脚本：`scripts/dev.ps1`（Windows）/ `scripts/dev.sh`（macOS、Linux）。
-
-启动后可运行数据库全链路校验：
-
-```powershell
-.\scripts\verify-db.ps1        # Windows
-```
-
-```bash
-./scripts/verify-db.sh         # macOS / Linux / Git Bash
-```
-
-## 8. Docker 停止方式
-
-```bash
-# 停止并移除容器（保留数据库命名卷，数据不丢失）
-docker compose -f docker/compose.dev.yml down
-
-# 仅停止容器，保留容器对象
-docker compose -f docker/compose.dev.yml stop
-```
-
-> ⚠️ **`down -v` 会一并删除命名卷（`pgdata` 等），导致数据库与本地数据丢失**。除非明确要重置环境，否则不要使用 `down -v`。
-
-## 9. 查看日志方式
-
-```bash
-# 跟踪全部服务
-docker compose -f docker/compose.dev.yml logs -f
-
-# 跟踪单个服务：db / backend / frontend
-docker compose -f docker/compose.dev.yml logs -f backend
-docker compose -f docker/compose.dev.yml logs -f frontend
-docker compose -f docker/compose.dev.yml logs -f db
-
-# 仅看最近 100 行
-docker compose -f docker/compose.dev.yml logs --tail 100 backend
-```
-
-## 10. 前端访问地址
+打开 <http://localhost:5173> 注册账号，然后在「设置 → 模型」填入自己的模型 Key（BYOK）即可开始。
 
 | 服务 | 地址 |
 | --- | --- |
-| 前端首页 | http://localhost:5173 |
+| 前端 | <http://localhost:5173> |
+| 后端 API / Swagger | <http://localhost:8000/docs> |
+| 健康检查 | <http://localhost:8000/health> · <http://localhost:8000/api/v1/health/db> |
+| 本地 FunASR（可选） | `docker compose -f docker/compose.dev.yml --profile asr up -d asr` → <http://localhost:10096> |
 
-## 11. 后端 Swagger 地址
+**原生开发**（数据库仍用容器）：
 
-| 文档 | 地址 |
-| --- | --- |
-| Swagger UI | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
-| OpenAPI JSON | http://localhost:8000/openapi.json |
-| 健康检查 | http://localhost:8000/health |
-| 数据库就绪探针 | http://localhost:8000/api/v1/health/db |
-| 运维指标（RAG 可观测性，无鉴权建议内网） | http://localhost:8000/api/v1/metrics |
+```bash
+docker compose -f docker/compose.dev.yml up -d db
 
-> 业务接口已按 [`docs/api.md`](docs/api.md) 实现；Swagger 中可查看全部已注册接口。
+cd backend && python -m venv .venv && .venv\Scripts\activate   # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt && uvicorn app.main:app --reload
 
-## 12. Git 分支规范
-
-> 三流分工、分支命名、合并/同步/发布流程的**唯一事实来源**见 [`docs/collaboration-rules.md`](docs/collaboration-rules.md)；本节仅作摘要。
-
-| 分支 | 用途 | 来源 | 合并去向 |
-| --- | --- | --- | --- |
-| `main` | 稳定、可演示版本 | 仅接受来自 `develop` 的合并 | —— |
-| `develop` | 日常开发集成分支 | 接受所有工作分支的 PR | `main`（阶段验收通过后） |
-| `feature/<stream>-*` | 功能开发，按流加前缀（`backend`/`frontend`/`agent`） | 从 `develop` 切出 | `develop` |
-| `fix/*` | Bug 修复 | 从 `develop` 切出 | `develop` |
-
-命名示例：`feature/backend-m01-m02`、`feature/frontend-m02-meeting`、`feature/agent-m04-rag`、`fix/m02-meeting-list`。
-
-提交信息采用 Conventional Commits：`<type>(<scope>): <subject>`，`type` 取 `feat` / `fix` / `docs` / `style` / `refactor` / `test` / `chore`，`scope` 建议使用模块号（如 `m00`、`m02`）。详见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
-
-## 13. PR 开发流程
-
-```text
-开发者
-  ↓
-从最新 develop 切出 feature/<stream>-* 或 fix/*
-  ↓
-开发（定期 merge develop 同步）
-  ↓
-本地测试
-  ↓
-提交
-  ↓
-Pull Request（base = develop）
-  ↓
-develop
-  ↓
-集成测试
-  ↓
-main（阶段验收通过后）
+cd frontend && npm install && npm run dev
 ```
 
-1. 从**最新** `develop` 切出 `feature/<stream>-*`（`backend`/`frontend`/`agent`）或 `fix/*` 分支。
-2. 开发；**定期同步**：至少每 1–2 天 `git merge origin/develop`，避免长期漂移。
-3. 在**本地测试**通过：
-   - 后端：`cd backend && ruff check . && pytest`
-   - 前端：`cd frontend && npm run typecheck && npm run lint && npm run test`
-   - 或一键：`scripts/test.ps1`（Windows）/ `scripts/test.sh`
-4. `git commit` 提交（Conventional Commits）。
-5. 发起 **Pull Request**，**base 必须是 `develop`**（不得合入其他特性分支），按 [PR 模板](.github/pull_request_template.md) 填写修改目的、测试方式与结果、是否影响数据库 / 环境变量 / API。
-6. 至少一名成员 Code Review 通过、CI 全绿后，用 merge commit 合并到 `develop`；合并后删除工作分支。
-7. 在 `develop` 进行**集成测试**，阶段验收通过后以 `develop` 为 head 合并到 `main`，作为可演示版本；本轮已执行一次 `develop → main` 发布（当前状态以远程 `main` 分支为准）。
-8. 涉及数据库结构变更必须附带 Alembic 迁移；涉及环境变量变更必须同步 `docker/.env.example`；涉及接口变更必须同步 [`docs/api.md`](docs/api.md)。
+**停止服务**：`docker compose -f docker/compose.dev.yml down`（保留数据卷）。
+⚠️ `down -v` 会一并删除命名卷，数据不可恢复。
 
-> CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）仅做检查，不包含任何自动部署流程。
+## 6. 配置
 
-## 14. 当前已完成的功能
+全部变量见 [`docker/.env.example`](docker/.env.example)。复制为 `docker/.env` 使用（已被 `.gitignore` 忽略，禁止提交）。
 
-> 以下为**已实现并经本地验证**的内容：MVP 闭环（M00–M10）已全部实现。
-
-**前端基础工程**
-- Vue 3 + TypeScript + Vite 骨架，Pinia 与 Vue Router 已接入。
-- 登录态路由守卫、统一 axios 错误归一化（`ApiError`）与页面外壳（`WorkspaceLayout`）。
-- Vitest 测试 381 个用例（78 个文件），Playwright 浏览器 E2E 覆盖核心闭环（需模型配置的用例在无凭据时跳过），`typecheck`、`lint`、`build` 均通过。
-
-**后端基础工程**
-- FastAPI 应用工厂：CORS、统一异常处理、`/api/v1` 路由挂载。
-- 接口：`GET /health`、`GET /api/v1/health/db`（数据库联合状态），以及统一错误响应体 `{ status, error_code, message, retryable }`（见 `docs/api.md 一`）。
-- `pydantic-settings` 配置加载、结构化日志、SQLAlchemy Engine/Session 与探活。
-- pytest 全量用例（`cd backend && pytest`）与 `ruff check` 均通过。
-
-**数据与基础设施**
-- PostgreSQL 16 + pgvector 由 Docker Compose 管理；Alembic 迁移 `0001_baseline` 至 `0029_rag_hnsw` 已在容器内执行并通过校验（含 `0028` 增量索引字段与 `0029` HNSW 向量索引）。
-- `docker/compose.dev.yml` 三服务（`db` / `backend` / `frontend`），含 `db` 健康检查与命名卷持久化。
-- `scripts/verify-db.ps1` / `.sh` 数据库全链路校验（5 项，失败即非零退出）。
-
-**模型连通性（M00-08，2026-10-05 实测）**
-- 大模型文本生成（deepseek-flash）与 Embedding 向量生成（百炼 text-embedding-v3，1024 维）实测双通；密钥仅存于 `docker/.env`（不入库）。
-
-**M03 解析管线**
-- `backend/app/ai/parsers/`：PDF / DOCX / TXT 解析器与统一解析服务，附单元测试（PR #4 已合并）。
-
-**协作与规范**
-- Git 分支规范、Conventional Commits、PR / Issue 模板、CI 检查工作流、`.editorconfig`、前后端 lint/format 配置。
-
-**业务功能（M01–M10）**
-- 用户认证（注册 / 登录 / 退出 / 当前用户，HS256 JWT）。
-- 会议管理（创建弹窗 / 列表 / 编辑 / 删除 / 归档）；详情页已并入会议管理：`/meetings/:id` 重定向到该会议文件列表（含编辑/归档/删除）。
-- 资料上传与解析（PDF / DOCX / TXT）、RAG 权限内向量检索、模型密钥用户自带（BYOK）。
-- RAG 相关性 Judge（低分带 LLM 复核）：评测负样本拦截率 100%、会议材料 hit@5 0.938（`docs/test-reports/rag-eval-report.md`）。
-- 会前准备、会中记录与问答、纪要、行动项、个人任务；未解决问题（后端 API 与 AI 提取保留，前端 UI 已按产品决策移除）。
-- 纪要模板与富文本编辑、DOCX 导出、记录重点/决议/疑问标记；会议模板管理（内置/自定义模板、AI 生成草稿，注入会前准备与纪要生成）。
-- 两段式联网补救与 Build 模式文件产出：材料与记录全无证据才联网作答（标注来源与「仅供参考」）；Build 模式直接产出 Markdown 文件（可下载/保存为会议资料）。
-- RAG 检索与索引优化（D-39）：增量索引（同用户同库内复用同内容文件的分块，零重复 Embedding 消耗）、HNSW 向量索引下沉 PostgreSQL（`RAG_VECTOR_BACKEND=auto`，应用层余弦可回滚）、分块/阈值/Judge/ANN 全参数环境变量化（`RAG_*`）。
-- 按用途模型路由、用户记忆中心、个人知识库、本地会议工作区。
-- AI 提示词安全与输出质量（D-28~D-30）：外部模板与用户补充只注入 user 消息段（system 置中立防御句，防提示词注入）；用户画像注入 ≤500 字符截断；结构化输出管线（解析预处理 → schema + 业务字段校验 → 1 次修复重试 → 统一报错/降级 + 规范日志，不记录提示词与模型原文）。
-- RAG 可观测性（D-31）：Judge 判定埋点（true/false/fallback 占比）、检索 sql/embed/similarity/total 分段计时与候选行数窗口、`GET /api/v1/metrics` 暴露 P50/P95、`RAG_ALERT_*` 阈值告警日志。
-- 音频导入与转写：支持外部 OpenAI 兼容 ASR，或本地 FunASR（SenseVoice CPU，`--profile asr`）；webm/ogg 先经 ffmpeg 转码为 wav 再送 ASR。
-- 后端 API 测试、前端组件测试与 Playwright 浏览器 E2E。
-
-**明确尚未实现 / 待验证（非 MVP 范围）**
-- 会议完整历史记录的语义检索：转写/会议记录不入向量库，问答先在当前会议**最近 20 条**记录中按问题做词面相关性筛选（取相关 top5、合计 ≤4000 字符）作为辅助上下文（D-23/D-44；用户侧能力边界见 `docs/user-guide.md`）。
-- ~~向量近邻索引与重排序~~：HNSW 近邻索引已实现（D-39，`docs/database.md 六`）；rerank（重排序）仍待数据量确定。
-- 外部 ASR 服务可按原配置接入；本地 FunASR 已在 CPU 上完成真实转写与浏览器 E2E。实时流式 ASR 未纳入。
-- 本地 FunASR 服务无鉴权，只应本地/内网使用；模型权重许可需按模型页面确认。
-- 本地目录授权与真实读写需按人工验收清单执行。
-- PDF 扫描件 OCR、MIME 嗅探、并发编辑乐观锁（见 `docs/design-baseline.md §四`）。
-
-## 15. 后续开发规划
-
-按 [`docs/module-task-plan.md`](docs/module-task-plan.md) 的模块拆分与 [`docs/requirements.md`](docs/requirements.md) 的功能需求推进（MVP 已完成，下表为阶段交付回顾）：
-
-| 阶段 | 模块范围 | 目标交付 |
+| 变量 | 作用 | 默认 |
 | --- | --- | --- |
-| 第一阶段 | M00、M01、M02 | 能登录、创建会议、查看和编辑会议 |
-| 第二阶段 | M03、M04 | 能上传材料、解析文本、调用模型、检索来源 |
-| 第三阶段 | M05 | 能生成并保存会前准备结果 |
-| 第四阶段 | M06、M07 | 能记录会议、生成纪要、提取候选行动项 |
-| 第五阶段 | M08、M09 | 能管理个人任务和未解决问题 |
-| 第六阶段 | M10 | 完成端到端测试、部署与演示交付 |
+| `SECRET_KEY` | JWT 签名密钥，非开发环境必须是 ≥32 位随机值 | `change-me` |
+| `DATABASE_URL` | SQLAlchemy 连接串 | 指向 compose 内 `db` |
+| `ALLOW_GLOBAL_FALLBACK` | 是否允许未配 BYOK 的用户回退到服务端全局模型 | `false` |
+| `LLM_*` / `EMBEDDING_*` | 服务端全局模型配置（仅显式开启回退时生效） | 空 |
+| `ASR_API_BASE` / `ASR_MODEL` | 外部 OpenAI 兼容 ASR；本地 FunASR 走 compose `asr` profile | 空 |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | 分块大小与重叠，改动后需重建索引 | `800` / `120` |
+| `RAG_TOP_K` / `RAG_MIN_SCORE` | 检索条数与相似度阈值 | `5` / `0.3` |
+| `RAG_VECTOR_BACKEND` | 向量后端：`auto`（PG→HNSW / SQLite→应用层）、`pgvector`、`python`（回滚） | `auto` |
+| `RAG_JUDGE_ENABLED` / `RAG_JUDGE_MIN_SCORE` | 低分带相关性 Judge 开关与触发阈值 | `true` / `0.6` |
+| `AGENT_MAX_STEPS` / `AGENT_MAX_WALL_SECONDS` | 单次 Agent 运行的步数与墙钟上限 | `20` / `600` |
+| `AGENT_ENABLED` / `AGENT_INTENT_LLM_ENABLED` | Agent 总开关；是否允许 LLM 兜底判意图 | `true` / `true` |
+| `JOB_WORKER_ENABLED` | 使用独立 worker 处理异步任务（关闭时回落进程内任务） | `true` |
+| `RATE_LIMIT_ENABLED` / `METRICS_ENABLED` | 进程内限流与 `/api/v1/metrics` 运维指标 | `true` / `true` |
+| `WEB_SEARCH_ENABLED` / `WEB_SEARCH_REQUIRE_CONFIRMATION` | 联网补救开关；是否每次先征求同意 | `true` / `true` |
+| `VITE_API_BASE_URL` | 前端 axios `baseURL` | `http://localhost:8000/api/v1` |
 
-模块总览：M01 用户认证 → M02 会议管理 → M03 资料管理与解析 → M04 AI 基础服务与 RAG → M05 会前准备 → M06 会中记录与 AI 助手 → M07 纪要与行动项 → M08 个人任务 → M09 未解决问题 → M10 测试与交付。
-
-## 使用说明与能力边界
-
-> 面向使用者的完整说明见 [docs/user-guide.md](docs/user-guide.md)。以下为必须知晓的三条核心声明：
-
-1. **会议转写记录不进入向量库**：ASR 转写与确认生成的会议记录不参与语义检索（不写入向量库）。
-2. **问答只提供相关度有限的记录上下文**：回答时先在当前会议**最近 20 条**记录中按问题做相关性筛选（bigram 覆盖率 ≥0.3，取相关 top5、合计 ≤4000 字符）作为辅助上下文，无关记录不参与本次回答；完整历史记录检索尚未实现（见 `docs/design-baseline.md` D-23/D-44）。
-3. **语义检索来源仅为会议材料与个人知识库**（知识库须显式选择范围，不与会议内容混检）；材料不足时明确拒答而非编造，完全无证据才触发联网补救并标注来源。
-
-## 团队与协作
-
-- 仓库：[`github.com/WiWimin/OpenMIND`](https://github.com/WiWimin/OpenMIND)
-- 协作规范（分支、合并、同步流程的唯一事实来源）：[docs/collaboration-rules.md](docs/collaboration-rules.md)；参与方式与 PR 流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 按角色与代码归属分三条流，每条流只在自己的目录/模块内改动（接口以 `docs/api.md` 为准、数据以 `docs/database.md` 为准）：
-
-| 流 | 负责人 | 代码归属 | 主要模块 |
-| --- | --- | --- | --- |
-| `backend` | A 系统与业务后端 | `backend/app/{models,schemas,repositories,services,api}`、`alembic/`、`docker/`、部署 | M00、M01、M02、M08、M09（业务）、M10 |
-| `agent` | B AI 后端 | `backend/app/ai/**` | M03（解析）、M04、M05、M06（AI）、M07、M09（AI） |
-| `frontend` | C 前端与体验 | `frontend/src/**` | M01–M09 前端 |
-
-## 常用命令
+## 7. 开发与测试
 
 | 目标 | 命令 |
 | --- | --- |
-| 启动全部服务 | `docker compose -f docker/compose.dev.yml up -d --build` |
-| 停止服务 | `docker compose -f docker/compose.dev.yml down` |
-| 查看日志 | `docker compose -f docker/compose.dev.yml logs -f [服务名]` |
-| 数据库迁移 | `docker compose -f docker/compose.dev.yml exec backend alembic upgrade head` |
-| 数据库校验 | `scripts/verify-db.ps1`（Windows）/ `scripts/verify-db.sh` |
-| 后端 lint | `cd backend && ruff check .` |
-| 后端测试 | `cd backend && pytest` |
+| 后端 Lint | `cd backend && ruff check .` |
+| 后端测试 | `cd backend && pytest`（745 passed / 5 skipped） |
 | 前端类型检查 | `cd frontend && npm run typecheck` |
-| 前端 lint | `cd frontend && npm run lint` |
-| 前端测试 | `cd frontend && npm run test` |
-| 浏览器 E2E | `cd frontend && npm run test:e2e`（需先启动服务并配置模型） |
-| 本地 FunASR | `scripts/asr.ps1 up`（Windows）/ `scripts/asr.sh up` |
+| 前端 Lint | `cd frontend && npm run lint` |
+| 前端单测 | `cd frontend && npm run test`（91 文件 / 508 用例） |
+| 浏览器 E2E | `cd frontend && npm run test:e2e`（需模型与 ASR 配置） |
 | 前端构建 | `cd frontend && npm run build` |
-| 一键测试 | `scripts/test.ps1`（Windows）/ `scripts/test.sh` |
+| 一键全量 | `scripts/test.ps1`（Windows）/ `scripts/test.sh` |
+| 数据库校验 | `scripts/verify-db.ps1` / `scripts/verify-db.sh` |
+| 数据库迁移 | `alembic upgrade head`；新增结构必须附带迁移文件 |
+| 本地 FunASR | `scripts/asr.ps1 up` / `scripts/asr.sh up` |
+| AI / RAG 自检 | `cd backend && python scripts/check_ai.py` · `check_rag.py` · `eval_rag.py` |
 
-## 文档
+CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在每次 push / PR 上跑「后端 ruff + pytest」与「前端 typecheck + lint + test + build」，只做检查，不包含自动部署。
 
-- [设计基线（权威索引与决策日志）](docs/design-baseline.md)
-- [使用说明（能力边界）](docs/user-guide.md)
-- [需求说明](docs/requirements.md)
-- [系统架构](docs/architecture.md)
-- [接口契约](docs/api.md)
-- [数据库设计](docs/database.md)
-- [AI 能力层设计](docs/ai-design.md)
-- [模块开发规范（详细任务）](docs/module-development-spec.md)
-- [模块开发任务规划](docs/module-task-plan.md)
-- [开发指南](docs/development.md)
-- [测试策略](docs/testing.md)
-- [贡献指南](CONTRIBUTING.md)
+数据库迁移当前 head 为 `0033_agent_pending_unique`（共 33 个版本，`0001`–`0033`）。
 
-## 开发原则
+## 8. 目录结构
 
-- 先接口、后并行：数据模型与 API 契约先评审，前后端再并行实现。
-- 先闭环、后扩展：每阶段完成真实可用的业务流程，再进入下一阶段。
-- 先保证业务正确，再优化 AI：权限、持久化、来源追溯和人工确认是底线。
+```text
+OpenMIND/
+├── frontend/                     # Vue 3 + TypeScript + Vite
+│   └── src/
+│       ├── api/                  # 接口封装与 SSE 客户端
+│       ├── components/           # 通用组件 + Agent 卡片（确认门 / 速览 / 推理链）
+│       ├── composables/          # 列表、提示、本地工作区等组合式函数
+│       ├── config/               # 快捷动作注册表、特性开关
+│       ├── services/localSync/   # 本地同步：manifest / reconcile / runSync
+│       ├── layouts/ router/ stores/ types/ utils/ views/
+│       ├── tests/ e2e/           # Vitest 单测与 Playwright E2E
+│       └── package.json
+├── backend/                      # FastAPI
+│   ├── app/
+│   │   ├── main.py               # 应用工厂：CORS、异常处理、路由挂载
+│   │   ├── worker.py             # 独立异步任务 worker（SKIP LOCKED 认领）
+│   │   ├── api/v1/               # HTTP 路由与依赖注入
+│   │   ├── core/                 # 配置、日志、异常、限流、错误中间件
+│   │   ├── models/ schemas/      # ORM 模型与 Pydantic 契约（分离）
+│   │   ├── repositories/         # 查询与持久化
+│   │   ├── services/             # 业务规则、权限与状态流转
+│   │   ├── agent/                # 意图路由、工作流、工具注册表、编排
+│   │   └── ai/                   # LLM、Embedding、RAG、Prompt、解析、ASR
+│   ├── alembic/versions/         # 迁移 0001–0033
+│   ├── scripts/                  # check_ai / check_rag / eval_rag / reindex_all
+│   └── tests/                    # pytest（API / 单元 / 集成）
+├── docker/                       # compose.dev.yml 与 .env.example
+├── docs/                         # 设计契约、决策日志与素材
+│   └── assets/                   # README 截图与设计稿
+├── scripts/                      # 开发 / 测试 / 数据库校验 / ASR 脚本
+└── storage/                      # 运行时文件（不提交真实会议资料）
+```
+
+## 9. 文档
+
+**契约（唯一事实来源）**
+
+- [接口契约](docs/api.md) — 全部端点、错误码、SSE 事件与确认门
+- [数据库设计](docs/database.md) — 表、字段、状态、约束与索引
+- [设计基线](docs/design-baseline.md) — 文档职责、决策日志 D-01…D-44
+- [协作规则](docs/collaboration-rules.md) — 分支、合并、发布流程
+
+**设计**
+
+- [系统架构](docs/architecture.md) · [AI 能力层](docs/ai-design.md) · [Agent 框架](docs/agent-framework.md)
+- [前端设计基线](docs/frontend-design-baseline.md) · [使用说明与能力边界](docs/user-guide.md)
+
+**过程**
+
+- [需求说明](docs/requirements.md) · [模块规划](docs/module-task-plan.md) · [开发规范](docs/module-development-spec.md)
+- [开发指南](docs/development.md) · [测试策略](docs/testing.md) · [贡献指南](CONTRIBUTING.md)
+
+## 10. 已知边界
+
+- **会议转写与记录不进向量库**：语义检索只覆盖会议材料与个人知识库；问答时从当前会议最近 20 条记录中按问题相关性取 top5（合计 ≤4000 字符）作辅助上下文。
+- **完整历史记录的语义检索尚未实现**，rerank 待数据量确定后再评估。
+- **实时流式 ASR 未纳入**：音频按整段上传后转写；PDF 扫描件不做 OCR。
+- **本地 FunASR 无鉴权**，只应在本地或内网使用；模型权重许可以模型页面为准。
+- **Agent 会话留存清理待建**：`AGENT_SESSION_RETENTION_DAYS`（默认 90）已定义，清理作业留待下一批。
+
+## 11. 贡献与许可
+
+- 分支、提交与发布流程见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [协作规则](docs/collaboration-rules.md)；提交信息采用 Conventional Commits（`feat(m04): ...`）。
+- 提交前必须通过：后端 `ruff check .` + `pytest`；前端 `npm run typecheck` + `lint` + `test`。
+- 涉及数据库结构、环境变量、接口的改动，必须同步迁移文件、`docker/.env.example` 与 `docs/api.md`。
+
+本项目基于 [MIT License](LICENSE) 开源。
