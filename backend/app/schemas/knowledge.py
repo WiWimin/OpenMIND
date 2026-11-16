@@ -27,8 +27,9 @@ class KnowledgeDocumentRead(BaseModel):
 
 class KnowledgeSearchRequest(BaseModel):
     query: str = Field(min_length=1)
-    top_k: int = Field(default=5, ge=1, le=20)
-    min_score: float = Field(default=0.3, ge=0, le=1)
+    # 缺省时由服务端 RAG_TOP_K / RAG_MIN_SCORE 决定，显式传入优先
+    top_k: int | None = Field(default=None, ge=1, le=20)
+    min_score: float | None = Field(default=None, ge=0, le=1)
 
 
 class KnowledgeSearchHit(BaseModel):

@@ -60,6 +60,13 @@ def generate_preparation(
                 model=payload.model,
                 template_id=payload.template_id,
             ),
+            payload={
+                "meeting_id": meeting_id,
+                "user_goal": payload.user_goal,
+                "include_history": payload.include_history,
+                "model": payload.model,
+                "template_id": payload.template_id,
+            },
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))

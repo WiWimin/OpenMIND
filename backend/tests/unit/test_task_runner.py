@@ -97,3 +97,31 @@ def test_run_job_skips_non_pending(
 
     assert called["ran"] is False
     assert _reload(db_session, job_id).status == "succeeded"
+
+
+def test_run_job_links_audit_rows_to_job(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """任务体内的 LLM 审计行自动带上 job_id（任务↔调用链路）。"""
+    from sqlalchemy import select
+
+    from app.ai import audit as audit_context
+    from app.models.ai_call_log import AICallLog
+    from app.services import ai_audit_service
+
+    job_id = _job_id(db_session)
+    monkeypatch.setattr(task_runner, "session_factory", lambda: db_session)
+
+    def fn(db: Session, progress) -> None:
+        with ai_audit_service.audit_call(db, user_id="usr_runner", scene="chat"):
+            pass
+
+    task_runner.run_job(job_id, fn)
+
+    rows = list(db_session.execute(select(AICallLog)).scalars())
+    assert len(rows) == 1
+    assert rows[0].job_id == job_id
+    assert rows[0].status == "success"
+    assert rows[0].finished_at is not None
+    # 执行结束后任务上下文不残留
+    assert audit_context.current_job_id() is None

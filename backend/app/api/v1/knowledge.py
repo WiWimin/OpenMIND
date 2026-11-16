@@ -55,6 +55,7 @@ async def upload_document(
             resource_type="knowledge_document",
             resource_id=document.document_id,
             fn=job_tasks.knowledge_parse(document.document_id, current_user.user_id),
+            payload={"document_id": document.document_id},
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
@@ -137,6 +138,7 @@ def retry_document(
             resource_type="knowledge_document",
             resource_id=document.document_id,
             fn=job_tasks.knowledge_parse(document.document_id, current_user.user_id),
+            payload={"document_id": document.document_id},
         )
         response.status_code = _ACCEPTED
         return Envelope(data=JobAccepted(job=JobRead.model_validate(job)))
