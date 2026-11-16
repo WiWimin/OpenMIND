@@ -53,17 +53,21 @@
 | `FILE_TYPE_NOT_SUPPORTED` | 415 | 文件类型不支持 | 否 |
 | `FILE_TOO_LARGE` | 413 | 文件超过大小限制 | 否 |
 | `FILE_PARSE_FAILED` | 422 | 文件无法解析（原因见 `details.reason`，见下；模板上传同步返回。材料/知识库解析失败改为落库 `failed` + `parse_error_code`，见 §4.2/§2.6，不返回 422） | 通常否 |
-| `MODEL_TIMEOUT` | 504 | 模型调用超时 | 是 |
+| `MODEL_TIMEOUT` | 504 | 模型调用超时（含服务商返回 408） | 是 |
 | `MODEL_OUTPUT_INVALID` | 502 | 模型输出无法解析或未通过校验（经 1 次修复重试后仍失败时 `retryable=true`） | 视情况 |
-| `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/额度不足等） | 否 |
+| `MODEL_OUTPUT_TRUNCATED` | 502 | 模型输出被 `max_tokens` 截断且无法结构补齐（`details.reason="max_tokens"`） | 否 |
+| `MODEL_CONTENT_FILTERED` | 422 | 模型输出被服务商内容安全策略拦截（`details.reason="content_filter"`） | 否 |
+| `MODEL_CONFIG_INVALID` | 400 | 模型配置校验失败（密钥无效/模型名不存在/接口地址重定向或 404，见 `details.reason`） | 否 |
 | `MODEL_CONFIG_REQUIRED` | 400 | 用户未配置模型 Key（BYOK） | 否 |
 | `MODEL_QUOTA_EXCEEDED` | 402 | 模型额度不足 | 否 |
-| `RATE_LIMITED` | 429 | 请求频率超过限制（`details.scope="concurrency"` 时表示模型调用并发排队超时） | 是 |
+| `RATE_LIMITED` | 429 | 请求频率超过限制（`details.scope="concurrency"` 时表示模型调用并发排队超时；服务商 425 同样映射到此码） | 是 |
 | `MODEL_UPSTREAM_UNAVAILABLE` | 503 | 模型服务熔断打开（近期失败过多，`details.circuit="open"`），冷却后自动恢复 | 是 |
 | `MODEL_INPUT_TOO_LONG` | 413 | 输入超出模型上下文上限（发送前预检或服务商返回，`details.estimated_tokens/limit` 或 `details.reason="context_length"`） | 否 |
 | `JOB_TIMEOUT` | — | 异步任务超时（作为任务的 `error_code` 返回，见 §1.9；不直接作为 HTTP 错误体） | 是 |
 | `BUSINESS_RULE_VIOLATION` | 409 | 当前状态不允许该操作 | 否 |
-| `INTERNAL_ERROR` | 500 | 未预期的服务端错误 | 视情况 |
+| `SYNC_CONFLICT` | 409 | 乐观锁前置条件不满足（`expected_version` / `expected_updated_at` 与当前不符），远端已被其他操作修改；`details` 带 `current_version` / `current_updated_at` | 否 |
+| `IDEMPOTENCY_KEY_REUSED` | 409 | 同一 `client_op_id` 携带了不同请求内容 | 否 |
+| `INTERNAL_ERROR` | 500 | 未预期的服务端错误（服务商 409 冲突亦映射到此码，`details.reason="conflict"`） | 视情况 |
 
 > `400` 仅用于无法解析的请求体（malformed body），返回 `VALIDATION_ERROR`。
 
@@ -121,9 +125,11 @@
 | --- | --- | --- |
 | GET | `/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | `{ "status": "ok", "database": "up" }`（数据库不可用返回 503 统一错误体） |
-| GET | `/api/v1/metrics` | RAG 可观测性指标快照（**需登录**；`METRICS_ENABLED=false` 时返回 404，见下） |
+| GET | `/api/v1/metrics` | 可观测性指标快照，含 `ai_calls` 持久化调用统计（`?hours=` 时间窗，1–168 默认 24；**需登录**；`METRICS_ENABLED=false` 时返回 404，见下） |
 
-`GET /api/v1/metrics`（运维端点，**需登录**（任意已登录用户）；`METRICS_ENABLED=false` 时返回 404 隐藏；进程内累计，重启清零）：
+`GET /api/v1/metrics`（运维端点，**需登录**（任意已登录用户）；`METRICS_ENABLED=false` 时返回 404 隐藏；`counters`/`windows` 为进程内累计、重启清零，`ai_calls` 来自数据库、重启保留）：
+
+查询参数：`hours`（可选，1–168，默认 24）——`ai_calls` 的统计时间窗（小时）。
 
 ```json
 {
@@ -135,6 +141,21 @@
     "retrieval_total_ms": { "samples": 30, "p50": 120.5, "p95": 890.1, "max": 1200.0,
                              "mean": 150.2, "median": 120.5, "insufficient": false }
   },
+  "ai_calls": {
+    "window_hours": 24,
+    "since": "2026-11-10T13:40:00+00:00",
+    "total": 128,
+    "by_status": { "success": 120, "failed": 6, "cancelled": 2 },
+    "by_scene": [ { "scene": "chat", "count": 40, "errors": 2, "input_tokens": 12000,
+                    "output_tokens": 8000, "cost_usd": "0.012340", "avg_latency_ms": 1830.0 } ],
+    "by_model": [ { "model": "qwen-plus", "count": 90, "errors": 3, "cost_usd": "0.020000" } ],
+    "tokens": { "input": 30000, "output": 20000 },
+    "cost_usd": "0.032340",
+    "latency_ms": { "avg": 1750.0, "max": 12000 },
+    "errors": { "total": 6, "rate": 0.047 },
+    "running": 0,
+    "interrupted": 0
+  },
   "alerts": { "last_fired_monotonic": {} }
 }
 ```
@@ -143,7 +164,9 @@
 - `windows.*` 来自滑动窗口（约最近 1000 次），样本 < 20 时 `p50/p95` 为 `null` 且 `insufficient=true`；
 - 计数器还包含流式问答埋点：`chat_stream_total`（进入 SSE 流的次数）、`chat_stream_error_total`（首增量前 JSON 错误与流内 `error` 事件合计）；窗口 `chat_stream_first_token_ms` 为流式首 token 延迟（见 5.7a）；
 - 计数器还包含模型调用底座埋点（见 `ai-design.md 3.6`）：`ai_retry_total`（实际发出的重试次数）、`ai_concurrency_rejected_total`（模型并发排队超时拒绝）、`ai_circuit_open_total`（熔断打开拦截次数）、`ai_fallback_total`（降级链切换模型次数，见 3.9）；
-- 计数器还包含调用审计埋点（见 `ai-design.md 3.11`）：`ai_call_total` 与 `ai_call_total/{scene}`（按场景的调用次数）、`ai_call_error_total` 与 `ai_call_error_total/{scene}`（失败次数）、窗口 `ai_call_latency_ms`（场景级耗时，样本 <20 时 p50/p95 为 `null`）；
+- 计数器还包含调用审计埋点（见 `ai-design.md 3.11`）：`ai_call_total` 与 `ai_call_total/{scene}`（按场景的调用次数）、`ai_call_error_total` 与 `ai_call_error_total/{scene}`（**仅 `failed`**，`cancelled` 不计入）、窗口 `ai_call_latency_ms`（场景级耗时，样本 <20 时 p50/p95 为 `null`）；
+- **`ai_calls` 为持久化统计**（见 `ai-design.md 3.11`、`database.md 3.18`）：直接聚合 `ai_call_logs` 近 `hours` 小时的行——`by_status`/`by_scene`/`by_model` 分组计数与 `errors`（仅 `failed`）、`tokens` 与 `cost_usd` 合计（**估算值，非计费依据**，序列化为字符串，单价未知为 `null`）、`latency_ms` 平均/最大、`errors.rate`（failed/total）、`running`（仍处运行态的行数）与 `interrupted`（已被僵尸回收为 `AI_CALL_INTERRUPTED` 的行数）；读取前会懒回收超窗的 `running` 行；
+- 审计明细行不通过本端点暴露（MVP 不对外提供查询接口）；
 - 不含任何查询原文、提示词或用户内容（与日志红线一致）。
 
 ### 1.9 异步任务（Job，202 受理）
@@ -184,6 +207,22 @@
 - `error_code` 失败错误码与 §1.3 同名（`FILE_PARSE_FAILED` / `MODEL_CONFIG_REQUIRED` / `MODEL_TIMEOUT` / `JOB_TIMEOUT` / `INTERNAL_ERROR` …），`error_message` 为可展示文案；任务失败**不改变统一失败策略**——资源仍落 `failed` 并保留记录与文件（`ai-design.md 6.4`）。
 - 超时回收：单实例 + `BackgroundTasks`，进程重启丢失 `pending` 任务；启动与读取时按 `ASYNC_JOB_STALE_MINUTES`（默认 30 分钟）把超窗 `pending`（以 `created_at`）与超时 `running`（以 `started_at`）回收为 `failed` + `JOB_TIMEOUT`。
 - 归属隔离：任务仅本人可见，越权/不存在均返回 `404 RESOURCE_NOT_FOUND`。
+
+### 1.10 本地工作区同步契约（D-33）
+
+本地会议工作区的双向同步是**纯前端能力**（File System Access API），后端不读取用户本地路径；但为支撑「刷新后补齐资料 / 回写不覆盖他人修改 / 重试不重复创建」，需要以下服务端契约。
+
+| 能力 | 接口/字段 | 说明 |
+| --- | --- | --- |
+| 下载原始文件 | `GET /materials/{id}/download`、`GET /audio/{id}/download` | 非信封二进制；`Content-Disposition` 用 `filename*=UTF-8''`；越权/文件丢失 `404` |
+| 创建幂等 | `client_op_id`（可选，`VARCHAR(64)`） | 作用于 `POST /meetings/{id}/materials`、`/records`、`/action-items`、`/issues`、`/audio`；同键重复提交返回已有实体且不重复处理；同键不同内容 `409 IDEMPOTENCY_KEY_REUSED` |
+| 回写乐观锁 | `expected_version`（纪要）、`expected_updated_at`（记录/行动项/问题） | 与当前不符返回 `409 SYNC_CONFLICT`，`details` 带当前 `current_version` / `current_updated_at` |
+| 文件大小 | 材料/音频对象的 `file_size` | 由存储层 `stat` 计算、非数据库列，供同步估算下载量 |
+| 手工新建 | `POST /meetings/{id}/action-items`、`POST /meetings/{id}/issues` | 支撑本地新文件导入；行动项状态固定 `pending_confirmation`（仍须确认/转任务），问题状态固定 `open`，两者 `source` 为空 |
+
+幂等与乐观锁字段均为**可选**，不传时保持既有行为（向后兼容）。
+
+> 本地同步的**删除不自动传播**：一端删除只产生待确认动作，是否删除服务端由用户显式确认；服务端本期不提供软删除/回收站，删除即物理删除。
 
 ## 二、用户认证（M01，A）
 
@@ -360,6 +399,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 { "query": "上线检查项", "top_k": 5, "min_score": 0.3 }
 ```
 
+`top_k`（1–20）与 `min_score`（0–1）均可省略：省略时由服务端 `RAG_TOP_K` / `RAG_MIN_SCORE` 决定（默认 5 / 0.3），显式传入优先。
+
 检索响应：
 
 ```json
@@ -432,7 +473,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| POST | `/api/v1/meetings/{meeting_id}/audio` | 上传 MP3 / WAV / M4A / WEBM，转写为文本 |
+| POST | `/api/v1/meetings/{meeting_id}/audio` | 上传 MP3 / WAV / M4A / WEBM 转写为文本；或上传 DOCX / TXT 文稿直接导入 |
 | GET | `/api/v1/meetings/{meeting_id}/audio` | 音频列表 |
 | GET | `/api/v1/audio/{audio_id}` | 音频详情 |
 | PATCH | `/api/v1/audio/{audio_id}` | 修改转写文本 |
@@ -468,7 +509,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 `status`：`uploaded` / `processing` / `transcribed` / `failed` / `confirmed`。
 
 规则：
-- 上传使用 `multipart/form-data`，字段 `file`；大小上限沿用 `MAX_UPLOAD_MB`。
+- 上传使用 `multipart/form-data`，字段 `file`；大小上限沿用 `MAX_UPLOAD_MB`；支持 MP3 / WAV / M4A / WEBM 音频与 DOCX / TXT 文稿，其余类型返回 `415 FILE_TYPE_NOT_SUPPORTED`。
+- **文稿导入**：DOCX / TXT 视为用户已转写好的文稿，服务端本地解析后直接写入 `transcript` 并按行拆分 `segments`（状态直接 `transcribed`），不调用 ASR、不入任务队列；解析失败返回 `422 FILE_PARSE_FAILED`，内容为空返回 `422 VALIDATION_ERROR`，均不落记录。
 - **异步模式（`ASYNC_JOBS_ENABLED=true`，默认）**：上传（`POST /meetings/{meeting_id}/audio`）与重试（`POST /audio/{audio_id}/retry`）返回 `202` + `data = { "job": … }`（`job_type=audio_transcribe`，见 `api.md 1.9`）；音频对象经详情接口查询（受理时为 `uploaded`）。开关关闭时同步转写并按 `201`/`200` 返回业务对象。
 - 转写同步调用 OpenAI 兼容的 `/audio/transcriptions`，服务端配置 `ASR_API_BASE` / `ASR_API_KEY` / `ASR_MODEL`；未配置返回 `400 MODEL_CONFIG_REQUIRED`。
 - 转写成功后用户可修订文本；只有 `transcribed` 且文本非空才能确认。
@@ -505,6 +547,10 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
   "topic": "进度与风险",
   "meeting_time": "2026-10-02T14:00:00+08:00",
   "status": "scheduled",
+  "has_minutes": true,
+  "material_count": 3,
+  "record_count": 2,
+  "audio_count": 1,
   "created_at": "2026-10-01T09:00:00+08:00",
   "updated_at": "2026-10-01T09:00:00+08:00",
   "archived_at": null
@@ -512,6 +558,7 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ```
 
 - `status` MVP 取值：`scheduled`、`archived`（见 `database.md` 五）。
+- 卡片统计字段 `has_minutes`、`material_count`、`record_count`、`audio_count` **仅在列表接口填充**（批量查询）；详情/创建等接口返回默认值 `false`/`0`。
 
 ### 3.1 列表
 
@@ -575,7 +622,9 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ### 4.2 上传材料 `POST /api/v1/meetings/{meeting_id}/materials`
 
-请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选，来源标识，前端已知取值：手动上传、`本地工作区`（会议详情/管理页手动导入）、`本地文件夹自动导入`（新建会议选文件夹后自动导入）、`AI 生成`（Build 模式文件三处保存之会议资料副本））、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）。
+请求类型：`multipart/form-data`。字段：`file`（必填，单个）、`source`（可选，来源标识，前端已知取值：手动上传、`本地工作区`（会议详情/管理页手动导入）、`本地文件夹自动导入`（新建会议选文件夹后自动导入）、`AI 生成`（Build 模式文件三处保存之会议资料副本））、`material_type`（可选，缺省由后端按扩展名推断；对应响应与数据库的 `type`）、`client_op_id`（可选，幂等键，同键重复提交返回已有材料且不重复解析/索引；同键不同内容返回 `409 IDEMPOTENCY_KEY_REUSED`）。
+
+> 材料对象新增只读字段 `file_size`（原始文件字节数，由存储层 `stat` 计算、非数据库列，文件丢失为 `null`），供本地同步估算下载量。
 
 响应 `201`：材料对象。当前为同步解析/索引，成功时 `processing_status = processed`，文件类型不支持 `415`，过大 `413`。
 
@@ -592,6 +641,15 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 ### 4.4 材料详情 `GET /api/v1/materials/{material_id}`
 
 响应 `200`：材料对象（含 `parse_error` 与 `parse_error_code`，失败时用于前端提示）。
+
+### 4.4a 材料下载 `GET /api/v1/materials/{material_id}/download`（D-33）
+
+返回原始文件（非信封），用于本地工作区双向同步补齐服务端资料。
+
+- 只接受 `material_id`，**不接受任何路径**；归属校验后读取服务端存储内容，越权统一 `404 RESOURCE_NOT_FOUND`。
+- 响应头 `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded>`（中文文件名按 RFC 5987 编码）。
+- 原始文件已丢失时返回 `404 RESOURCE_NOT_FOUND`。
+- 音频对称提供 `GET /api/v1/audio/{audio_id}/download`，语义一致。
 
 ### 4.5 删除材料 `DELETE /api/v1/materials/{material_id}`
 
@@ -714,6 +772,8 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 可选字段 `mode`（string，默认 `plan`）：`plan` 先讨论/规划；`build` 基于资料直接产出可交付文件（结构化 Markdown，随响应 `file` 字段返回，由前端转 DOCX 下载并可保存为会议资料/写入本地文件夹）。
 
+可选字段 `thinking`（boolean，默认 `true`）：是否请求模型思考模式（推理链）。同步 5.7 只接受该字段、不返回推理；流式 5.7a 会下发 `reasoning` 增量与 `meta.trace`（真实执行步骤），见 `ai-design.md 3.12`。
+
 `context_scope`：`current_meeting`（默认）/ `current_and_history` / `knowledge_base`。它只控制检索范围，不授予权限：
 - `current_meeting`：当前会议材料；
 - `current_and_history`：当前用户全部会议材料，但会议记录仍只取当前会议最近记录（有限条数/长度）；
@@ -744,7 +804,9 @@ GET/PUT 响应（密钥一律脱敏，不回显明文）：
 
 ### 5.7a 流式问答（SSE）`POST /api/v1/meetings/{meeting_id}/chat/stream`
 
-与 5.7 同一请求体（`question` / `context_scope` / `include_sources` / `model` / `mode`），**仅支持 `mode=plan`**：传 `mode=build` 返回 `422 VALIDATION_ERROR`（Build 继续走同步 5.7）。检索、归属校验与模型解析在返回流之前同步完成（404/400/402 等错误在此阶段以普通 JSON 错误体返回）。
+与 5.7 同一请求体（`question` / `context_scope` / `include_sources` / `model` / `mode` / `thinking`），**仅支持 `mode=plan`**：传 `mode=build` 返回 `422 VALIDATION_ERROR`（Build 继续走同步 5.7）。检索、归属校验与模型解析在返回流之前同步完成（404/400/402 等错误在此阶段以普通 JSON 错误体返回）。
+
+`thinking`（可选，默认 `true`）：是否请求模型思考模式（推理链）。关闭后服务端不注入思考开关，前端也不展示思考过程；服务商仍可能自行返回推理（如 Reasoner 类模型），此时由前端按开关忽略。
 
 **该端点不使用统一信封**（直接输出 SSE 事件流）。响应头：
 
@@ -758,24 +820,31 @@ X-Accel-Buffering: no
 
 ```
 event: meta
-data: {"insufficient_evidence":false,"sources":[{ ...同 5.7 的 source 字段... }],"model":"gpt-4o-mini"}
+data: {"insufficient_evidence":false,"sources":[{ ...同 5.7 的 source 字段... }],"model":"gpt-4o-mini","trace":{"stages":[{"id":"intent","label":"理解问题","status":"done","detail":"会议问答"},{"id":"retrieve","label":"检索会议资料","status":"done","detail":"命中 3 条相关片段"},{"id":"generate","label":"生成回答","status":"running"}],"native_reasoning":false}}
+
+event: reasoning
+data: {"text":"先看材料里的项目排期……"}
 
 event: delta
 data: {"text":"增量文本"}
 
 event: done
-data: {"answer":"完整文本","usage":{"input":123,"output":45},"latency_ms":2345}
+data: {"answer":"完整文本","reasoning":"完整推理文本","reasoning_ms":2400,"usage":{"input":123,"output":45},"latency_ms":2345}
 
 event: error
 data: {"status":"error","error_code":"MODEL_TIMEOUT","message":"模型响应超时","retryable":true}
 ```
 
-- 顺序保证：**`meta` 先于首个 `delta`**（服务端预取首增量后才开始下发）；`include_sources=false` 时 `sources` 为空数组；`insufficient_evidence`、拒答文案与 5.7 同口径。
+- 顺序保证：**`meta` 先于首个 `reasoning`/`delta`**（服务端预取首个增量后才开始下发）；`include_sources=false` 时 `sources` 为空数组；`insufficient_evidence`、拒答文案与 5.7 同口径。
+- `meta.trace`：**真实执行步骤**（理解 → 检索 → 生成），`stages[].status` 为 `running|done|error`，`detail` 是真实命中数，不伪造模型推理；`native_reasoning` 表示服务端判断该模型是否会返回原生推理（仅提示用）。旧后端可能没有该字段，前端需容错。
+- `reasoning`：模型原生推理（思考过程）增量，只透传服务商返回的 `reasoning_content` / `reasoning` / `reasoning_details`，按 `AI_REASONING_MAX_CHARS`（默认 12000 字符）截断；**不进入 `done.answer`**。
+- `done.reasoning` / `done.reasoning_ms`：完整推理文本与思考耗时，供增量丢失时兜底。
 - `done.usage` 为服务商返回的 token 用量（拿不到时为 `null`）；`latency_ms` 为从受理到下发 `done` 的耗时。
-- 错误两段式：**首增量前**的错误（归属/检索/模型配置/首 token 失败）返回普通 JSON 错误体（HTTP 状态码 + `error_code`，Content-Type 为 `application/json`）；**首增量后**的错误下发 `event: error` 后关闭连接，**不下发 `done`**。
+- 错误两段式：**首增量前**的错误（归属/检索/模型配置/首 token 失败）返回普通 JSON 错误体（HTTP 状态码 + `error_code`，Content-Type 为 `application/json`）；**首个 `reasoning`/`delta` 之后**的错误下发 `event: error` 后关闭连接，**不下发 `done`**。
 - 心跳：无增量时每 `SSE_HEARTBEAT_SECONDS`（默认 15 秒）发送注释行 `: ping`，防止代理断开空闲连接。首增量前处于预取阶段（等待模型首个 token），该时段内没有心跳——这是「首 token 前错误走 JSON」的既定取舍。
 - 客户端断开：服务端停止读取上游并关闭连接，不写半条 assistant 消息（对应前端 `AbortController` 取消）。
 - 兼容开关：`SSE_CHAT_ENABLED=false` 时该端点返回 `404 RESOURCE_NOT_FOUND`，前端回退同步 5.7；开关与心跳见 `docker/.env.example`。
+- 思考模式开关：`AI_REASONING_ENABLED=true` 为服务端全局回退开关，请求级 `thinking=false` 优先生效；模型能力映射与截断见 `ai-design.md 3.12`。
 - 可观测：`GET /api/v1/metrics` 计数器 `chat_stream_total`（成功进入流的次数）、`chat_stream_error_total`（首增量前 JSON 错误 + 流内 error 事件）与窗口 `chat_stream_first_token_ms`（首 token 延迟，见 1.8）。
 - 限流：与 5.7 同属 AI 组（按用户每分钟 `RATE_LIMIT_AI_PER_MINUTE`）。
 
@@ -922,7 +991,7 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 
 ### 5.16a 会议模板（M02 扩展，B）
 
-用于会前准备稿与纪要生成的输出模板。内置模板由项目代码提供（不入库，覆盖会前摘要/议程/发言稿与会后纪要/记录及通用简报，含 `category` 分类），自定义模板按用户隔离存储，支持文件上传与纯文本创建。
+用于会前准备稿与纪要生成的输出模板。内置模板由项目代码提供（不入库，共 10 个：会前为会前摘要/会议议程/发言稿，会后为会议纪要/会议记录/项目周会/需求评审会/复盘会议，通用为会议简报/项目启动会，含 `category` 分类），自定义模板按用户隔离存储，支持文件上传与纯文本创建。
 
 模板对象：
 
@@ -958,6 +1027,168 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 - 权限：内置模板人人可读、不可删除；自定义模板仅本人可见/可删，越权统一 `404 RESOURCE_NOT_FOUND`。
 - 生成联动：`prepare`（5.2）与 `minutes/generate`（5.10）接受可选 `template_id`，模板正文注入提示词 user 消息段（不进 system）；自定义模板不可用或已删除时按原逻辑返回 `404`。
 - 默认模板：记忆中心 `preferred_minutes_template`（5.15）支持内置枚举值或模板清单中的模板 id；非枚举值时生成自动注入该模板正文并记 `template=custom`。
+
+
+### 5.17 Agent 框架（后端意图路由 + 服务端会话 + 确认门）
+
+轻量工作流框架（不引入 LangGraph），实现与设计见 `docs/agent-framework.md`。
+`AGENT_ENABLED=false` 时本节全部端点返回 `404 RESOURCE_NOT_FOUND`，前端回退既有链路。
+
+**会话对象**：
+
+```json
+{
+  "session_id": "ags_xxx",
+  "user_id": "usr_xxx",
+  "meeting_id": "mtg_xxx",
+  "scene": "minutes",
+  "title": null,
+  "status": "active",
+  "meta": {"migrated": false},
+  "created_at": "2026-11-11T10:00:00+08:00",
+  "updated_at": "2026-11-11T10:00:00+08:00",
+  "last_message_at": "2026-11-11T10:01:00+08:00"
+}
+```
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| POST | `/api/v1/agent/sessions/ensure` | 按 `user + scene + meeting` 查找或创建默认会话（幂等） |
+| POST | `/api/v1/agent/sessions` | 新建会话（不查找） |
+| GET | `/api/v1/agent/sessions` | 会话列表（`scene` / `meeting_id` 筛选，分页） |
+| GET | `/api/v1/agent/sessions/{session_id}` | 会话详情 |
+| PATCH | `/api/v1/agent/sessions/{session_id}` | 修改标题 / 归档 |
+| DELETE | `/api/v1/agent/sessions/{session_id}` | 删除会话（级联消息/运行/确认门） |
+| GET | `/api/v1/agent/sessions/{session_id}/messages` | 消息列表（分页，按时间升序） |
+| GET | `/api/v1/agent/sessions/{session_id}/pending-actions` | 待确认动作列表（`status` 默认 `pending`） |
+| POST | `/api/v1/agent/turns` | 单轮（同步，返回完整结果） |
+| POST | `/api/v1/agent/turns/stream` | 单轮（SSE） |
+| POST | `/api/v1/agent/pending-actions/{action_id}/approve` | 批准并继续工作流 |
+| POST | `/api/v1/agent/pending-actions/{action_id}/reject` | 拒绝并取消工作流 |
+| GET | `/api/v1/agent/runs/{run_id}` | 运行详情 |
+| GET | `/api/v1/agent/runs/{run_id}/steps` | 运行步骤（尝试、错误码、耗时） |
+| POST | `/api/v1/agent/runs/{run_id}/cancel` | 标记取消 |
+
+**单轮请求**：
+
+```json
+{
+  "session_id": "ags_xxx",
+  "meeting_id": "mtg_xxx",
+  "scene": "minutes",
+  "message": "请生成会议纪要",
+  "intent": null,
+  "options": {
+    "model": null,
+    "mode": "plan",
+    "quick_task": null,
+    "template_id": null,
+    "context_scope": "current_meeting",
+    "include_sources": true,
+    "include_history": false,
+    "thinking": true
+  }
+}
+```
+
+- `session_id` 省略时按 `user + scene + meeting` 复用默认会话。
+- `intent` 非空时跳过分类（快捷卡显式意图），否则后端按规则/LLM/页面先验路由；
+  可用值见 `AgentIntent`，其中 `brief` 为**会前速览**（只读本场资料，`docs/ai-design.md 8.1a`）。
+- `options` 透传模型、模板、模式与检索范围，由具体意图消费。
+- `options.quick_task`（`polish`/`condense`/`rewrite`/`translate`）：简单文本任务，
+  显式优先于意图路由；单次 LLM、不检索、不落库，`message` 为空返回
+  `422 VALIDATION_ERROR`（`docs/ai-design.md 8.3a`）。
+- `options.include_history`（默认 `true`）有两处消费：①会前准备/速览是否加入有限历史材料
+  （预处理页固定 `false`）；②问答类意图是否注入**本会话最近 6 条 / ≤3000 字符**的多轮历史
+  （服务端组装，排除当前这一轮与确认门提示，见 `docs/ai-design.md 9.2`）。
+- `options.thinking`（boolean，默认 `true`）：问答类意图是否请求模型思考模式（推理链）；
+  关闭后不下发 `reasoning` 事件，服务端仍可能收到模型自行返回的推理并按开关忽略（`docs/ai-design.md 3.12`）。
+
+**单轮响应**：
+
+```json
+{
+  "session_id": "ags_xxx",
+  "intent": {
+    "intent": "minutes_generate",
+    "confidence": 0.9,
+    "slots": {},
+    "needs_clarification": false,
+    "clarification_question": null,
+    "source": "rule"
+  },
+  "user_message": {"message_id": "agm_xxx", "role": "user", "content": "请生成会议纪要", "...": "..."},
+  "assistant_message": {"message_id": "agm_yyy", "role": "assistant", "content": "## 会议纪要...", "...": "..."},
+  "pending_action": null,
+  "run": null,
+  "accepted": false
+}
+```
+
+- 等待确认时 `pending_action` 非空、`run.status=waiting`，`assistant_message` 为提示语，
+  其 `meta.pending_action_id` 与 `pending_action.action_id` 对应（前端据此把确认卡挂回原消息，
+  刷新后不会补出第二张卡）。
+- `user_message` 在批准/拒绝等无新用户消息的场景可为 `null`。
+- **失败不落 `assistant_message`**：`run.error_code` / `run.error_message` 是唯一事实来源，
+  同步路径返回 `502`、SSE 发 `error` 事件，一次失败只提示一次。
+
+**SSE 事件**（`POST /agent/turns/stream`）：
+
+| 事件 | 数据 | 说明 |
+| --- | --- | --- |
+| `intent` | `AgentIntentDecision` | 首帧，前端可据此展示路由结果 |
+| `meta` | `{sources, insufficient_evidence, trace}` | 来源先于正文渲染；`trace` 为真实执行步骤（见 5.7a） |
+| `reasoning` | `{text}` | 模型原生推理增量（思考过程，仅问答类且 `options.thinking=true`） |
+| `delta` | `{text}` | 正文增量（仅问答类） |
+| `pending_action` | `AgentPendingAction` | 需要用户确认 |
+| `run` | `AgentRun` | 工作流运行信息 |
+| `done` | `{session_id, intent, message_id, reply}` | 终态；`reply.result` 携带业务结果；问答类带 `reply.reasoning` / `reply.reasoning_ms` / `reply.trace` |
+| `error` | `ApiError` | 流内错误，前端按统一错误体处理 |
+
+- 首帧前的错误（归属/模型配置）仍是普通 JSON 错误体；
+  事件流开始后的错误（含非对话意图执行期的模型限流/校验失败）以 `error` 事件返回，
+  连接不再被截断，前端按统一错误体展示原因。
+- 思考过程（推理链）：`options.thinking`（默认 `true`，受服务端 `AI_REASONING_ENABLED` 全局回退）控制是否请求思考模式；
+  问答类意图在 `meta.trace` 之后按序下发 `reasoning` 增量，`done.reply.reasoning` 为完整推理文本。
+  原生推理与执行步骤随 assistant 消息的 `meta`（`reasoning` / `reasoning_ms` / `trace`）持久化，历史恢复后可折叠回看。
+  非问答类意图（纪要/行动项/准备稿等同步任务）不下发 `reasoning`，前端按任务卡渲染。
+- `reply.result` 约定：`prepare` 返回准备稿对象；`minutes_generate` 返回
+  `{minutes_id, version, status, template}`；`action_items_extract` 返回行动项数组。
+- `reply.kind` 约定：`brief` 时 `structured` 为 `MaterialBrief`
+  （`headline/key_points/decisions_needed/risks/next_step`，总字数 ≤300），
+  前端用速览卡渲染；`summary`/`polish` 同理由结构化卡片渲染。
+- 会后产出（2026-11 改版）：`minutes_generate` 返回**一句话介绍** + `file`
+  （`{filename, content}` 纪要 Markdown）+ `structured`
+  （`{minutes_id, version, status, template, title}`）+ `kind="minutes"`，
+  正文不再回填整篇纪要；`action_items_extract` 返回一句话介绍 + `structured`
+  （行动项数组）+ `kind="action_items"`，清单不再写进正文。
+  前端渲染为「介绍 + 文件卡/清单卡 + 下一步建议」，点击卡片在右侧抽屉查看与编辑；
+  `reply.note` 仅保留给错误与停止状态，普通回复不再展示提示行。
+
+**确认门**：
+
+```json
+{
+  "action_id": "aga_xxx",
+  "session_id": "ags_xxx",
+  "run_id": "agr_xxx",
+  "action_type": "web_search",
+  "question": "会议资料中没有找到相关证据，是否联网检索后再回答？",
+  "payload": {"question": "...", "options": {"model": null, "thinking": true}},
+  "status": "pending",
+  "expires_at": "2026-11-11T11:00:00+08:00",
+  "created_at": "2026-11-11T10:00:00+08:00",
+  "decided_at": null
+}
+```
+
+- 批准/拒绝载荷：`{"note": "可选补充要求"}`。
+- 重复处理、已过期返回 `409 BUSINESS_RULE_VIOLATION`；置位是**单条条件 UPDATE**
+  （并发重复处理只有一个生效），数据库另有部分唯一索引
+  `(run_id) WHERE status='pending'` 防止同一 run 登记出第二张确认卡。
+- 批准沿用 `payload.options`（发起时的模型/思考开关/模板）；已有 `run_id` 且
+  `run.status=waiting` 时原地恢复该 run，不新建。
+- `WEB_SEARCH_ENABLED=false` 时批准联网会降级为拒答，不返回 5xx。
 
 
 ## 六、行动项与个人任务（M07、M08，A）
@@ -1031,13 +1262,17 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
   "action_id": "act_xxx",
   "title": "完成接口联调",
   "status": "todo",
+  "priority": "medium",
   "due_date": "2026-10-05",
+  "meeting_title": "项目周会",
   "created_at": "2026-10-01T10:10:00+08:00",
   "updated_at": "2026-10-01T10:10:00+08:00"
 }
 ```
 
 `status`：`todo` / `in_progress` / `completed` / `cancelled`。允许流转：`todo ↔ in_progress`；`todo`、`in_progress` 可直接转入 `completed`；`completed` 可撤回 `todo`（归档撤回）；未完成任务可转入 `cancelled`，`cancelled` 为终态不可回退。
+
+`priority`：`high` / `medium` / `low`，默认 `medium`；`meeting_title` 仅列表接口附带（关联会议标题，无关联时为 `null`）。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -1047,9 +1282,9 @@ AI 提取默认 `pending_confirmation`，不得自动转任务。
 | PATCH | `/api/v1/tasks/{task_id}` | 修改任务 |
 | POST | `/api/v1/tasks/{task_id}/cancel` | 取消任务 |
 
-- 新建：请求体 `{ "title": 必填 ≤255, "due_date": 可选日期 }`；默认 `status = todo`，不关联会议（`meeting_id` / `action_id` 为 `null`）。
+- 新建：请求体 `{ "title": 必填 ≤255, "due_date": 可选日期, "priority": 可选 high/medium/low（默认 medium） }`；默认 `status = todo`，不关联会议（`meeting_id` / `action_id` 为 `null`）。
 - 列表查询参数：`page`、`page_size`、`status`（MVP）；`keyword`、`due_before`、`due_after` 为后续增强。
-- 编辑可更新 `title`、`due_date`、`status`（后端校验状态流转，非法流转返回 `409 BUSINESS_RULE_VIOLATION`）。
+- 编辑可更新 `title`、`due_date`、`status`、`priority`（后端校验状态流转，非法流转返回 `409 BUSINESS_RULE_VIOLATION`）。
 - 取消：幂等成功，返回 `status = cancelled`；已完成任务不可取消（`409`）。
 
 ## 七、未解决问题（M09，A）

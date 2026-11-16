@@ -14,6 +14,18 @@ Thumbs.db
 docker/.env
 !docker/.env.example
 
+# Local database dumps / embedded DB files (never commit)
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+
+# Secrets / key material (never commit)
+*.pem
+*.key
+*.p12
+.pgpass
+
 # Node
 node_modules/
 frontend/dist/
