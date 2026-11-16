@@ -103,6 +103,7 @@ def _ensure_deletable(db: Session, meeting_id: str) -> None:
             "BUSINESS_RULE_VIOLATION",
             "会议存在已转换的行动项或个人任务，无法删除",
             http_status=409,
+            details={"reason": "meeting_has_converted_action_items"},
         )
 
 

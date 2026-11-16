@@ -74,5 +74,6 @@ def delete_record(db: Session, record_id: str, user_id: str) -> None:
             "BUSINESS_RULE_VIOLATION",
             "记录被行动项或问题引用，无法删除",
             http_status=409,
+            details={"reason": "record_referenced"},
         )
     record_repository.delete(db, record)

@@ -184,6 +184,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import TemplateFormDialog from '@/components/settings/TemplateFormDialog.vue'
 import { useToast } from '@/composables/useToast'
 import { ROUTE_NAMES } from '@/constants/routeNames'
+import { resolveErrorMessage } from '@/utils/errors'
 import type { MeetingTemplate } from '@/types/template'
 
 const FILTERS = [
@@ -341,7 +342,7 @@ async function duplicateTemplate(template: MeetingTemplate): Promise<void> {
     toast.success('已另存为我的模板')
     await load()
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '另存为失败，请稍后重试')
+    toast.error(resolveErrorMessage(caught, '另存为失败，请稍后重试'))
   } finally {
     duplicating.value = false
   }
@@ -360,7 +361,7 @@ async function setDefault(template: MeetingTemplate): Promise<void> {
     defaultTemplateId.value = template.template_id
     toast.success('已设为默认模板')
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '设置默认模板失败')
+    toast.error(resolveErrorMessage(caught, '设置默认模板失败'))
   } finally {
     settingDefault.value = false
   }
@@ -383,7 +384,7 @@ async function confirmDelete(): Promise<void> {
     deleteTarget.value = null
     await load()
   } catch (caught) {
-    toast.error(caught instanceof Error ? caught.message : '删除失败，请稍后重试')
+    toast.error(resolveErrorMessage(caught, '删除失败，请稍后重试'))
   }
 }
 

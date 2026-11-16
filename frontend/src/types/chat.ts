@@ -43,6 +43,20 @@ export interface ChatResult {
   file?: ChatFile | null
 }
 
+/** SSE 流式问答首帧 meta（api.md 5.7a）：先于首个 delta 下发 */
+export interface ChatStreamMeta {
+  insufficient_evidence: boolean
+  sources: ChatSource[]
+  model: string | null
+}
+
+/** SSE 流式问答 done 帧：完整回答与用量 */
+export interface ChatStreamDone {
+  answer: string
+  usage: { input: number; output: number } | null
+  latency_ms: number
+}
+
 export interface OrganizePayload {
   /** 输入源三级回退：text > audio_id > record_ids（空 = 最近 20 条 ≤8000 字记录） */
   record_ids?: string[]

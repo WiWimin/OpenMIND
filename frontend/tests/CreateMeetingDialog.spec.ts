@@ -61,7 +61,7 @@ describe('CreateMeetingDialog', () => {
     vi.mocked(meetingsApi.createMeeting).mockResolvedValue(created)
   })
 
-  it('creates a folder named after the meeting when no folder is chosen', async () => {
+  it('puts the meeting in 未分类 when no folder is chosen', async () => {
     const wrapper = mount(CreateMeetingDialog)
     await openAndSubmit(wrapper, '  项目周会  ')
 
@@ -71,9 +71,9 @@ describe('CreateMeetingDialog', () => {
       meeting_time: undefined,
     })
 
-    const categories = readCategories()
-    expect(categories.map((item) => item.name)).toContain('项目周会')
-    expect(readMap().mtg_new).toBe(categories.find((item) => item.name === '项目周会')?.id)
+    // 分类是可选项：未选分类不创建分类，创建的始终是会议
+    expect(readCategories()).toEqual([])
+    expect(readMap().mtg_new).toBeUndefined()
 
     // 创建成功 → 进入三个功能卡片页
     expect(pushMock).toHaveBeenCalledWith({
@@ -82,7 +82,7 @@ describe('CreateMeetingDialog', () => {
     })
   })
 
-  it('reuses an existing folder with the same name instead of duplicating it', async () => {
+  it('does not touch existing categories when no folder is chosen', async () => {
     localStorage.setItem(
       CATEGORIES_KEY,
       JSON.stringify([{ id: 'cat_existing', name: '项目周会', createdAt: '2026-11-01' }]),
@@ -91,8 +91,9 @@ describe('CreateMeetingDialog', () => {
     const wrapper = mount(CreateMeetingDialog)
     await openAndSubmit(wrapper, '项目周会')
 
+    // 同名分类也不复用、不新建：未选分类即归入未分类
     expect(readCategories()).toHaveLength(1)
-    expect(readMap().mtg_new).toBe('cat_existing')
+    expect(readMap().mtg_new).toBeUndefined()
   })
 
   it('assigns the chosen folder and does not create a new one', async () => {

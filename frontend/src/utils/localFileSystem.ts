@@ -22,6 +22,8 @@ export interface LocalDirHandle {
     name: string,
     options?: { create?: boolean },
   ) => Promise<LocalFileHandle>
+  /** 删除本级目录/文件（File System Access API 原生支持，目录需 recursive） */
+  removeEntry: (name: string, options?: { recursive?: boolean }) => Promise<void>
   queryPermission: (descriptor: { mode: 'readwrite' }) => Promise<PermissionState>
   requestPermission: (descriptor: { mode: 'readwrite' }) => Promise<PermissionState>
 }
@@ -120,6 +122,13 @@ export async function loadMeetingRoot(meetingId: string): Promise<string[] | nul
 export async function storeMeetingRoot(meetingId: string, segments: string[]): Promise<void> {
   await withStore('readwrite', (store) =>
     store.put(segments, MEETING_ROOT_PREFIX + meetingId) as IDBRequest<IDBValidKey>,
+  )
+}
+
+/** 清除会议的本地存储根（会议删除后不再需要路径映射） */
+export async function clearMeetingRoot(meetingId: string): Promise<void> {
+  await withStore('readwrite', (store) =>
+    store.delete(MEETING_ROOT_PREFIX + meetingId) as IDBRequest<undefined>,
   )
 }
 
@@ -248,6 +257,49 @@ export async function writeBlobToPath(
   const writable = await fileHandle.createWritable()
   await writable.write(content)
   await writable.close()
+}
+
+/**
+ * 删除路径对应的目录（含其下所有内容）。
+ * 路径不存在时静默返回；其余失败抛错由调用方降级。
+ */
+export async function removeDirPath(root: LocalDirHandle, segments: string[]): Promise<void> {
+  if (segments.length === 0) {
+    throw new Error('不允许删除根目录')
+  }
+  let parent = root
+  for (const segment of segments.slice(0, -1)) {
+    parent = await parent.getDirectoryHandle(segment)
+  }
+  await parent.removeEntry(segments[segments.length - 1] as string, { recursive: true })
+}
+
+/**
+ * 把目录从旧路径搬到新路径（FSA 无原生 rename，用「复制 + 删除」模拟）。
+ * - 新旧路径相同直接返回
+ * - 任一文件复制失败则不删除旧目录（保留数据），抛错由调用方降级
+ * - 移动只处理第一层文件（本项目会议文件夹为扁平结构）
+ */
+export async function moveDirPath(
+  root: LocalDirHandle,
+  oldSegments: string[],
+  newSegments: string[],
+): Promise<void> {
+  if (oldSegments.length === 0 || newSegments.length === 0) {
+    throw new Error('不允许操作根目录')
+  }
+  const oldKey = oldSegments.join('/')
+  const newKey = newSegments.join('/')
+  if (oldKey === newKey) {
+    return
+  }
+  const { files } = await readFilesAt(root, oldSegments, 1000)
+  // 先确保目标目录存在，再逐个复制文件
+  await ensureDirPath(root, newSegments)
+  for (const entry of files) {
+    await writeBlobToPath(root, newSegments, entry.name, entry.file)
+  }
+  await removeDirPath(root, oldSegments)
 }
 
 /** Windows / macOS 非法的文件名字符 */

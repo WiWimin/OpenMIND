@@ -180,6 +180,51 @@ def test_parse_failure_is_reported(
     data = response.json()["data"]
     assert data["processing_status"] == "failed"
     assert data["parse_error"]
+    assert data["parse_error_code"] == "FILE_PARSE_FAILED"
+    # 文件保留（storage_key: knowledge/<id>.pdf），供重试读取
+    assert (media_root / "knowledge" / f"{data['document_id']}.pdf").exists()
+
+
+def test_retry_failed_document_succeeds(
+    client: TestClient, media_root, fake_embeddings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = _auth(client)
+    failed = _upload(
+        client, headers, file_name="bad.pdf", content=b"not a pdf"
+    ).json()["data"]
+    assert failed["processing_status"] == "failed"
+
+    class _Parsed:
+        content = "恢复后的正文"
+
+    monkeypatch.setattr(knowledge_service, "parse_bytes", lambda *a, **k: _Parsed())
+
+    retry = client.post(
+        f"{BASE}/documents/{failed['document_id']}/retry", headers=headers
+    )
+    assert retry.status_code == 200, retry.text
+    data = retry.json()["data"]
+    assert data["processing_status"] == "processed"
+    assert data["parse_error"] is None
+    assert data["parse_error_code"] is None
+
+
+def test_retry_document_rejects_non_failed(
+    client: TestClient, media_root, fake_embeddings: None
+) -> None:
+    headers = _auth(client)
+    ok = _upload(client, headers, file_name="one.txt", content=b"one").json()["data"]
+    assert ok["processing_status"] == "processed"
+
+    retry = client.post(f"{BASE}/documents/{ok['document_id']}/retry", headers=headers)
+    assert retry.status_code == 409
+    body = retry.json()
+    assert body["error_code"] == "BUSINESS_RULE_VIOLATION"
+    assert body["details"]["reason"] == "document_not_failed"
+
+
+def test_retry_document_requires_auth(client: TestClient) -> None:
+    assert client.post(f"{BASE}/documents/doc_x/retry").status_code == 401
 
 
 def test_empty_search_query_rejected(

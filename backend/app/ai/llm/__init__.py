@@ -1,3 +1,3 @@
-from app.ai.llm.client import LLMClient, LLMResult
+from app.ai.llm.client import LLMClient, LLMDelta, LLMResult
 
-__all__ = ["LLMClient", "LLMResult"]
+__all__ = ["LLMDelta", "LLMClient", "LLMResult"]

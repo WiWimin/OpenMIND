@@ -60,20 +60,41 @@ class LLMClient:
     ) -> LLMResult: ...
 
     def chat_json(self, messages, *, schema: type[BaseModel], **kw) -> BaseModel: ...
+
+    async def astream_chat(
+        self,
+        messages: list[dict],
+        *,
+        model: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+        timeout_s: float = 60,
+        on_usage: Callable[[dict], None] | None = None,  # 终态 usage 回调
+    ) -> AsyncIterator[str]: ...   # 逐段 yield choices[0].delta.content
 ```
 
 - 配置来源：`ModelConfig`（`services/model_config_service.py`），按用户解析；优先级为**用户配置 > 服务端全局**（`settings.llm_*`）。用户未配置时回退全局，全局默认为空则不兜底。
-- MVP 使用**同步**调用；调用发生在请求线程内，超时转化为统一错误（见 §十）。
+- MVP 使用**同步**调用；调用发生在请求线程内（`async def` 端点经 `run_in_threadpool` 隔离，见 3.2a），超时转化为统一错误（见 §十）。
+- **连接池（`app/ai/connection.py`）**：同步 `httpx.Client` 按 `api_base` 进程级共享（keep-alive 复用，`AUTHORIZATION` 逐请求注入不进池键）；异步 `httpx.AsyncClient` 按「事件循环 + `api_base`」共享，跨 loop 不复用。注入 `transport`（测试 `MockTransport`）或 `AI_CONNECTION_POOL_ENABLED=false` 时不进池。进程退出由 `main.py` lifespan 调 `aclose_ai_clients()` 关闭。
+- 流式（`astream_chat`，ADR-1，2026-11 B2）：仅会中问答的 SSE 端点使用（`api.md 5.7a`）；解析 OpenAI 兼容 `data:` 行与 `[DONE]`，非 200 先读响应体再按 §十映射。
 
-### 3.2 超时与重试
+### 3.2 超时与重试（分级重试，2026-11 B1）
 
 | 项 | 约定 |
 | --- | --- |
 | 单次超时 | 默认 60s（生成类可上调至 120s） |
 | 重试次数 | 最多 2 次重试（共 3 次尝试） |
-| 退避 | 指数：1s、3s |
-| 可重试条件 | 超时、`429`、`5xx`、网络错误 |
-| 不可重试 | `401/403`（密钥/权限）、`400`（请求非法） |
+| 退避 | 指数 + 抖动：第 1 次 1s、第 2 次 3s，之后封顶 3s；每次乘 0.5–1.5 倍随机抖动 |
+| `Retry-After` | 解析秒数或 HTTP-date（采纳上限 30s），实际等待取 `max(退避, Retry-After)` |
+| 全局 deadline | LLM 调用含重试总预算 `AI_CALL_DEADLINE_S`（默认 90s）：单次超时取 `min(单次超时, 剩余预算)`，预算不足直接返回最后一次错误，防止重试穿透网关超时；`<=0` 关闭。Embedding/ASR 不设 deadline |
+| 可重试 | `连接失败`（请求未送达）、`429`、`5xx` |
+| 不可重试 | `读超时/传输中断`（**非幂等调用**，可能已被服务商计费）、`401/403`（密钥/权限）、`400`（请求非法）、`402`（额度） |
+
+**幂等分级（关键变更）**：`chat/completions` 与 `/audio/transcriptions` 标记为**非幂等**——读超时与传输中断意味着「请求可能已被服务商处理并计费」，**一律不重传**（错误仍标记 `retryable=true`，由调用方决定是否手动重试）；`EmbeddingClient` 为幂等，保留完整重试。实现：`RetryPolicy`（`ai/retry.py`）+ `ModelHTTPClient._request_with_retry`，类别为 `connect` / `timeout` / `transport` / `http_429` / `http_5xx`。
+
+**3.2a 事件循环边界**：`async def` 端点内的同步重活（`prepare_chat` 检索准备、材料/知识库/模板解析与嵌入、音频转写）统一经 `starlette.concurrency.run_in_threadpool` 执行，避免阻塞事件循环与同进程的 SSE 下发。
+
+流式例外（`astream_chat`）：**首个增量前**允许 1 次退避重试，但同样分级——`429/5xx/连接失败` 可重试，`读超时/传输中断` 不重传；**首增量后一律不重试**（已下发部分答案，重试会造成重复内容），错误直接上抛由 SSE 层下发 `event: error`；无增量且无异常视为 `MODEL_OUTPUT_INVALID`。
 
 ### 3.3 结构化输出
 
@@ -94,7 +115,7 @@ class LLMClient:
 
 ### 3.4 记录与可观测
 
-- 每次调用记录：模型名、`usage`、`latency_ms`、成功/失败（日志或后续 `ai_call_logs`）。
+- 每次调用记录：模型名、`usage`、`latency_ms`、成功/失败——经 `ai_audit_service`（3.11）落 `ai_call_logs` 表，另有 `ai_call_*` 进程内指标（3.6/3.11）与结构化日志。
 
 ### 3.5 模型配置来源（LLM 用户自带 BYOK，Embedding 服务端统一）
 
@@ -109,6 +130,69 @@ class LLMClient:
 - 调用方必须显式传入用途：会前准备、会议问答/整理、纪要生成、行动项/问题提取分别使用对应用途；Embedding 使用服务端统一配置。
 - 模型额度不足返回 `MODEL_QUOTA_EXCEEDED`（402）；密钥无效返回 `MODEL_CONFIG_INVALID`（400）。
 - Embedding 维度全局固定 1024（`document_chunks.embedding vector(1024)`），由服务端 `EMBEDDING_DIM` 决定，更换模型或维度需重建 pgvector 列。
+
+### 3.6 并发闸门与熔断（`ai/resilience.py`，2026-11 B2）
+
+目标：单一 provider 故障时快速失败、限制在途请求，避免故障放大打穿本服务。单实例进程内状态（与 `core/rate_limit.py` 同口径：多 worker/多实例不共享）。
+
+| 机制 | 维度 | 行为 |
+| --- | --- | --- |
+| 并发闸门 `ProviderGate` | `api_base` | 进程内信号量限制在途请求数（`AI_MAX_CONCURRENCY_PER_PROVIDER`，默认 8）；同步 `threading.Semaphore` 与异步轮询共用同一计数。排队超过 `AI_CONCURRENCY_TIMEOUT_S`（默认 5s）→ `RATE_LIMITED`（429，`details.scope="concurrency"`） |
+| 熔断器 `CircuitBreaker` | `api_base｜model` | 近 `AI_CIRCUIT_WINDOW_SECONDS`（默认 60s）内失败达 `AI_CIRCUIT_FAILURE_THRESHOLD`（默认 5）→ open：直接抛 `MODEL_UPSTREAM_UNAVAILABLE`（503，可重试，`details.circuit="open"`），不再发包；`AI_CIRCUIT_OPEN_SECONDS`（默认 30s）后放行 1 个探针（half-open），探针成功闭合并清零、失败立即重开 |
+
+- **计入失败**：5xx、读超时、传输中断（provider 侧不可用）。
+- **不计入失败**：429/4xx（限流与请求侧问题，provider 是健康）、消费者提前关闭流式（`GeneratorExit`，如前端断开）。
+- 接入点：同步路径 `ModelHTTPClient._request_with_retry`（熔断检查先于排队，打开时不占名额直接失败）；流式路径 `LLMClient._iter_stream`（发包前 `breaker.check` + `gate.aacquire`，正常结束记成功，`finally` 归还名额）。
+- 开关：`AI_RESILIENCE_ENABLED=false` 全部直通（回滚用）。
+- 指标（`/api/v1/metrics` 的 `ai_*` 计数器）：`ai_retry_total`（实际发出的重试次数）、`ai_concurrency_rejected_total`（排队超时拒绝）、`ai_circuit_open_total`（熔断打开拦截）。
+
+### 3.7 错误细分（`ai/errors.py`，2026-11 B3）
+
+`http_client.http_error` 委托 `errors.classify_error(response, service_label=...)`。在状态码映射之外解析服务商错误体（OpenAI 兼容 `error.code/message` 或顶层 `code`，扫描上限 8KB），把两类语义从笼统 400 中分离：
+
+| 判定 | 结果 |
+| --- | --- |
+| 状态 413 或 body 命中上下文超限提示（`context_length` / `too many tokens` / 上下文长度等） | `MODEL_INPUT_TOO_LONG`（413，`details.reason="context_length"`，不可重试） |
+| body 命中模型不存在提示（`model_not_found` / 模型不存在等） | `MODEL_CONFIG_INVALID`（400，`details.reason="model_not_found"`） |
+| 其余 | 沿用 3.2 映射（429/5xx/401/402/额度提示/通用 400） |
+
+判定顺序：429 → 5xx → 401/403 → 输入超限 → 额度 → 模型名 → 通用 400（输入超限优先于额度，语义更具体）。日志与错误 details 均不透出服务商原始报文。
+
+### 3.8 输入 token 预检（`ai/tokens.py`，2026-11 B3）
+
+`LLMClient.chat` / `astream_chat` 发包前调用 `ensure_input_within_limit(messages, scene_limit=...)`，超限直接抛 `MODEL_INPUT_TOO_LONG`（413，`details` 带 `estimated_tokens/limit`），不发 HTTP、不进重试与熔断。
+
+- 估算为启发式下界：CJK 字符按 1 字 ≈ 1 token，其余按 4 字符 ≈ 1 token，每条消息加 4 token 结构开销；**宁可漏判**（由服务商 413 兜底，见 3.7），不误杀正常输入。
+- 上限：场景值（`scenes.SceneSpec.input_token_limit`）优先，否则全局 `AI_INPUT_TOKEN_LIMIT`（默认 100000，`<=0` 关闭预检）。
+- 已按场景收紧：`minutes` 60000（长转写）、`rag_judge` 4000（问题 + 3 段摘录）。
+
+### 3.9 模型降级链（`ai/llm/chain.py`，2026-11 B3）
+
+`LLM_FALLBACK_MODELS`（逗号分隔，**同 provider**——与主模型共用 `api_base/api_key`，空 = 关闭）配置备用模型。`chat` / `astream_chat` 构造候选链（主模型在首、去重、总长 ≤4），主模型失败且错误属于「换模型可能解决」时切换下一个候选（埋点 `ai_fallback_total` + warning 日志），全部失败抛最后一次错误。
+
+- **触发降级**：`MODEL_QUOTA_EXCEEDED`、`MODEL_INPUT_TOO_LONG`、`MODEL_UPSTREAM_UNAVAILABLE`（熔断键含 model，备用模型独立）、`MODEL_TIMEOUT`——均为模型维度问题。
+- **不降级**：`MODEL_CONFIG_INVALID`（密钥问题对所有模型一致）、`RATE_LIMITED`（按 key 限流）、`INTERNAL_ERROR`（网络/网关与模型无关）、`MODEL_OUTPUT_INVALID`、其他 4xx。
+- 流式仅在**首增量前**降级（与 3.2 重试规则一致，首增量后不切换以免内容重复）；请求级 `model` 覆盖值作为链首同样参与；`probe()` 不走降级——配置校验必须验证用户所选模型。
+- 最坏耗时 ≈ 链长 × 单模型 deadline，链长上限 4 控制上界。
+
+### 3.10 场景参数注册表（`ai/scenes.py`，2026-11 B3）
+
+场景 → 用途 + 生成参数 + 输入上限的唯一来源，替代散落魔数：
+
+- `SceneSpec(name, purpose, temperature, max_tokens, timeout_s, input_token_limit)`；`get_scene()` 未登记/空名回退默认场景（0.2/60s/无上限）。
+- `purpose` 供 `resolve_model_config(purpose=scene_purpose(...))` 做 BYOK 用途路由；`chat(..., scene=...)` 用 `temperature/max_tokens/timeout_s` 填充调用方未显式覆盖的参数（显式传参优先）。
+- 已登记场景与 `run_structured(scene=...)` 同名：`prepare`、`chat`、`chat_build`、`organize*`、`minutes`（timeout 120s）、`extract_*`、`template_draft`（温度 0.4）、`rag_judge`（温度 0 / 16 token / 上限 4000）。
+
+### 3.11 调用审计与成本估算（`ai/audit.py` + `ai_audit_service` + `ai/pricing.py`，2026-11 B4）
+
+每次 LLM 调用落一行 `ai_call_logs`（`database.md 3.18`，主键 `ail_`），**只存数值与枚举标签，不存提示词/原文/模型输出**：
+
+- **上下文传递**：`ai/audit.py` 用 `ContextVar` 持有可变 `AuditEvent`；服务层 `with ai_audit_service.audit_call(db, user_id=..., scene=...)` 建立/清除上下文，`LLMClient` 在调用点把实际模型、provider、usage 与降级来源记入事件（结构化修复重试与降级切换**累计**进同一行）。上下文不存在时所有 note 为 no-op——probe、RAG Judge 等未纳入审计的调用不受影响；场景不匹配（chat 上下文中的 `rag_judge`）不计入。
+- **接入点**：纯 LLM 调用段（同步问答、整理、纪要生成、会前准备、行动项/问题提取、模板草稿），此时会话内无未提交业务写入，提交审计行不连带提交业务状态。
+- **旁路容错**：落库失败只记 warning 并回滚该会话，绝不影响业务调用；`ai_call_*` 指标与 DB 解耦，即使落库失败也计数。
+- **指标**：`ai_call_total`、`ai_call_total/{scene}`、`ai_call_error_total`（`/{scene}`）、窗口 `ai_call_latency_ms`（见 `api.md 1.8`）。
+- **成本估算**：`ai/pricing.py` 按「模型名片段 → 每 M token 单价」静态价目表估算 `cost_usd`（`Numeric(12,6)`，ROUND_HALF_UP）；**未命中价目为 NULL，估算仅用于量级观测，不作为计费依据**。
+- 流式（SSE）审计：`astream_chat` 的 usage 分片同样记入上下文（`transport=sse` 由接入点声明）；消费端提前关闭按现状落库、不记为失败。
 
 ## 四、Embedding 与文本切分（`ai/embeddings/`）
 
@@ -247,6 +331,8 @@ uploaded → processing → processed | failed
 failed → processing   （重试）
 ```
 
+> **2026-11 统一失败策略（B1，取代 D-32 的失败清理）**：材料/知识库解析或索引失败**落库 `failed` 并保留记录与磁盘文件**（不回滚清理），可经重试接口 `failed → processing`（`api.md 4.6` / `api.md 2.6`）。
+
 ### 6.2 流程
 
 ```text
@@ -256,11 +342,12 @@ failed → processing   （重试）
   → 建材料记录（默认 uploaded）
   → 同步解析/索引：processing_status=processing
       ├─ 成功：写 content，processing_status=processed，parse_error=null
-      │        切分 + Embedding → document_chunks
-      └─ 失败：processing_status=failed，写 parse_error（安全摘要）
+      │        切分 + Embedding → document_chunks → 201 材料对象
+      └─ 失败：清理半成品分块，落库 failed + parse_error + parse_error_code
+               记录与磁盘文件保留 → 仍返回 201（对象 processing_status=failed）
 ```
 
-上传接口当前同步完成处理，响应中的材料状态通常已是 `processed` 或 `failed`；`uploaded/processing` 是内部/瞬时状态，不作为上传成功的客户端契约。
+上传接口当前同步完成处理，成功响应中的材料状态通常已是 `processed`；`uploaded/processing` 是内部/瞬时状态，不作为上传成功的客户端契约。**失败保留痕迹**：列表接口出现 `failed` 条目，前端展示 `parse_error`/`parse_error_code` 并可调用重试接口（`POST /materials/{id}/retry`，读取磁盘原文件重新处理）。
 
 - 解析层已实现（PR #4）：`parse_bytes(data, file_name) -> ParsedDocument{file_name, content, parser, metadata}`，按扩展名分发，未知/空/损坏统一抛 `ParseError`。
 - `type` 取值（无点）：`pdf`/`docx`/`txt`；解析层按扩展名（带点）分发，业务层负责去点归一。
@@ -276,11 +363,12 @@ failed → processing   （重试）
 | `invalid_file` | 读取/格式损坏 | `parser_service` |
 | `parse_failed` | 其他解析异常 | `parser_service` |
 
-### 6.4 失败补偿与幂等
+### 6.4 失败补偿与幂等（统一失败策略，2026-11 B1）
 
-- **解析失败**：材料置 `failed` 并记录 `parse_error`，不产生分块；用户可重新上传（重试）。
-- **索引失败**（解析成功但切分/Embedding 失败）：材料置 `failed`，写入原因；重试时先清理旧分块再重建。
-- **未预期处理异常**：材料置 `failed` 并写入安全错误摘要，记录服务端日志，不长期停留在 `processing`。
+- **解析失败**：`ParseError` 被 `_process_material`/`_process_document` 捕获，`_mark_failed` 统一落库——回滚事务、删除半成品分块、置 `processing_status=failed`、写 `parse_error`（可展示原因）与 `parse_error_code`（如 `FILE_PARSE_FAILED`），**记录与已落盘文件保留**；接口返回 `201`（对象 `failed`），不返回 422、不删除文件。
+- **索引失败**（解析成功但切分/Embedding 失败，如 `MODEL_CONFIG_REQUIRED`）：同上落 `failed` 保留记录与文件；已写入的部分分块被清理，避免 `failed` 记录带脏索引。
+- **未预期处理异常**：记服务端日志后同样 `_mark_failed`（`parse_error_code=INTERNAL_ERROR`），不上抛 500、不长期停留在 `processing`。
+- **重试**：`POST /materials/{id}/retry`、`POST /knowledge/documents/{id}/retry`——仅 `failed` 可重试（否则 `409` + `details.reason`），从磁盘读原文件重新走 `_process_*`；再次失败仍保持 `failed` 并刷新错误信息（接口不抛错）。原文件丢失返回 `404`。
 - **删除材料**：同步删除文件对象与 `document_chunks`；`meeting_records.source_material_id` 置空（`database.md 七`）。
 
 ### 6.5 音频转写
@@ -340,6 +428,13 @@ failed → processing   （重试）
 - 来源 `origin`：`material` / `record` / `web`；`web` 来源携带 `url`/`title`，前端渲染为可点击链接。
 - 不落库（问答历史非 MVP）。
 
+**流式变体（ADR-1，2026-11 B2）：`POST /meetings/{id}/chat/stream`（`api.md 5.7a`）**
+- 仅 `plan` 模式（`mode=build` → 422，Build 走同步 5.7）；`SSE_CHAT_ENABLED=false` 时端点 404，前端回退同步。
+- 分层：`ChatService.prepare()` 在请求会话内完成检索、记录上下文与来源（返回纯内存 `ChatPreparation`，**流内不再访问 DB**）；`answer_stream(prepared)` 逐段 yield 增量。
+- `answer_stream` 分支：有证据 → `build_chat` + `astream_chat` 流式；无证据且联网无结果 → 单段拒答文案；有联网结果 → **先取首个增量**（失败回退拒答，不留空气泡），成功后先 yield `_WEB_NOTICE` 再续流。
+- 端点在返回 `StreamingResponse` 前预取首增量：**首增量前**错误 → 普通 JSON 错误体（HTTP 状态码），**首增量后** → `event: error` 后关闭；`meta`（sources/insufficient_evidence/model）在首增量取得后才下发，字节顺序 meta → delta。
+- 心跳 `: ping`（`SSE_HEARTBEAT_SECONDS`，默认 15s）、客户端断开即停读上游且不写半条消息；埋点 `chat_stream_total` / `chat_stream_first_token_ms` / `chat_stream_error_total`（§3.4、`api.md 1.8`）。
+
 **两段式联网补救（答案层，`ai/websearch/`）**
 - 边界：只在 `insufficient_evidence` 之后触发，**不进入检索层** —— 阈值/Judge 与负样本拦截口径不变；评测脚本固定 `WEB_SEARCH_ENABLED=false`。
 - 链路：`WEB_SEARCH_PROVIDER=bing`（默认，cn.bing.com 页面解析，实测 0.5–1.4s）→ 失败降级 `ddg`（ddgs，需网络可达）→ 拒答回退（原「根据现有材料无法确认」文案）；未知 provider 或任何异常只记 warning，绝不裸报错。
@@ -387,8 +482,20 @@ failed → processing   （重试）
 | 生成准备稿/纪要 | 非幂等（每次新增记录） | 失败置 `failed`，用户可重新生成 |
 | 提取行动项/问题 | 非幂等（允许重复候选） | 失败返回统一错误，可重试 |
 | 行动项转任务 | **幂等**：`personal_tasks.action_id` 唯一 | 重复转换返回已有任务 |
-| 文件解析/索引 | 重解析先删旧分块再重建 | `failed` 可重试；材料删除清理分块 |
+| 文件解析/索引 | 重解析先删旧分块再重建 | 失败落 `failed` 保留记录/文件（B1 统一策略），经重试接口重新处理；材料删除清理分块 |
 | 检索/问答 | 无副作用 | 无结果返回空来源 + `insufficient_evidence` |
+| 异步任务 | 单次执行（`pending` 才会被执行器拾取，终态不再变） | 失败写 `error_code`/`error_message`；超窗 `pending`/超时 `running` 回收为 `failed JOB_TIMEOUT` |
+
+### 9.1 长耗时任务异步化（B3，2026-11）
+
+- **载体（ADR-3）**：通用 `async_jobs` 表（`database.md 3.17`）+ FastAPI `BackgroundTasks`，不引入 Celery/Redis；单实例部署，进程重启丢 `pending` 任务（限制写入文档）。
+- **执行器**（`services/task_runner.py`）：`run_job` 用**独立会话**（`session_factory` 可替换，测试接入内存库）执行任务体，状态机 `pending → running → succeeded | failed`；`AppError` 原样记录其 `error_code`/`message`，未知异常记 `INTERNAL_ERROR`，异常不逃逸到响应链路。
+- **任务体**（`services/job_tasks.py`）：材料/知识库解析、音频转写直接复用同步处理函数（`_process_*` 返回 `processed|failed`，据失败结果抛 `AppError` 使任务失败）；纪要/准备先在受理时同步校验（404/400），任务内重取上下文再调 LLM；准备任务在受理时先落 `generating` 占位行，任务结束转 `draft`，失败标 `failed` 后原样上抛。
+- **进度点**：解析/转写 10 → 60 → 90，生成 20 → 70/80 → 95；`succeeded` 置 100。进度写入失败只告警，不阻断任务。
+- **失败补偿**：任务失败不改变统一失败策略——资源状态仍由 `_mark_failed` 等落 `failed` 并保留记录/文件（6.4）；任务只补充 `error_code`（供前端提示）与 `error_message`。
+- **僵尸回收**：启动 `lifespan` 跑 `reap_stale_on_startup()`（异常不阻断启动）；`GET /jobs/{id}` 懒回收超窗 `pending`（`created_at`）与超时 `running`（`started_at`）为 `failed` + `JOB_TIMEOUT`，窗口 `ASYNC_JOB_STALE_MINUTES`（默认 30 分钟）。
+- **回滚开关**：`ASYNC_JOBS_ENABLED=false` 时 8 个端点走原同步逻辑（200/201 + 业务对象）；默认值与 env 见 `docker/.env.example`。
+- **明确不做（Non-goals）**：WebSocket 实时录音、Refresh Token、Embedding BYOK、下载接口；模板上传与模板 AI 生成保持同步。
 
 ## 十、错误码、超时与可重试
 
@@ -397,13 +504,18 @@ failed → processing   （重试）
 | 模型超时 | `MODEL_TIMEOUT` | 504 | 是 |
 | 模型输出无法解析/不符合 schema | `MODEL_OUTPUT_INVALID` | 502 | 视情况 |
 | 触发限流 | `RATE_LIMITED` | 429 | 是 |
+| 熔断打开（模型服务不可用） | `MODEL_UPSTREAM_UNAVAILABLE` | 503 | 是 |
+| 输入超限（发送前预检 / 服务商上下文超限） | `MODEL_INPUT_TOO_LONG` | 413 | 否 |
+| 并发排队超时（`details.scope="concurrency"`） | `RATE_LIMITED` | 429 | 是 |
 | 未配置模型（BYOK） | `MODEL_CONFIG_REQUIRED` | 400 | 否 |
 | 模型额度不足 | `MODEL_QUOTA_EXCEEDED` | 402 | 否 |
 | 密钥/配置无效 | `MODEL_CONFIG_INVALID` | 400 | 否 |
 | 文件无法解析 | `FILE_PARSE_FAILED` | 422 | 通常否 |
+| 异步任务超时 | `JOB_TIMEOUT`（任务 `error_code`，非 HTTP 错误体） | — | 是 |
 | 其他未预期 | `INTERNAL_ERROR` | 500 | 视情况 |
 
 - 对外错误体遵循 `api.md 一.2`（扁平 + `retryable` + 可选 `details.reason`）。
+- 材料/知识库上传的解析/索引失败**不返回 422**：落库 `failed` + `parse_error_code`（值可为 `FILE_PARSE_FAILED`）并保留记录与文件，经重试接口重新处理（见 6.4、`api.md 4.6`/`api.md 2.6`）；`FILE_PARSE_FAILED` 422 仅由模板上传等同步且不留记录的路径返回。
 
 ## 十一、验收标准
 

@@ -21,6 +21,7 @@ class KnowledgeDocumentRead(BaseModel):
     type: str
     processing_status: KnowledgeStatus
     parse_error: str | None
+    parse_error_code: str | None = None
     created_at: datetime
 
 

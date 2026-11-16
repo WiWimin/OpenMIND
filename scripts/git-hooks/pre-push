@@ -1,0 +1,24 @@
+#!/bin/sh
+# 评审冻结期：阻止推送到任何远程（见 docs/collaboration-rules.md §十）。
+# 校赛评审期间只允许本地提交与优化，为省赛准备。
+#
+# 临时放行（仅解冻后确需推送时）：OPENMIND_ALLOW_PUSH=1 git push
+# 解冻恢复：git config --unset core.hooksPath
+
+if [ "${OPENMIND_ALLOW_PUSH:-0}" = "1" ]; then
+  echo "[pre-push] OPENMIND_ALLOW_PUSH=1，放行本次推送。" >&2
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+[pre-push] 已阻止推送：当前处于评审冻结期（校赛评审中）。
+
+规则见 docs/collaboration-rules.md 文首状态块与 §十：
+  - 禁止 git push 到任何远程，禁止创建/合并 PR；
+  - git commit / fetch / pull 不受影响，改动仅在本地提交；
+  - 为省赛准备，解冻需用户显式指示。
+
+确需推送时可临时放行：
+  OPENMIND_ALLOW_PUSH=1 git push
+EOF
+exit 1

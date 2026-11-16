@@ -5,6 +5,9 @@ import { getToken } from '@/utils/authToken'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
+/** API 根地址（供 fetch 类调用，如 SSE 流式问答，复用同一 base URL） */
+export const apiBaseUrl = baseURL
+
 export const http: AxiosInstance = axios.create({
   baseURL,
   timeout: 30000,

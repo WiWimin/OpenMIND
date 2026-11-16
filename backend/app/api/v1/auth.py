@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.rate_limit import enforce_login_rate_limit
 from app.core.security import create_access_token
 from app.models.user import User
 from app.schemas.auth import (
@@ -37,7 +38,9 @@ def register(payload: RegisterRequest, db: DbSession) -> Envelope[AuthSession]:
 
 
 @router.post("/login", response_model=Envelope[AuthSession])
-def login(payload: LoginRequest, db: DbSession) -> Envelope[AuthSession]:
+def login(payload: LoginRequest, request: Request, db: DbSession) -> Envelope[AuthSession]:
+    # 登录防爆破：先按「IP + 用户名」计数，超限直接 429（不触发密码校验）
+    enforce_login_rate_limit(request, payload.name)
     user = auth_service.authenticate(db, payload.name, payload.password)
     return Envelope(data=_build_session(user))
 

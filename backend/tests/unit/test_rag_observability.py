@@ -309,7 +309,20 @@ def test_metrics_endpoint_exposes_judge_and_windows(client) -> None:
     for _ in range(30):
         m.observe("retrieval_total_ms", 10.0)
 
-    response = client.get("/api/v1/metrics")
+    # 需登录：无 token 返回 401 统一错误体
+    unauthenticated = client.get("/api/v1/metrics")
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.json()["error_code"] == "AUTH_REQUIRED"
+
+    session = client.post(
+        "/api/v1/auth/register",
+        json={"name": "opsuser", "password": "password123"},
+    ).json()["data"]
+
+    response = client.get(
+        "/api/v1/metrics",
+        headers={"Authorization": f"Bearer {session['access_token']}"},
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -322,3 +335,24 @@ def test_metrics_endpoint_exposes_judge_and_windows(client) -> None:
     assert data["windows"]["retrieval_total_ms"]["p95"] == 10.0
     assert data["windows"]["retrieval_total_ms"]["insufficient"] is False
     assert "alerts" in data
+
+
+def test_metrics_endpoint_hidden_when_disabled(client, monkeypatch) -> None:
+    """METRICS_ENABLED=false 时返回 404，隐藏端点存在性。"""
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("METRICS_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        session = client.post(
+            "/api/v1/auth/register",
+            json={"name": "opsuser2", "password": "password123"},
+        ).json()["data"]
+        response = client.get(
+            "/api/v1/metrics",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        )
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "RESOURCE_NOT_FOUND"
+    finally:
+        get_settings.cache_clear()

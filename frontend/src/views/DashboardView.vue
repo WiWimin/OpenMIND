@@ -105,20 +105,40 @@
       </p>
 
       <ul v-else class="home__tasks">
-        <li v-for="task in tasks" :key="task.task_id">
+        <li
+          v-for="task in tasks"
+          :key="task.task_id"
+          class="home__task-item"
+          :class="{ 'home__task-item--leaving': leavingIds.has(task.task_id) }"
+        >
           <label class="home__task">
-            <input
-              type="checkbox"
-              class="home__task-check"
-              :checked="task.status === 'completed'"
-              :disabled="savingTaskId === task.task_id"
-              :aria-label="`完成任务：${task.title}`"
-              @change="completeTask(task)"
-            />
-            <span class="home__task-title">{{ task.title }}</span>
-            <span class="home__task-due">
+            <span class="home__task-check-wrap">
+              <input
+                type="checkbox"
+                class="home__task-check"
+                :checked="checkedIds.has(task.task_id)"
+                :disabled="savingTaskId === task.task_id"
+                :aria-label="`完成任务：${task.title}`"
+                @change="completeTask(task)"
+              />
+              <span class="home__task-check-mark" aria-hidden="true" />
+            </span>
+            <span
+              class="home__task-title"
+              :class="{ 'home__task-title--done': checkedIds.has(task.task_id) }"
+            >
+              {{ task.title }}
+            </span>
+            <span
+              class="home__task-due"
+              :class="{ 'home__task-due--overdue': isOverdue(task) }"
+            >
               <NavIcon name="clock" :size="14" />
-              {{ task.due_date ? formatDate(task.due_date) : '未设置截止时间' }}
+              {{
+                task.due_date
+                  ? (isOverdue(task) ? '已逾期 · ' : '截止 ') + formatDate(task.due_date)
+                  : '未设置截止时间'
+              }}
             </span>
           </label>
         </li>
@@ -168,6 +188,9 @@ const tasks = ref<PersonalTask[]>([])
 const tasksLoading = ref(true)
 const tasksError = ref<unknown>(null)
 const savingTaskId = ref<string | null>(null)
+// 已勾选（绿色√）与正在淡出的任务集合，驱动勾选动画与延迟移除
+const checkedIds = ref(new Set<string>())
+const leavingIds = ref(new Set<string>())
 const createDialog = ref<InstanceType<typeof CreateMeetingDialog> | null>(null)
 
 const userName = computed(() => auth.user?.name ?? '朋友')
@@ -236,16 +259,36 @@ async function completeTask(task: PersonalTask): Promise<void> {
     return
   }
   savingTaskId.value = task.task_id
+  // 先呈现绿色勾选态，成功后再延迟淡出
+  checkedIds.value.add(task.task_id)
   try {
     await updateTask(task.task_id, { status: 'completed' })
-    toast.success('任务已完成')
-    tasks.value = tasks.value.filter((item) => item.task_id !== task.task_id)
+    toast.success('任务已完成，已移入已归档任务')
     stats.value = { ...stats.value, todo: Math.max(stats.value.todo - 1, 0) }
+    leavingIds.value.add(task.task_id)
+    window.setTimeout(() => {
+      tasks.value = tasks.value.filter((item) => item.task_id !== task.task_id)
+      checkedIds.value.delete(task.task_id)
+      leavingIds.value.delete(task.task_id)
+    }, 1200)
   } catch (error) {
+    // 失败回弹：撤销勾选态并展示错误
+    checkedIds.value.delete(task.task_id)
     tasksError.value = error
   } finally {
     savingTaskId.value = null
   }
+}
+
+function isOverdue(task: PersonalTask): boolean {
+  if (!task.due_date || checkedIds.value.has(task.task_id)) {
+    return false
+  }
+  const due = new Date(`${task.due_date}T23:59:59`)
+  if (Number.isNaN(due.getTime())) {
+    return false
+  }
+  return due.getTime() < Date.now()
 }
 
 function openCreate(): void {
@@ -514,6 +557,15 @@ watch(
   border-top: 1px dashed var(--color-border);
 }
 
+/* 勾选完成后的延迟淡出 */
+.home__task-item--leaving {
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s ease;
+}
+
 .home__task {
   display: flex;
   align-items: center;
@@ -528,16 +580,65 @@ watch(
   background: var(--color-surface-muted);
 }
 
-.home__task-check {
+/* 自定义勾选框：绿色方块 + 白色 √ */
+.home__task-check-wrap {
+  position: relative;
   flex: 0 0 auto;
-  width: 1.05rem;
-  height: 1.05rem;
-  accent-color: var(--color-primary);
+  display: inline-flex;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.home__task-check {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 0.3rem;
   cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.home__task-check:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.home__task-check:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .home__task-check:disabled {
   cursor: progress;
+}
+
+/* √ 标记：默认隐藏，勾选后显示 */
+.home__task-check-mark {
+  position: absolute;
+  top: 0.05rem;
+  left: 0.34rem;
+  width: 0.3rem;
+  height: 0.6rem;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  pointer-events: none;
+  transition: transform 0.16s ease;
+}
+
+.home__task-check:checked {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.home__task-check:checked + .home__task-check-mark {
+  transform: rotate(45deg) scale(1);
 }
 
 .home__task-title {
@@ -548,6 +649,12 @@ watch(
   color: var(--color-foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--transition-fast);
+}
+
+.home__task-title--done {
+  color: var(--color-muted-foreground);
+  text-decoration: line-through;
 }
 
 .home__task-due {
@@ -557,6 +664,11 @@ watch(
   color: var(--color-muted-foreground);
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+.home__task-due--overdue {
+  color: var(--color-down);
+  font-weight: 600;
 }
 
 .home__tasks-empty {

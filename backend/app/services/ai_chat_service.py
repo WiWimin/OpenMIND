@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.ai.chat import ChatAnswer, ChatService, RecordContext
+from app.ai import audit
+from app.ai.chat import ChatAnswer, ChatPreparation, ChatService, RecordContext
 from app.ai.prompts import build_organize
 from app.ai.rag import VectorRetriever
 from app.ai.structured import run_structured
@@ -16,7 +17,7 @@ from app.schemas.chat import (
     PolishSuggestions,
     SummaryStructured,
 )
-from app.services import audio_service, meeting_service, memory_service
+from app.services import ai_audit_service, audio_service, meeting_service, memory_service
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -75,7 +76,7 @@ def _chat_service(db: Session, user_id: str, model_override: str | None = None) 
 
 
 def _run_organize_llm(messages: list[dict[str, str]], config: ModelConfig) -> str:
-    return build_llm_client(config).chat(messages).text
+    return build_llm_client(config).chat(messages, scene="organize").text
 
 
 def _recent_record_context(
@@ -145,18 +146,71 @@ def chat(
     mode: str = "plan",
 ) -> ChatAnswer:
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
-    return _chat_service(db, user_id, model).answer(
+    service = _chat_service(db, user_id, model)
+    # 测试替身可能没有 llm 属性：兜底为空串（LLMClient 调用时会覆盖事件字段）
+    llm = getattr(service, "llm", None)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=user_id,
+        scene="chat",
+        model=getattr(llm, "model", "") or "",
+        provider=audit.provider_host(getattr(llm, "api_base", "") or ""),
+    ):
+        return service.answer(
+            question,
+            user_id=user_id,
+            scope=context_scope,
+            current_meeting_id=meeting_id,
+            mode=mode,
+            records=(
+                []
+                if context_scope == "knowledge_base"
+                else _recent_record_context(db, meeting_id)
+            ),
+            memory_context=memory_service.memory_context_for(db, user_id, "chat"),
+        )
+
+
+@dataclass(frozen=True)
+class ChatStreamSession:
+    """流式问答的会话内准备结果：归属校验、检索、记忆均已完成（纯内存）。"""
+
+    service: ChatService
+    prepared: ChatPreparation
+    include_sources: bool
+    model: str | None
+
+
+def prepare_chat(
+    db: Session,
+    *,
+    meeting_id: str,
+    user_id: str,
+    question: str,
+    context_scope: str,
+    include_sources: bool,
+    model: str | None = None,
+) -> ChatStreamSession:
+    """同步校验与上下文收集：404 归属、400 模型未配置在流开始前返回。"""
+    meeting_service.get_mutable_meeting(db, meeting_id, user_id)
+    service = _chat_service(db, user_id, model)
+    prepared = service.prepare(
         question,
         user_id=user_id,
         scope=context_scope,
         current_meeting_id=meeting_id,
-        mode=mode,
         records=(
             []
             if context_scope == "knowledge_base"
             else _recent_record_context(db, meeting_id)
         ),
         memory_context=memory_service.memory_context_for(db, user_id, "chat"),
+    )
+    return ChatStreamSession(
+        service=service,
+        prepared=prepared,
+        include_sources=include_sources,
+        model=service.llm.model,
     )
 
 
@@ -193,52 +247,64 @@ def organize(
             "instruction": instruction,
         }
     )
-    if task not in _STRUCTURED_TASKS:
-        raw = _run_organize_llm(messages, config)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=user_id,
+        scene="organize",
+        # 测试替身可能返回非 ModelConfig 对象：防御式取值，LLMClient 调用时会覆盖
+        model=getattr(config, "llm_model", "") or "",
+        provider=audit.provider_host(getattr(config, "llm_api_base", "") or ""),
+    ):
+        if task not in _STRUCTURED_TASKS:
+            raw = _run_organize_llm(messages, config)
+            return OrganizeOutcome(
+                task=task,
+                content=raw.strip() or "（未生成有效内容）",
+                structured=None,
+                source_record_ids=source_ids,
+            )
+
+        # summary/polish：结构化管线（预处理 → schema+业务校验 → 1 次修复重试 → 降级原文）
+        raw_texts: list[str] = []
+
+        def _fetch(current: list[dict[str, str]]) -> str:
+            raw = _run_organize_llm(current, config)
+            raw_texts.append(raw)
+            return raw
+
+        if task is OrganizeTask.summary:
+            parsed = run_structured(
+                _fetch,
+                messages,
+                SummaryStructured,
+                scene="organize_summary",
+                validator=_validate_summary,
+                on_failure="degrade",
+            )
+            structured: dict | list | None = (
+                parsed.model_dump() if parsed is not None else None
+            )
+        else:
+            parsed_polish = run_structured(
+                _fetch,
+                messages,
+                PolishSuggestions,
+                scene="organize_polish",
+                validator=_validate_polish,
+                on_failure="degrade",
+            )
+            structured = (
+                parsed_polish.model_dump() if parsed_polish is not None else None
+            )
+
+        # 降级时返回首次尝试的原文（修复重试的输出不作为兜底正文）
+        fallback = raw_texts[0] if raw_texts else ""
+        content = (
+            "" if structured is not None else (fallback.strip() or "（未生成有效内容）")
+        )
         return OrganizeOutcome(
             task=task,
-            content=raw.strip() or "（未生成有效内容）",
-            structured=None,
+            content=content,
+            structured=structured,
             source_record_ids=source_ids,
         )
-
-    # summary/polish：结构化管线（预处理 → schema+业务校验 → 1 次修复重试 → 降级原文）
-    raw_texts: list[str] = []
-
-    def _fetch(current: list[dict[str, str]]) -> str:
-        raw = _run_organize_llm(current, config)
-        raw_texts.append(raw)
-        return raw
-
-    if task is OrganizeTask.summary:
-        parsed = run_structured(
-            _fetch,
-            messages,
-            SummaryStructured,
-            scene="organize_summary",
-            validator=_validate_summary,
-            on_failure="degrade",
-        )
-        structured: dict | list | None = (
-            parsed.model_dump() if parsed is not None else None
-        )
-    else:
-        parsed_polish = run_structured(
-            _fetch,
-            messages,
-            PolishSuggestions,
-            scene="organize_polish",
-            validator=_validate_polish,
-            on_failure="degrade",
-        )
-        structured = parsed_polish.model_dump() if parsed_polish is not None else None
-
-    # 降级时返回首次尝试的原文（修复重试的输出不作为兜底正文）
-    fallback = raw_texts[0] if raw_texts else ""
-    content = "" if structured is not None else (fallback.strip() or "（未生成有效内容）")
-    return OrganizeOutcome(
-        task=task,
-        content=content,
-        structured=structured,
-        source_record_ids=source_ids,
-    )

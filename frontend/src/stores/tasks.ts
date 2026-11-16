@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 import * as tasksApi from '@/api/tasks'
 import { useAsyncList } from '@/composables/useAsyncList'
-import type { PersonalTask, TaskStatus, UpdateTaskPayload } from '@/types/task'
+import type { CreateTaskPayload, PersonalTask, TaskStatus, UpdateTaskPayload } from '@/types/task'
 
 export type TaskStatusFilter = TaskStatus | ''
 
@@ -39,15 +39,42 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  /** 当前筛选下命中：新建/撤回后用于判断是否就地插入或移出列表 */
+  function matchesFilter(task: PersonalTask): boolean {
+    return !filters.value.status || task.status === filters.value.status
+  }
+
+  async function createTask(payload: CreateTaskPayload): Promise<PersonalTask> {
+    const task = await tasksApi.createTask(payload)
+    if (matchesFilter(task)) {
+      list.items.value = [task, ...list.items.value]
+      list.pagination.value = { ...list.pagination.value, total: list.pagination.value.total + 1 }
+    }
+    return task
+  }
+
   async function updateTask(taskId: string, payload: UpdateTaskPayload): Promise<PersonalTask> {
     const task = await tasksApi.updateTask(taskId, payload)
     sync(task)
     return task
   }
 
+  /** 撤回：completed → todo（归档页「撤回到待办」） */
+  async function revertTask(taskId: string): Promise<PersonalTask> {
+    const task = await tasksApi.updateTask(taskId, { status: 'todo' })
+    list.items.value = list.items.value.filter((item) => item.task_id !== taskId)
+    list.pagination.value = { ...list.pagination.value, total: Math.max(list.pagination.value.total - 1, 0) }
+    return task
+  }
+
   async function cancelTask(taskId: string): Promise<PersonalTask> {
     const task = await tasksApi.cancelTask(taskId)
-    sync(task)
+    if (matchesFilter(task)) {
+      sync(task)
+    } else {
+      list.items.value = list.items.value.filter((item) => item.task_id !== taskId)
+      list.pagination.value = { ...list.pagination.value, total: Math.max(list.pagination.value.total - 1, 0) }
+    }
     return task
   }
 
@@ -60,7 +87,9 @@ export const useTasksStore = defineStore('tasks', () => {
     fetchList,
     setStatusFilter,
     loadMore,
+    createTask,
     updateTask,
+    revertTask,
     cancelTask,
   }
 })

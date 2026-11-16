@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -33,27 +34,57 @@ def _infer_material_type(file_name: str, material_type: str | None) -> str:
     return candidate
 
 
-def _process_material(
-    db: Session, material: MeetingMaterial, content: bytes, file_name: str
+def _mark_failed(
+    db: Session, material: MeetingMaterial, *, message: str, code: str
 ) -> None:
+    """统一失败策略：落库 `failed`，保留数据库记录、原始文件与分块清理，供重试使用。"""
+    db.rollback()
+    # 失败时清掉可能残留的半成品分块，避免 failed 记录带脏索引
+    chunk_repository.delete_by_material(db, material.material_id)
+    material.processing_status = "failed"
+    material.parse_error = message
+    material.parse_error_code = code
+    db.commit()
+    db.refresh(material)
+
+
+def _process_material(
+    db: Session,
+    material: MeetingMaterial,
+    content: bytes,
+    file_name: str,
+    *,
+    progress_cb: Callable[[int], None] | None = None,
+) -> str:
+    """解析 + 索引：成功转 `processed`，失败转 `failed` 并保留记录与文件（可重试）。
+
+    返回终态 `processed` / `failed`；异步任务（`job_tasks`）据此判定任务成败。
+    """
     material.processing_status = "processing"
+    db.commit()
+    if progress_cb:
+        progress_cb(10)
     try:
         parsed = parse_bytes(content, file_name)
         material.content = parsed.content
+        if progress_cb:
+            progress_cb(60)
         indexing_service.index_material(db, material)
         material.processing_status = "processed"
         material.parse_error = None
-    except AppError as exc:
-        material.processing_status = "failed"
-        material.parse_error = exc.message
-    except Exception:
-        material.processing_status = "failed"
-        material.parse_error = "材料处理失败，请重试"
-        logger.exception("材料处理出现未预期异常 material_id=%s", material.material_id)
-        raise
-    finally:
+        material.parse_error_code = None
         db.commit()
         db.refresh(material)
+        if progress_cb:
+            progress_cb(90)
+        return "processed"
+    except AppError as exc:
+        _mark_failed(db, material, message=exc.message, code=exc.error_code)
+        return "failed"
+    except Exception:
+        logger.exception("材料处理出现未预期异常 material_id=%s", material.material_id)
+        _mark_failed(db, material, message="材料处理失败，请重试", code="INTERNAL_ERROR")
+        return "failed"
 
 
 def upload_material(
@@ -65,7 +96,13 @@ def upload_material(
     content: bytes,
     source: str | None,
     material_type: str | None,
+    defer_processing: bool = False,
 ) -> MeetingMaterial:
+    """上传并（同步或交由异步任务）处理材料。
+
+    `defer_processing=True`（异步模式）只落盘建记录（`uploaded`），
+    解析/索引由后台任务执行。
+    """
     meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     normalized_type = _infer_material_type(file_name, material_type)
 
@@ -89,7 +126,47 @@ def upload_material(
             storage_key=storage_key,
         ),
     )
-    _process_material(db, material, content, file_name)
+    # 失败不再回滚清理：记录与文件保留为 failed，由重试接口处理（docs/database.md 统一策略）
+    if not defer_processing:
+        _process_material(db, material, content, file_name)
+    return material
+
+
+def retry_material(
+    db: Session, material_id: str, user_id: str, *, defer_processing: bool = False
+) -> MeetingMaterial:
+    """重新解析/索引处理失败的材料（仅 `failed` 可重试，读取磁盘原文件）。
+
+    `defer_processing=True` 时只做归属/状态/文件存在性校验，
+    实际处理交由后台任务。
+    """
+    material = get_owned_material(db, material_id, user_id)
+    meeting_service.get_mutable_meeting(db, material.meeting_id, user_id)
+    if material.processing_status == "processing":
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "材料正在处理中，请稍候再试",
+            http_status=409,
+            details={"reason": "material_processing"},
+        )
+    if material.processing_status != "failed":
+        raise AppError(
+            "BUSINESS_RULE_VIOLATION",
+            "仅处理失败的材料可重试",
+            http_status=409,
+            details={"reason": "material_not_failed"},
+        )
+    settings = get_settings()
+    try:
+        content = storage.read_bytes(settings.storage_dir, material.storage_key)
+    except FileNotFoundError:
+        raise AppError(
+            "RESOURCE_NOT_FOUND",
+            "原始文件已丢失，请重新上传",
+            http_status=404,
+        ) from None
+    if not defer_processing:
+        _process_material(db, material, content, material.file_name)
     return material
 
 

@@ -236,7 +236,7 @@ export async function uploadTextMaterial(
     mimeType: 'text/plain',
     buffer: Buffer.from(content, 'utf-8'),
   })
-  await page.getByRole('button', { name: '上传资料', exact: true }).click()
+  // 选中即自动上传并解析，无需再点「上传资料」按钮
   await expect(page.getByText('已解析', { exact: true }).first()).toBeVisible({
     timeout: 120_000,
   })

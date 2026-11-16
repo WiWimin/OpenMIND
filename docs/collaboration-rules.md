@@ -6,6 +6,14 @@
 >
 > **不负责**：接口字段（见 `api.md`）、表结构（见 `database.md`）、测试分层（见 `testing.md`）、模块任务（见 `module-task-plan.md`/`module-development-spec.md`）。
 
+> ⚠️ **当前状态：评审冻结期（2026-11 起，至省赛准备阶段结束）**
+>
+> 校赛正在评审，期间**禁止创建/合并 PR、禁止 `git push` 推送到任何远程**（`fetch`/`pull` 只读同步不受限）。所有改动仅在本地分支提交与优化，为省赛做准备。
+>
+> - 本地 `git commit` 照常进行，分支模型（§二）与提交规范（§六）继续适用。
+> - PR 与推送流程（§三、§五）**暂停**，解冻需用户显式指示。
+> - 强制拦截：启用 `scripts/git-hooks/pre-push` 后任何 `git push` 都会被拒绝（见 §十）。
+
 ## 一、三条工作流
 
 按角色与代码归属拆分为三条流；每条流只在自己的目录/模块内改动，接口以 `api.md` 为准、数据以 `database.md` 为准。
@@ -49,6 +57,8 @@ feature/<stream>-* · fix/*
 4. CI 全绿 + 至少 1 人 Code Review 通过 → 用 **Create a merge commit** 合并到 `develop`。
 5. 合并后删除已并入的工作分支。
 
+> 冻结期（见文首状态块）内本节流程**暂停**：只在本地提交，不提 PR、不推送。
+
 **禁止**把 PR 合并到另一个特性分支。历史教训：PR #13 采用“堆叠 PR”，base 是 `feature/m01-auth-ui` 而非 `develop`，导致 `frontend-foundation`/`m01`/`m02`/`m03` 前端工作长期未进入 `develop`。若任务依赖另一分支，应**先把被依赖分支合入 `develop`**，再从 `develop` 切出新分支。
 
 ## 四、定期同步（避免长期漂移）
@@ -66,6 +76,7 @@ feature/<stream>-* · fix/*
 - 推进时机：每个阶段（M00–M10，见 `module-task-plan.md` 六阶段）验收通过后，或里程碑演示前。
 - 流程：`develop` 全部 CI 绿 → 以 `develop` 为 head、`main` 为 base 发起“阶段发布”PR（或本地 `git merge`）→ 合并后按阶段打 tag（如 `m01-m02`）。
 - **当前状态**：`main` 为 `b7386db`；`develop` 领先 `main` 89 个提交（MVP M00–M10 已完成）。阶段发布待执行，合并后打 `m00-m10` tag。
+- **冻结期**：评审期间不发起任何 `develop → main` 发布 PR、不推送 tag 到远程；本地 tag 可打。
 
 ## 六、提交与 PR 规范
 
@@ -94,3 +105,18 @@ feature/<stream>-* · fix/*
 | --- | --- | --- |
 | 2026-10 | 建立协作与分支规则 | 明确三流分工、分支模型、先合 `develop`、定期同步与 `develop → main` 推进 |
 | 2026-10 | 阶段发布 | `develop → main` 合并完成（`main @ 332605e`），包含浏览器 E2E、本地 FunASR 与模型 probe 修复 |
+| 2026-11 | 评审冻结期 | 校赛评审期间禁 PR、禁推送远程，仅本地提交与优化；新增 `pre-push` 强制拦截（§十） |
+
+## 十、评审冻结期的强制拦截（pre-push）
+
+- 钩子脚本：`scripts/git-hooks/pre-push`（随仓库版本管理）。
+- 启用（本地一次性配置，不进版本库）：
+
+  ```bash
+  git config core.hooksPath scripts/git-hooks
+  ```
+
+- 行为：冻结期内任何 `git push` 直接失败并打印原因；本地 `git commit`、`git fetch`、`git pull` 不受影响。
+- 临时放行（仅限解冻后、确需推送时）：`OPENMIND_ALLOW_PUSH=1 git push`。
+- 解冻后若要恢复常态，删除该配置即可：`git config --unset core.hooksPath`。
+- 只禁 push 与 PR；不禁止拉取远程只读同步。

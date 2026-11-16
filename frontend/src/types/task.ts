@@ -17,3 +17,8 @@ export interface UpdateTaskPayload {
   due_date?: string
   status?: TaskStatus
 }
+
+export interface CreateTaskPayload {
+  title: string
+  due_date?: string
+}

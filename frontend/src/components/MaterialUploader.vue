@@ -1,14 +1,15 @@
 <template>
-  <div class="material-uploader">
+  <div class="material-uploader" :class="{ 'material-uploader--error': hasError }">
     <div
       class="material-uploader__dropzone"
       :class="{
         'material-uploader__dropzone--active': dragging,
         'material-uploader__dropzone--disabled': uploading,
+        'material-uploader__dropzone--error': hasError,
       }"
       role="button"
       tabindex="0"
-      aria-label="上传资料：拖拽文件到此处，或点击选择文件"
+      aria-label="上传资料：拖拽文件到此处，或点击选择文件（选中后自动上传并解析）"
       @click="openPicker"
       @keydown.enter.prevent="openPicker"
       @keydown.space.prevent="openPicker"
@@ -36,7 +37,9 @@
           <path d="M12 10.5v7M8.8 13.5 12 10.3l3.2 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </span>
-      <p class="material-uploader__title">拖拽文件到此处上传，或点击选择文件</p>
+      <p class="material-uploader__title">
+        {{ uploading ? '正在上传并解析…' : '拖拽文件到此处上传，或点击选择文件' }}
+      </p>
       <div class="material-uploader__types" aria-hidden="true">
         <span>PDF</span>
         <span>DOC</span>
@@ -44,7 +47,7 @@
       </div>
     </div>
 
-    <p v-if="selected" class="material-uploader__file-row">
+    <p v-if="shownFile" class="material-uploader__file-row">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
         <path
           d="M7 3.5h7.5L19 8v12.5H7A2.5 2.5 0 0 1 4.5 18V6A2.5 2.5 0 0 1 7 3.5ZM14 3.5V8h4.5"
@@ -53,61 +56,97 @@
           stroke-linejoin="round"
         />
       </svg>
-      <span class="material-uploader__file-name">{{ selected.name }}</span>
+      <span class="material-uploader__file-name">{{ shownFile.name }}</span>
+      <span v-if="stateLabel" class="material-uploader__file-state" :class="stateTone">
+        {{ stateLabel }}
+      </span>
       <button
+        v-if="canRetry"
+        type="button"
+        class="material-uploader__retry"
+        :disabled="uploading"
+        @click="retry"
+      >
+        重试
+      </button>
+      <button
+        v-else-if="!uploading"
         type="button"
         class="material-uploader__remove"
         aria-label="移除已选文件"
-        :disabled="uploading"
         @click="clearSelected"
       >
         ×
       </button>
     </p>
 
-    <p class="material-uploader__hint">支持 PDF、Word、TXT，单个文件不超过 20 MB。</p>
-
-    <p v-if="error" class="material-uploader__error" role="alert">{{ error }}</p>
-
-    <AppButton v-if="selected" class="material-uploader__submit" :loading="uploading" @click="submit">
-      上传资料
-    </AppButton>
+    <p v-if="errorText" class="material-uploader__error" role="alert">
+      <strong v-if="errorTitle" class="material-uploader__error-title">{{ errorTitle }}</strong>
+      {{ errorText }}
+    </p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-import AppButton from '@/components/AppButton.vue'
-import type { MaterialUploadPayload } from '@/types/material'
+import type { MaterialUploadError, MaterialUploadPayload } from '@/types/material'
 import { validateMaterialFile } from '@/utils/materialUpload'
 
-withDefaults(defineProps<{ uploading?: boolean }>(), { uploading: false })
+const props = withDefaults(
+  defineProps<{ uploading?: boolean; error?: MaterialUploadError | null }>(),
+  { uploading: false, error: null },
+)
 
 const emit = defineEmits<{ upload: [payload: MaterialUploadPayload] }>()
 
 const inputEl = ref<HTMLInputElement | null>(null)
 const selected = ref<File | null>(null)
-const error = ref('')
+const localError = ref('')
 const dragging = ref(false)
 
+const uploading = computed(() => props.uploading)
+const hasError = computed(() => props.error !== null || localError.value !== '')
+const errorText = computed(() => props.error?.message ?? localError.value)
+const errorTitle = computed(() => {
+  if (props.error) {
+    return props.error.kind === 'parse' ? '无法解析' : '上传失败'
+  }
+  return localError.value ? '上传失败' : ''
+})
+const shownFile = computed(() => selected.value)
+const stateLabel = computed(() => {
+  if (props.error) {
+    return props.error.kind === 'parse' ? '无法解析' : '上传失败'
+  }
+  if (uploading.value) {
+    return '上传中'
+  }
+  return ''
+})
+const stateTone = computed(() => (props.error ? 'material-uploader__file-state--down' : ''))
+const canRetry = computed(() => props.error !== null && selected.value !== null)
+
 function openPicker(): void {
+  if (uploading.value) {
+    return
+  }
   inputEl.value?.click()
 }
 
 function acceptFile(file: File | null | undefined): void {
   if (!file) {
-    selected.value = null
     return
   }
   const message = validateMaterialFile(file)
   if (message) {
-    error.value = message
+    localError.value = message
     selected.value = null
     return
   }
-  error.value = ''
+  localError.value = ''
   selected.value = file
+  emit('upload', { file })
 }
 
 function onFileChange(event: Event): void {
@@ -118,7 +157,7 @@ function onFileChange(event: Event): void {
 
 function onDrop(event: DragEvent): void {
   dragging.value = false
-  if (inputEl.value?.disabled) {
+  if (uploading.value) {
     return
   }
   acceptFile(event.dataTransfer?.files?.[0])
@@ -126,16 +165,26 @@ function onDrop(event: DragEvent): void {
 
 function clearSelected(): void {
   selected.value = null
-  error.value = ''
+  localError.value = ''
 }
 
-function submit(): void {
-  if (!selected.value) {
+function retry(): void {
+  if (!selected.value || uploading.value) {
     return
   }
+  localError.value = ''
   emit('upload', { file: selected.value })
-  selected.value = null
 }
+
+// 上传结束（uploading true→false）：成功则清空文件行；失败保留文件与错误以便重试
+watch(
+  () => props.uploading,
+  (up, was) => {
+    if (was && !up && !props.error && !localError.value) {
+      selected.value = null
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -175,6 +224,13 @@ function submit(): void {
   cursor: not-allowed;
 }
 
+.material-uploader__dropzone--error,
+.material-uploader__dropzone--error:hover {
+  background: var(--color-surface-strong);
+  border-color: var(--color-down);
+  box-shadow: none;
+}
+
 .material-uploader__native {
   position: absolute;
   width: 1px;
@@ -195,6 +251,10 @@ function submit(): void {
   border: 1px solid var(--color-border);
   border-radius: 50%;
   box-shadow: var(--shadow-sm);
+}
+
+.material-uploader__dropzone--error .material-uploader__icon {
+  color: var(--color-down);
 }
 
 .material-uploader__title {
@@ -233,6 +293,10 @@ function submit(): void {
   border-radius: var(--radius-md);
 }
 
+.material-uploader--error .material-uploader__file-row {
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
 .material-uploader__file-row svg {
   flex: 0 0 auto;
   color: var(--color-primary-strong);
@@ -243,6 +307,40 @@ function submit(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.material-uploader__file-state {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  color: var(--color-muted-foreground);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+}
+
+.material-uploader__file-state--down {
+  color: var(--color-down);
+  background: rgba(220, 38, 38, 0.06);
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.material-uploader__retry {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  color: var(--color-primary-strong);
+  font-size: 0.75rem;
+  font-weight: 650;
+  background: var(--color-primary-soft);
+  border: 1px solid rgba(21, 94, 239, 0.3);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.material-uploader__retry:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .material-uploader__remove {
@@ -268,17 +366,17 @@ function submit(): void {
 
 .material-uploader__error {
   margin: 0;
+  padding: 8px 10px;
   color: var(--color-down);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: rgba(220, 38, 38, 0.05);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: var(--radius-md);
 }
 
-.material-uploader__hint {
-  margin: 0;
-  color: var(--color-muted-foreground);
-  font-size: 0.75rem;
-}
-
-.material-uploader__submit {
-  align-self: flex-end;
+.material-uploader__error-title {
+  margin-right: 4px;
+  font-weight: 700;
 }
 </style>

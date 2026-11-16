@@ -42,8 +42,11 @@ function mountView(): VueWrapper {
   return mount(TaskSection, { global: { plugins: [pinia] } })
 }
 
-function button(wrapper: VueWrapper, text: string) {
-  return wrapper.findAll('button').find((item) => item.text() === text)
+/** 图标按钮无文本，按 aria-label 查找 */
+function iconButton(wrapper: VueWrapper, label: string) {
+  return wrapper
+    .findAll('button')
+    .find((item) => item.attributes('aria-label') === label)
 }
 
 describe('TaskSection', () => {
@@ -100,7 +103,7 @@ describe('TaskSection', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await button(wrapper, '查看详情')?.trigger('click')
+    await wrapper.find('.task-item__title')?.trigger('click')
 
     const modal = wrapper.get('.modal')
     expect(modal.text()).toContain('完成接口联调')
@@ -121,7 +124,7 @@ describe('TaskSection', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await button(wrapper, '编辑任务')?.trigger('click')
+    await iconButton(wrapper, '编辑任务')?.trigger('click')
     await wrapper.get('#task-edit-title-tsk_1').setValue('更新后的任务')
     await wrapper.get('.task-item__edit').trigger('submit')
     await flushPromises()
@@ -163,11 +166,11 @@ describe('TaskSection', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await button(wrapper, '取消任务')?.trigger('click')
+    await iconButton(wrapper, '删除任务')?.trigger('click')
     const confirm = wrapper
       .get('.modal')
       .findAll('button')
-      .find((item) => item.text() === '取消任务')
+      .find((item) => item.text() === '删除')
     await confirm?.trigger('click')
     await flushPromises()
 

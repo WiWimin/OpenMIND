@@ -15,7 +15,7 @@
     <div class="task-archive__strip">
       <span class="task-archive__pill">已完成 {{ store.pagination.total }} 项</span>
       <span class="task-archive__hint">
-        归档任务只读展示，如需继续跟进，请在任务总览中调整状态或重新创建任务。
+        归档任务为已完成任务；点击列表项右侧的撤回图标可将其恢复为待办。
       </span>
     </div>
 

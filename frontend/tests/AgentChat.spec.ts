@@ -1,5 +1,5 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AgentChat from '@/components/AgentChat.vue'
 
@@ -366,5 +366,150 @@ describe('AgentChat', () => {
 
     expect(aborted).toBe(true)
     expect(wrapper.text()).toContain('已停止生成。')
+  })
+})
+
+describe('AgentChat 持久化（storageKey）', () => {
+  const KEY = 'preprocess:mtg_persist'
+  const wrappers: Array<{ unmount: () => void }> = []
+
+  /** 统一挂载并在用例结束后卸载，避免防抖定时器/挂载态泄漏到下个用例 */
+  function mountKeyed(overrides: Record<string, unknown> = {}) {
+    const result = mountChat(overrides)
+    wrappers.push(result.wrapper)
+    return result
+  }
+
+  afterEach(() => {
+    while (wrappers.length > 0) {
+      wrappers.pop()?.unmount()
+    }
+  })
+
+  function seedSession(messages: Array<Record<string, unknown>>, draft = ''): void {
+    window.localStorage.setItem(
+      `openmind:agent-chat:v1:${KEY}`,
+      JSON.stringify({ v: 1, updatedAt: Date.now(), draft, messages }),
+    )
+  }
+
+  function stored(): { draft: string; messages: Array<Record<string, unknown>> } | null {
+    const raw = window.localStorage.getItem(`openmind:agent-chat:v1:${KEY}`)
+    return raw ? (JSON.parse(raw) as { draft: string; messages: Array<Record<string, unknown>> }) : null
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('restores the saved conversation on mount', async () => {
+    seedSession([
+      { id: 1, role: 'user', content: '上一轮的问题', streaming: false, createdAt: 1 },
+      { id: 2, role: 'assistant', content: '上一轮的回答', streaming: false, createdAt: 2 },
+    ])
+    const { wrapper } = mountKeyed({ storageKey: KEY })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('上一轮的问题')
+    expect(wrapper.text()).toContain('上一轮的回答')
+    // 有历史时不再显示欢迎区
+    expect(wrapper.find('.agent-welcome').exists()).toBe(false)
+  })
+
+  it('persists new messages after sending', async () => {
+    const onSend = vi.fn().mockResolvedValue('已回答')
+    const { wrapper } = mountKeyed({ onSend, storageKey: KEY })
+
+    await wrapper.get('#agent-chat-input').setValue('新问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // 防抖 300ms 后写入
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    const data = stored()
+    expect(data).not.toBeNull()
+    expect(data?.messages.some((item) => item.content === '新问题')).toBe(true)
+    expect(data?.messages.some((item) => item.content === '已回答')).toBe(true)
+  })
+
+  it('persists the draft', async () => {
+    const { wrapper } = mountKeyed({ storageKey: KEY })
+    await wrapper.get('#agent-chat-input').setValue('还没发的半句话')
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(stored()?.draft).toBe('还没发的半句话')
+  })
+
+  it('clears the stored conversation via the clear button', async () => {
+    seedSession([
+      { id: 1, role: 'user', content: '旧消息', streaming: false, createdAt: 1 },
+    ])
+    const { wrapper } = mountKeyed({ storageKey: KEY })
+    await flushPromises()
+    expect(wrapper.text()).toContain('旧消息')
+
+    await wrapper.get('.agent-chat__clear').trigger('click')
+    await flushPromises()
+
+    expect(stored()).toBeNull()
+    expect(wrapper.find('.agent-welcome').exists() || wrapper.text()).toBeTruthy()
+  })
+
+  it('switches conversations when storageKey changes without leaking the old one', async () => {
+    seedSession([
+      { id: 1, role: 'user', content: '会议甲的对话', streaming: false, createdAt: 1 },
+    ])
+    const otherKey = 'preprocess:mtg_other'
+    window.localStorage.setItem(
+      `openmind:agent-chat:v1:${otherKey}`,
+      JSON.stringify({
+        v: 1,
+        updatedAt: Date.now(),
+        draft: '',
+        messages: [{ id: 1, role: 'user', content: '会议乙的对话', streaming: false, createdAt: 1 }],
+      }),
+    )
+
+    const { wrapper } = mountKeyed({ storageKey: KEY })
+    await flushPromises()
+    expect(wrapper.text()).toContain('会议甲的对话')
+
+    await wrapper.setProps({ storageKey: otherKey })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('会议乙的对话')
+    expect(wrapper.text()).not.toContain('会议甲的对话')
+  })
+
+  it('does not touch localStorage without a storageKey', async () => {
+    const onSend = vi.fn().mockResolvedValue('回复')
+    const { wrapper } = mountKeyed({ onSend })
+
+    await wrapper.get('#agent-chat-input').setValue('问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(window.localStorage.length).toBe(0)
+  })
+
+  it('loads the message id counter above restored ids so keys stay unique', async () => {
+    seedSession([
+      { id: 42, role: 'user', content: '高 id 消息', streaming: false, createdAt: 1 },
+    ])
+    const onSend = vi.fn().mockResolvedValue('回答')
+    const { wrapper } = mountKeyed({ onSend, storageKey: KEY })
+    await flushPromises()
+
+    await wrapper.get('#agent-chat-input').setValue('再来一轮')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    // 防抖 300ms 后落盘
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    const ids = (stored()?.messages ?? []).map((item) => Number(item.id))
+    expect(ids.length).toBeGreaterThan(1)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(Math.max(...ids)).toBeGreaterThan(42)
   })
 })

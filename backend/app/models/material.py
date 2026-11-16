@@ -28,6 +28,8 @@ class MeetingMaterial(Base):
         String(20), nullable=False, default="uploaded", server_default="uploaded"
     )
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 解析/索引失败的错误码（如 FILE_PARSE_FAILED / MODEL_CONFIG_REQUIRED），供前端映射文案
+    parse_error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, server_default=func.now()
     )

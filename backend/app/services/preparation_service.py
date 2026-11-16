@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
 
+from app.ai import audit
 from app.ai.preparation import PreparationDraft, PreparationService
 from app.core.exceptions import resource_not_found
 from app.models.meeting import Meeting
 from app.models.preparation import Preparation
 from app.repositories import material_repository, preparation_repository
 from app.schemas.preparation import PreparationUpdate
-from app.services import meeting_service, meeting_template_service, memory_service
+from app.services import (
+    ai_audit_service,
+    meeting_service,
+    meeting_template_service,
+    memory_service,
+)
 from app.services.model_config_service import (
     ModelConfig,
     ModelPurpose,
@@ -74,6 +83,42 @@ def generate_preparation(
     model: str | None = None,
     template_id: str | None = None,
 ) -> Preparation:
+    context = prepare_generation_context(
+        db,
+        meeting_id=meeting_id,
+        user_id=user_id,
+        user_goal=user_goal,
+        include_history=include_history,
+        model=model,
+        template_id=template_id,
+    )
+    return run_preparation_generation(db, context)
+
+
+@dataclass
+class PreparationContext:
+    """会前准备的同步准备结果：归属校验、素材收集与模型解析（不含 LLM 调用）。"""
+
+    meeting: Meeting
+    user_id: str
+    snippets: list[str]
+    user_goal: str | None
+    config: ModelConfig
+    template_instructions: str
+    memory_context: str
+
+
+def prepare_generation_context(
+    db: Session,
+    *,
+    meeting_id: str,
+    user_id: str,
+    user_goal: str | None,
+    include_history: bool = True,
+    model: str | None = None,
+    template_id: str | None = None,
+) -> PreparationContext:
+    """同步校验与上下文收集：404 归属、400 模型未配置等在受理前同步返回。"""
     meeting = meeting_service.get_mutable_meeting(db, meeting_id, user_id)
     snippets = (
         _history_snippets(db, user_id)
@@ -89,22 +134,88 @@ def generate_preparation(
         else ""
     )
     memory_context = memory_service.memory_context_for(db, user_id, "preparation")
-    draft = generate_draft(
-        meeting,
-        snippets,
-        user_goal,
-        config,
-        memory_context=memory_context,
+    return PreparationContext(
+        meeting=meeting,
+        user_id=user_id,
+        snippets=snippets,
+        user_goal=user_goal,
+        config=config,
         template_instructions=template_instructions,
+        memory_context=memory_context,
     )
+
+
+def create_generating(db: Session, *, meeting_id: str) -> Preparation:
+    """异步受理时先落一条 `generating` 占位行，由后台任务转 `draft`/`failed`。"""
     return preparation_repository.create(
         db,
         preparation_id=new_id("prep"),
         meeting_id=meeting_id,
-        summary=draft.summary,
-        checklist=draft.checklist,
-        status=_STATUS_DRAFT,
+        summary="",
+        checklist=[],
+        status="generating",
     )
+
+
+def run_preparation_generation(
+    db: Session,
+    context: PreparationContext,
+    *,
+    preparation_id: str | None = None,
+    progress_cb: Callable[[int], None] | None = None,
+) -> Preparation:
+    """LLM 生成准备稿并落库；`preparation_id` 为异步占位行 id（同步路径为 None）。
+
+    失败以 `AppError` 上抛，由调用方（任务执行器）把占位行标为 `failed`。
+    """
+    if progress_cb:
+        progress_cb(20)
+    with ai_audit_service.audit_call(
+        db,
+        user_id=context.user_id,
+        scene="prepare",
+        model=context.config.llm_model,
+        provider=audit.provider_host(context.config.llm_api_base),
+    ):
+        draft = generate_draft(
+            context.meeting,
+            context.snippets,
+            context.user_goal,
+            context.config,
+            memory_context=context.memory_context,
+            template_instructions=context.template_instructions,
+        )
+    if progress_cb:
+        progress_cb(80)
+    if preparation_id is None:
+        return preparation_repository.create(
+            db,
+            preparation_id=new_id("prep"),
+            meeting_id=context.meeting.meeting_id,
+            summary=draft.summary,
+            checklist=draft.checklist,
+            status=_STATUS_DRAFT,
+        )
+    preparation = _get_by_id(db, preparation_id)
+    preparation.summary = draft.summary
+    preparation.checklist = draft.checklist
+    preparation.status = _STATUS_DRAFT
+    return preparation_repository.update(db, preparation)
+
+
+def _get_by_id(db: Session, preparation_id: str) -> Preparation:
+    preparation = preparation_repository.get_by_id(db, preparation_id)
+    if preparation is None:
+        raise resource_not_found("准备稿")
+    return preparation
+
+
+def mark_generation_failed(db: Session, preparation_id: str) -> None:
+    """异步生成失败：占位行标 `failed`（保留记录，可再次生成覆盖）。"""
+    preparation = _get_by_id(db, preparation_id)
+    if preparation.status == "generating":
+        preparation.status = "failed"
+        preparation_repository.update(db, preparation)
 
 
 def list_preparations(

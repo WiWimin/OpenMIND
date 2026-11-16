@@ -43,6 +43,7 @@ def test_process_material_success_clears_parse_error(db_session: Session) -> Non
 def test_process_material_unexpected_error_marks_failed(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """未预期异常不再上抛：落库 `failed` + INTERNAL_ERROR，记录保留可重试。"""
     material = _seed_material(db_session)
 
     def boom(*args, **kwargs):
@@ -50,9 +51,24 @@ def test_process_material_unexpected_error_marks_failed(
 
     monkeypatch.setattr(material_service.indexing_service, "index_material", boom)
 
-    with pytest.raises(RuntimeError):
-        material_service._process_material(db_session, material, b"hello", "a.txt")
+    material_service._process_material(db_session, material, b"hello", "a.txt")
 
     db_session.refresh(material)
     assert material.processing_status == "failed"
-    assert material.parse_error
+    assert material.parse_error == "材料处理失败，请重试"
+    assert material.parse_error_code == "INTERNAL_ERROR"
+
+
+def test_retry_material_rejects_non_failed(db_session: Session) -> None:
+    material = _seed_material(db_session)
+    material.processing_status = "processed"
+    material.parse_error = None
+    db_session.commit()
+
+    from app.core.exceptions import AppError
+
+    with pytest.raises(AppError) as excinfo:
+        material_service.retry_material(db_session, material.material_id, "usr_1")
+
+    assert excinfo.value.http_status == 409
+    assert excinfo.value.details == {"reason": "material_not_failed"}

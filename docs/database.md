@@ -36,6 +36,8 @@
 | knowledge_chunks | `kchk_` | `chunk_id` |
 | meeting_audio | `aud_` | `audio_id` |
 | meeting_templates | `tpl_` | `template_id` |
+| async_jobs | `job_` | `job_id` |
+| ai_call_logs | `ail_` | `log_id` |
 
 - 形如 `mtg_` + 32 位十六进制（如 `mtg_8f3a1c...`）。
 - 外键字段必须与被引用主键类型一致（均 `VARCHAR(40)`）。
@@ -94,6 +96,7 @@
 | `content` | TEXT | ? | 解析后文本（原文件独立存储） |
 | `processing_status` | VARCHAR(20) | NN, default `uploaded` | 见 §五 |
 | `parse_error` | TEXT | ? | 内部安全错误摘要 |
+| `parse_error_code` | VARCHAR(40) | ? | 失败错误码（`FILE_PARSE_FAILED` / `MODEL_CONFIG_REQUIRED` / `INTERNAL_ERROR` 等），供前端映射文案 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -239,6 +242,7 @@
 | `content` | TEXT | ? | 解析文本 |
 | `processing_status` | VARCHAR(20) | NN, default `uploaded` | 见状态 |
 | `parse_error` | TEXT | ? | 解析/索引失败原因 |
+| `parse_error_code` | VARCHAR(40) | ? | 失败错误码，供前端映射文案 |
 | `created_at` | TIMESTAMPTZ | NN, default now() | |
 | `updated_at` | TIMESTAMPTZ | NN, default now() | |
 
@@ -318,6 +322,55 @@
 - 仅本人可读/可删；删除时同步删除文件。
 - 生成联动：`prepare` 与 `minutes/generate` 的 `template_id` 引用本表或内置模板 ID。
 
+### 3.17 `async_jobs` 异步任务
+
+长耗时 AI 任务的执行记录（ADR-3：通用任务表 + FastAPI `BackgroundTasks`，无 Celery/Redis；`api.md 1.9`）。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `job_id` | VARCHAR(40) | PK | `job_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 归属用户（仅本人可见） |
+| `job_type` | VARCHAR(40) | NN | `material_parse` / `knowledge_parse` / `audio_transcribe` / `minutes_generate` / `preparation_generate` |
+| `resource_type` | VARCHAR(40) | NN | `material` / `knowledge_document` / `audio` / `minutes` / `preparation` |
+| `resource_id` | VARCHAR(40) | ? , IDX | 关联资源；纪要生成受理时为空（任务结束才建资源） |
+| `status` | VARCHAR(20) | NN, default `pending` | 见 §五 |
+| `progress` | INTEGER | NN, default `0` | 0–100 |
+| `error_code` | VARCHAR(40) | ? | 失败错误码（与 `api.md 1.3` 同名，如 `FILE_PARSE_FAILED` / `JOB_TIMEOUT`） |
+| `error_message` | TEXT | ? | 用户可见失败文案 |
+| `created_at` | TIMESTAMPTZ | NN, default now() | pending 超窗判定基准 |
+| `started_at` | TIMESTAMPTZ | ? | running 超时判定基准 |
+| `finished_at` | TIMESTAMPTZ | ? | 进入终态时间 |
+
+- 索引：`(user_id, status)`、`(resource_type, resource_id)`、`user_id`、`resource_id`。
+- 单实例 + `BackgroundTasks`：进程重启丢失 `pending` 任务；启动与读取时按 `ASYNC_JOB_STALE_MINUTES`（默认 30 分钟）回收为 `failed` + `JOB_TIMEOUT`。
+- 任务失败只写 `error_code`/`error_message`，资源状态由各资源自己的状态机决定（统一失败策略，见 §五）。
+
+### 3.18 `ai_call_logs` AI 调用审计日志
+
+AI（LLM）调用的元数据审计（`ai-design.md 3.11`；迁移 `0025_ai_call_logs`）。**只存数值与枚举标签，不存提示词、用户原文或模型输出**（日志红线）。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `log_id` | VARCHAR(40) | PK | `ail_` 前缀 |
+| `user_id` | VARCHAR(40) | FK→users, NN, IDX | 归属用户 |
+| `scene` | VARCHAR(40) | NN, IDX | 场景名（`ai/scenes.py` 注册表键，如 `chat`/`minutes`） |
+| `purpose` | VARCHAR(20) | ? | BYOK 用途（`preparation`/`chat`/`minutes`/`extraction`；场景未映射用途时为空） |
+| `model` | VARCHAR(100) | NN | 实际发出请求的模型（降级链切换后为候选模型；LLM 未调用时为配置值或 `-`） |
+| `provider` | VARCHAR(200) | NN | provider 主机名（不含路径与凭证） |
+| `transport` | VARCHAR(10) | NN, default `sync` | `sync` / `sse` |
+| `status` | VARCHAR(10) | NN, default `success` | `success` / `failed` |
+| `error_code` | VARCHAR(40) | ? | 失败错误码（与 `api.md 1.3` 同名） |
+| `input_tokens` | INTEGER | ? | 累计输入 token（结构化修复重试与降级切换累计；未采集到为 NULL） |
+| `output_tokens` | INTEGER | ? | 累计输出 token |
+| `cost_usd` | NUMERIC(12,6) | ? | 估算成本（`ai/pricing.py` 按单价 × token；单价未知为 NULL；**非计费依据**） |
+| `latency_ms` | INTEGER | NN, default `0` | 场景级耗时（含上下文收集，`ai_call_latency_ms` 指标同源） |
+| `fallback_from` | VARCHAR(100) | ? | 降级链切换的起点模型（未切换为 NULL） |
+| `created_at` | TIMESTAMPTZ | NN, default now() | 调用完成时间 |
+
+- 索引：`(user_id, created_at)`、`(scene, created_at)`、`user_id`。
+- **旁路写入**：由 `services/ai_audit_service.audit_call` 在 LLM 调用段退出时提交；落库失败只记 warning 并回滚，绝不影响业务调用（`ai_audit_service` 同时写 `ai_call_*` 指标，与 DB 解耦）。
+- 接入点为纯 LLM 调用段（此时会话内无未提交业务写入，提交审计行不连带提交业务状态）；MVP 不对外暴露查询接口。
+
 ## 四、数据关系（E-R）
 
 - User — Meeting：一对多
@@ -325,6 +378,7 @@
 - User — UserMemory：一对一（`user_memories.user_id` 主键）
 - User — MeetingTemplate：一对多（仅自定义模板入库）
 - User — KnowledgeDocument：一对多
+- User — AICallLog：一对多（仅本人审计行，MVP 不对外暴露）
 - KnowledgeDocument — KnowledgeChunk：一对多
 - User — PersonalTask：一对多
 - Meeting — MeetingMaterial：一对多
@@ -351,18 +405,21 @@
 | 对象 | 字段 | 取值 | 说明 |
 | --- | --- | --- | --- |
 | Meeting | `status` | `scheduled`、`archived` | **MVP 仅两态**；预留 `in_progress`/`completed` 将来扩展 |
-| Material | `processing_status` | `uploaded`、`processing`、`processed`、`failed` | 解析状态 |
+| Material | `processing_status` | `uploaded`、`processing`、`processed`、`failed` | 解析状态；`failed` 为活跃状态（见下） |
 | Preparation | `status` | `generating`、`draft`、`confirmed`、`failed` | |
 | Minutes | `status` | `draft`、`confirmed` | |
 | ActionItem | `status` | `pending_confirmation`、`confirmed`、`converted`、`cancelled` | |
 | PersonalTask | `status` | `todo`、`in_progress`、`completed`、`cancelled` | |
 | OpenIssue | `status` | `open`、`resolved`、`cancelled` | |
+| AsyncJob | `status` | `pending`、`running`、`succeeded`、`failed` | 异步任务执行状态；终态不可再变（`api.md 1.9`） |
 
 流转规则：
 
 - Meeting：`scheduled` ↔ `archived`（归档只读，MVP 不提供开始/完成操作）。
-- Material：`uploaded → processing → processed | failed`；重试允许 `failed → processing`。
-- Preparation：`generating → draft → confirmed`；生成失败 `failed`；确认动作幂等（`api.md 5.6`）。
+- Material：`uploaded → processing → processed | failed`；重试允许 `failed → processing`（`api.md 4.6`）。
+  - **2026-11 统一失败策略（B1）**：材料/知识库解析或索引失败**落库 `failed`，保留数据库记录与已上传磁盘文件**（不回滚、不删除），同时清理半成品分块并写入 `parse_error` + `parse_error_code`；提供重试接口 `POST /materials/{id}/retry`、`POST /knowledge/documents/{id}/retry` 读取磁盘原文件重新处理。接口对失败仍返回 `201`（对象 `processing_status=failed`），不再返回 `422 FILE_PARSE_FAILED` 或执行失败清理。
+- Preparation：`generating → draft → confirmed`；生成失败 `failed`；确认动作幂等（`api.md 5.6`）。异步生成（`ASYNC_JOBS_ENABLED=true`）先落 `generating` 占位行，由后台任务转 `draft`/`failed`。
+- AsyncJob：`pending → running → succeeded | failed`；终态不可变。超窗 `pending`/超时 `running` 由启动回收与读取懒回收置为 `failed`（`error_code=JOB_TIMEOUT`，`api.md 1.9`）。
 - ActionItem：`pending_confirmation → confirmed → converted`；可由待确认/已确认进入 `cancelled`；**仅 `confirmed` 可转任务**。
 - PersonalTask：`todo → in_progress → completed`；未完成可 `cancelled`。
 - OpenIssue：`open → resolved | cancelled`。
@@ -380,6 +437,7 @@
 - `action_items(meeting_id, status)`。
 - `personal_tasks(user_id, status, due_date)`。
 - `open_issues(meeting_id, status)`。
+- `async_jobs(user_id, status)`、`async_jobs(resource_type, resource_id)`。
 - `document_chunks(material_id, chunk_index)`：唯一索引。
 - `personal_tasks(action_id)`：唯一约束。
 - 向量索引（HNSW/IVFFlat）待数据量确定后再选，不作为当前硬性要求。

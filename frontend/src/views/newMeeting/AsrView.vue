@@ -433,8 +433,10 @@
             <AgentChat
               agent-name="AI答疑助手"
               welcome-title="AI答疑助手"
+              :storage-key="meeting.meeting_id ? `asr:${meeting.meeting_id}` : ''"
               :quick-actions="quickActions"
               :on-send="handleSend"
+              :on-send-stream="handleSend"
               :on-task="handleTask"
               :context-text="selectedText"
               :disabled="!meeting.meeting_id"
@@ -543,9 +545,10 @@ import { useLiveRecording } from '@/composables/useLiveRecording'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
-import type { AgentQuickAction, AgentReply } from '@/types/agent'
+import type { AgentQuickAction, AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
 import type { MeetingAudio, TranscriptEntry } from '@/types/audio'
 import type {
+  ChatPayload,
   ChatSource,
   OrganizePayload,
   OrganizeTask,
@@ -556,6 +559,7 @@ import type { Meeting } from '@/types/meeting'
 import type { MeetingRecord, RecordMarkerType, RecordType } from '@/types/record'
 import { formatDateTime, formatTime } from '@/utils/datetime'
 import { resolveErrorMessage } from '@/utils/errors'
+import { recordFileName } from '@/utils/meetingFiles'
 import { audioStatusMeta, recordMarkerMeta, recordTypeMeta } from '@/utils/statusLabels'
 import { validateAudioFile } from '@/utils/audioUpload'
 
@@ -564,6 +568,15 @@ const router = useRouter()
 const toast = useToast()
 const { mirrorMeetingFile } = useLocalWorkspace()
 const { openPanel } = useSettingsPanels()
+
+/** 保存后的会议记录 → 本地会议文件夹镜像（.md，文件名与会议文件列表一致） */
+function mirrorRecord(record: { record_id: string; created_at: string; content: string }): void {
+  void mirrorMeetingFile({
+    meetingId: meetingId.value,
+    fileName: recordFileName(record),
+    content: record.content,
+  })
+}
 
 const meetingId = computed(() => String(route.query.meetingId ?? ''))
 const selectedText = ref('')
@@ -691,6 +704,13 @@ async function confirmAudioAction(): Promise<void> {
     selectAudio(updated)
     await loadAudio()
     await loadRecords(1)
+    // 「确认并保存为记录」→ 转写内容并入文件列表并写入本地文件夹
+    const savedRecord = updated.record_id
+      ? recordItems.value.find((item) => item.record_id === updated.record_id)
+      : null
+    if (savedRecord) {
+      mirrorRecord(savedRecord)
+    }
     toast.success('已保存为会议记录')
   } catch (caught) {
     audioActionError.value = caught
@@ -973,12 +993,14 @@ async function addRecord(): Promise<void> {
   addingRecord.value = true
   recordActionError.value = null
   try {
-    await recordsApi.createRecord(meetingId.value, {
+    const created = await recordsApi.createRecord(meetingId.value, {
       content,
       record_type: composerType.value === 'imported' ? 'imported' : 'manual',
     })
     toggleComposer()
     await loadRecords(1)
+    // 点击「保存记录」即并入会议文件列表，并写入本地文件夹对应会议目录
+    mirrorRecord(created)
     toast.success('记录已保存')
   } catch (caught) {
     recordActionError.value = caught
@@ -1069,9 +1091,11 @@ async function saveEdit(): Promise<void> {
   savingEdit.value = true
   recordActionError.value = null
   try {
-    await recordsApi.updateRecord(recordId, { content })
+    const updated = await recordsApi.updateRecord(recordId, { content })
     cancelEdit()
     await loadRecords()
+    // 编辑保存 → 本地同名 .md 覆盖写入
+    mirrorRecord(updated)
     toast.success('记录已更新')
   } catch (caught) {
     recordActionError.value = caught
@@ -1362,27 +1386,42 @@ function captureSelection(): void {
   selectedText.value = text.slice(0, 1200)
 }
 
-async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply> {
+function mapSources(sources: ChatSource[]): AgentSource[] {
+  return sources.slice(0, 3).map((source) => ({
+    label: sourceLabel(source),
+    detail: source.excerpt.replace(/\s+/g, ' ').slice(0, 64),
+  }))
+}
+
+async function handleSend(
+  text: string,
+  signal: AbortSignal,
+  stream?: AgentStreamHandlers,
+): Promise<AgentReply> {
   if (!meetingId.value) {
     throw new Error('请先选择一场会议。')
   }
+  const payload: ChatPayload = {
+    question: text,
+    context_scope: 'current_meeting',
+    include_sources: true,
+    model: selectedModel.value || undefined,
+  }
   try {
-    const result = await chatApi.askMeeting(
-      meetingId.value,
-      {
-        question: text,
-        context_scope: 'current_meeting',
-        include_sources: true,
-        model: selectedModel.value || undefined,
-      },
-      signal,
-    )
+    const result = stream
+      ? await chatApi.askMeetingStream(
+          meetingId.value,
+          payload,
+          {
+            onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources)),
+            onDelta: stream.onDelta,
+          },
+          signal,
+        )
+      : await chatApi.askMeeting(meetingId.value, payload, signal)
     return {
       content: result.answer,
-      sources: result.sources.slice(0, 3).map((source) => ({
-        label: sourceLabel(source),
-        detail: source.excerpt.replace(/\s+/g, ' ').slice(0, 64),
-      })),
+      sources: mapSources(result.sources),
       note: result.insufficient_evidence ? '证据不足，回答仅供参考。' : undefined,
     }
   } catch (caught) {

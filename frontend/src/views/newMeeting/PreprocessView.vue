@@ -6,8 +6,7 @@
         <section class="aside-section">
           <h2 class="aside-section__title">上传资料</h2>
           <template v-if="meetingId">
-            <MaterialUploader :uploading="uploading" @upload="upload" />
-            <ErrorMessage v-if="uploadError" :error="uploadError" />
+            <MaterialUploader :uploading="uploading" :error="uploadError" @upload="upload" />
           </template>
         </section>
 
@@ -66,8 +65,10 @@
           agent-name="杂乱文档，先规整再入库"
           mascot-size="8rem"
           :meeting-id="meetingId"
+          :storage-key="meetingId ? `preprocess:${meetingId}` : ''"
           :show-welcome="false"
           :on-send="handleSend"
+          :on-send-stream="handleSend"
           :disabled="!meetingId"
           placeholder="输入补充要求或调整议程…"
         >
@@ -127,12 +128,12 @@ import TemplatePickerPopover from '@/components/TemplatePickerPopover.vue'
 import { useLocalWorkspace } from '@/composables/useLocalWorkspace'
 import { useSettingsPanels } from '@/composables/useSettingsPanels'
 import { useToast } from '@/composables/useToast'
-import type { AgentReply } from '@/types/agent'
-import type { ChatMode, ChatSource } from '@/types/chat'
-import type { MaterialUploadPayload } from '@/types/material'
+import type { AgentReply, AgentSource, AgentStreamHandlers } from '@/types/agent'
+import type { ChatMode, ChatPayload, ChatResult, ChatSource } from '@/types/chat'
+import type { MaterialUploadError, MaterialUploadPayload } from '@/types/material'
 import type { Preparation } from '@/types/preparation'
 import { preparationStatusMeta } from '@/utils/statusLabels'
-import { resolveErrorMessage } from '@/utils/errors'
+import { resolveErrorMessage, resolveUploadError } from '@/utils/errors'
 
 const route = useRoute()
 const toast = useToast()
@@ -156,7 +157,7 @@ if (routeTemplateId) {
 const chatMode = ref<ChatMode>('build')
 
 const uploading = ref(false)
-const uploadError = ref<unknown>(null)
+const uploadError = ref<MaterialUploadError | null>(null)
 const materialsKey = ref(0)
 
 interface QuickBubble {
@@ -260,17 +261,8 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
   uploading.value = true
   uploadError.value = null
   try {
-    const material = await materialsApi.uploadMaterial(meetingId.value, payload)
-    if (material.processing_status === 'failed') {
-      uploadError.value = {
-        status: 'error',
-        error_code: 'FILE_PARSE_FAILED',
-        message: material.parse_error ?? '文件解析失败',
-        retryable: false,
-      }
-      return
-    }
-    toast.success('资料已上传')
+    await materialsApi.uploadMaterial(meetingId.value, payload)
+    toast.success('资料已上传并解析')
     materialsKey.value += 1
     void mirrorMeetingFile({
       meetingId: meetingId.value,
@@ -278,13 +270,37 @@ async function upload(payload: MaterialUploadPayload): Promise<void> {
       content: payload.file,
     })
   } catch (caught) {
-    uploadError.value = caught
+    // 解析失败（422 FILE_PARSE_FAILED）与其他失败都显示在上传框内，可直接重试
+    uploadError.value = resolveUploadError(caught, '上传失败，请检查文件后重试。')
   } finally {
     uploading.value = false
   }
 }
 
-async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply> {
+function mapSources(sources: ChatSource[]): AgentSource[] {
+  return sources.slice(0, 3).map((source) => ({
+    label: sourceLabel(source),
+    detail: excerpt(source.excerpt, 64),
+  }))
+}
+
+function buildAskReply(result: ChatResult): AgentReply {
+  return {
+    content: result.answer,
+    file: result.file ?? undefined,
+    sources: mapSources(result.sources),
+    note:
+      result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
+        ? '证据不足，回答仅供参考。'
+        : undefined,
+  }
+}
+
+async function handleSend(
+  text: string,
+  signal: AbortSignal,
+  stream?: AgentStreamHandlers,
+): Promise<AgentReply> {
   if (!meetingId.value) {
     throw new Error('请先选择一场会议。')
   }
@@ -317,30 +333,27 @@ async function handleSend(text: string, signal: AbortSignal): Promise<AgentReply
       }
     }
 
-    const result = await chatApi.askMeeting(
+    const payload: ChatPayload = {
+      question: text,
+      context_scope: 'current_meeting',
+      include_sources: true,
+      model,
+      mode: chatMode.value,
+    }
+    // Build 模式走同步（流式端点仅支持 plan，api.md 5.7a）；否则走 SSE 增量
+    if (!stream || chatMode.value === 'build') {
+      return buildAskReply(await chatApi.askMeeting(meetingId.value, payload, signal))
+    }
+    const result = await chatApi.askMeetingStream(
       meetingId.value,
+      payload,
       {
-        question: text,
-        context_scope: 'current_meeting',
-        include_sources: true,
-        model,
-        mode: chatMode.value,
+        onMeta: (meta) => stream.onMeta?.(mapSources(meta.sources)),
+        onDelta: stream.onDelta,
       },
       signal,
     )
-
-    return {
-      content: result.answer,
-      file: result.file ?? undefined,
-      sources: result.sources.slice(0, 3).map((source) => ({
-        label: sourceLabel(source),
-        detail: excerpt(source.excerpt, 64),
-      })),
-      note:
-        result.insufficient_evidence && !result.sources.some((s) => s.origin === 'web')
-          ? '证据不足，回答仅供参考。'
-          : undefined,
-    }
+    return buildAskReply(result)
   } catch (caught) {
     throw new Error(resolveErrorMessage(caught, 'Agent 处理失败，请稍后重试。'))
   }

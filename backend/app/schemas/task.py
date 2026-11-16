@@ -19,6 +19,11 @@ class TaskUpdate(BaseModel):
     status: TaskStatus | None = None
 
 
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    due_date: date | None = None
+
+
 class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

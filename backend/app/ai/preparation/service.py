@@ -44,7 +44,7 @@ class PreparationService:
             }
         )
         return run_structured(
-            lambda msgs: self.llm.chat_json(msgs, schema=PreparationDraft),
+            lambda msgs: self.llm.chat_json(msgs, schema=PreparationDraft, scene="prepare"),
             messages,
             PreparationDraft,
             scene="prepare",
